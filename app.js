@@ -41,8 +41,16 @@ const GLYPHS = {
 const $ = (id) => document.getElementById(id);
 const enc = (s) => new TextEncoder().encode(s);
 
+// The address may carry its settings as ?query or #fragment. Nothing in it is secret (topic and the PC's public
+// key), so the install link uses the query form, which every launcher keeps.
+function addressParams() {
+  const out = new URLSearchParams(location.search);
+  for (const [k, v] of new URLSearchParams(location.hash.slice(1))) out.set(k, v);
+  return out;
+}
+
 const S = {
-  server: DEFAULT_SERVER, topic: '', relayPubB64: '', fragment: new URLSearchParams(location.hash.slice(1)),
+  server: DEFAULT_SERVER, topic: '', relayPubB64: '', fragment: addressParams(),
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
   stream: null, paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
