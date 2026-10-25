@@ -54,7 +54,7 @@ const S = {
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
   stream: null, paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
-  pending: {}, pairing: null, flash: '', compose: null,
+  pending: {}, pairing: null, flash: '', compose: null, openedAt: 0, lastKeyAt: 0,
 };
 
 // ---- bytes, storage --------------------------------------------------------------------------------
@@ -467,6 +467,10 @@ function renderDetail() {
   if (focusId) {
     const again = document.querySelector(`[data-f="${focusId}"]`);
     if (again) again.focus({ preventScroll: true });
+  } else if (S.lastKeyAt < S.openedAt && document.activeElement === $('dResult')) {
+    // The question arrived after the screen opened and Bakar hasn't moved yet: start on its first answer.
+    const first = $('dOptions').querySelector('button');
+    if (first) first.focus();
   }
 }
 
@@ -574,6 +578,7 @@ function selectTab(tab, focusTab) {
 function openDetail(k) {
   S.open = k;
   S.view = 'detail';
+  S.openedAt = Date.now();
   history.pushState({ v: 'detail', k }, '');
   showPane('detail');
   renderDetail();
@@ -693,6 +698,8 @@ function review() {
   $('cQuote').textContent = c.mode === 'stop' ? '' : `“${text}”`;
   $('cConfirm').hidden = false;
   $('cGo').textContent = c.mode === 'stop' ? 'Stop task' : 'Send';
+  // An answer or a stop has no text to edit, so its second button goes back instead.
+  $('cEdit').textContent = c.mode === 'answer' || c.mode === 'stop' ? 'Cancel' : 'Edit';
   $('cGo').disabled = false;
   $('cGo').focus();
 }
@@ -732,8 +739,56 @@ async function go() {
 
 // ---- keys ------------------------------------------------------------------------------------------
 
+// Each screen is a column of rows of controls. Up and Down move between rows; Left and Right move within a row
+// (or, on the section lists, between sections). This doesn't depend on the browser's guess of the nearest element.
+function visible(n) {
+  return n && !n.hidden && !n.disabled && n.offsetParent !== null && !n.closest('[hidden]');
+}
+
+function rowsOfControls() {
+  const groups = [];
+  const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
+  const pane = PANES.find((p) => !$(p).hidden);
+  if (['work', 'apps', 'games', 'pair'].includes(pane)) {
+    add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
+    if (pane === 'pair') add([$('pRetry')]);
+    else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
+    else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
+  } else if (pane === 'detail') {
+    add($('dOptions').querySelectorAll('button'));
+    if ($('dResult').textContent) add([$('dResult')]);
+    add($('dActions').querySelectorAll('button'));
+  } else if (pane === 'compose') {
+    for (const g of $('cPick').querySelectorAll('.pickgroup')) add(g.querySelectorAll('button'));
+    add([$('cText')]);
+    add([$('cSend')]);
+    add([$('cGo'), $('cEdit')]);
+  }
+  return groups;
+}
+
+function moveFocus(dy, dx) {
+  const groups = rowsOfControls();
+  const a = document.activeElement;
+  let gi = groups.findIndex((g) => g.includes(a));
+  if (gi < 0) { (groups[0] || [])[0]?.focus(); return; }
+  if (dx) {
+    const g = groups[gi];
+    const next = g[g.indexOf(a) + dx];
+    if (next) next.focus();
+    return;
+  }
+  gi += dy;
+  if (gi < 0 || gi >= groups.length) return;
+  const g = groups[gi];
+  const pick = g.find((n) => n.getAttribute('aria-selected') === 'true' || n.getAttribute('aria-pressed') === 'true') || g[0];
+  pick.focus();
+  if (pick.scrollIntoView) pick.scrollIntoView({ block: 'nearest' });
+}
+
 function onKey(e) {
   if (document.visibilityState !== 'visible') return;
+  if (e.key !== 'Enter') S.lastKeyAt = Date.now();
   if (S.paused && S.kUp) wake(); else if (S.kUp) armIdle();
   const k = e.key;
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
@@ -748,18 +803,20 @@ function onKey(e) {
     const r = $('dResult');
     const down = k === 'ArrowDown';
     const room = down ? r.scrollHeight - r.clientHeight - r.scrollTop : r.scrollTop;
-    if (room > 2) { e.preventDefault(); r.scrollBy({ top: down ? 150 : -150 }); }
+    e.preventDefault();
+    if (room > 2) r.scrollBy({ top: down ? 150 : -150 });
+    else moveFocus(down ? 1 : -1, 0);
     return;
   }
   if (e.target === $('cText')) {
     const t = $('cText');
     if (k === 'Enter' && !e.shiftKey) { e.preventDefault(); $('cSend').focus(); return; }
-    if (k === 'ArrowDown' && t.selectionEnd >= t.value.length) { e.preventDefault(); $('cSend').focus(); return; }
-    if (k === 'ArrowUp' && t.selectionStart === 0) {
-      const b = $('cPick').querySelector('button');
-      if (b) { e.preventDefault(); b.focus(); }
-    }
+    if (k === 'ArrowDown' && t.selectionEnd >= t.value.length) { e.preventDefault(); moveFocus(1, 0); return; }
+    if (k === 'ArrowUp' && t.selectionStart === 0) { e.preventDefault(); moveFocus(-1, 0); }
+    return;
   }
+  if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); moveFocus(k === 'ArrowDown' ? 1 : -1, 0); return; }
+  if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveFocus(0, k === 'ArrowRight' ? 1 : -1); }
 }
 
 // ---- start -----------------------------------------------------------------------------------------
@@ -774,7 +831,12 @@ async function main() {
   $('newTask').addEventListener('click', () => startCompose({ mode: 'new' }));
   $('cSend').addEventListener('click', review);
   $('cGo').addEventListener('click', go);
-  $('cEdit').addEventListener('click', () => { closeConfirm(); $('cText').focus(); });
+  $('cEdit').addEventListener('click', () => {
+    const mode = S.compose && S.compose.mode;
+    if (mode === 'answer' || mode === 'stop') { history.back(); return; }
+    closeConfirm();
+    $('cText').focus();
+  });
   $('pRetry').addEventListener('click', () => { if (S.paused) wake(); else hello(); });
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('popstate', (e) => apply(e.state));

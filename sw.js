@@ -2,7 +2,7 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (ntfy.sh) always goes to the network.
-const CACHE = 'glass-home-v2';
+const CACHE = 'glass-home-v3';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'apps.json', 'icon.svg', 'icon-mono.svg'];
 
 self.addEventListener('install', (event) => {
