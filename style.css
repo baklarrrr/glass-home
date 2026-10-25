@@ -35,7 +35,7 @@ svg { fill: currentColor; }
 .tab { font-size: 17px; font-weight: 650; color: var(--faint); padding: 6px 12px 7px; border-radius: 999px; border: 1.5px solid transparent; outline: none; }
 .tab[aria-selected="true"] { color: var(--ink); border-color: var(--hair); }
 .tab:focus { color: var(--ink); border-color: var(--mint); background: var(--mint-soft); box-shadow: var(--glow); }
-.side { display: inline-flex; align-items: center; gap: 12px; min-inline-size: 0; }
+.side { display: inline-flex; align-items: center; gap: 10px; min-inline-size: 0; }
 .state { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--dim); white-space: nowrap; min-inline-size: 0; }
 .gbat { display: inline-flex; align-items: center; gap: 3px; font-size: 14px; color: var(--soft); font-variant-numeric: tabular-nums; }
 .gbat svg { inline-size: 18px; block-size: 18px; }

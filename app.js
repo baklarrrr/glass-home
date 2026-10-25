@@ -426,22 +426,33 @@ async function handleTidal(text) {
   } catch (e) { return; }
   if (!m || m.t !== 'state') return;
   if (S.battery && m.at && S.battery.at && m.at < S.battery.at) return;
-  S.battery = Number.isFinite(m.gb) ? { gb: m.gb, gc: Boolean(m.gc), at: m.at || Date.now() } : null;
+  // gb/gc: the glasses (5% steps, charging); bb: the Neural Band, which the phone reads over Bluetooth.
+  const gb = Number.isFinite(m.gb) ? m.gb : null;
+  const bb = Number.isFinite(m.bb) ? m.bb : null;
+  S.battery = gb != null || bb != null ? { gb, gc: Boolean(m.gc), bb, at: m.at || Date.now() } : null;
   renderBattery();
 }
 
 function renderBattery() {
   const b = S.battery;
-  const chip = $('gbat');
   // A reading over 30 minutes old (the phone app stopped, say) is hidden rather than shown as current.
   const fresh = Boolean(b) && Date.now() - (b.at || 0) < 30 * 60 * 1000;
-  chip.hidden = !fresh;
-  if (!fresh) return;
-  $('gbatText').textContent = `${b.gb}%`;
-  $('gbatFill').setAttribute('width', String(Math.max(1, (13.4 * b.gb) / 100)));
-  chip.classList.toggle('charging', b.gc);
-  chip.classList.toggle('low', !b.gc && b.gb <= 15);
-  chip.setAttribute('aria-label', `Glasses battery ${b.gb}%${b.gc ? ', charging' : ''}`);
+  const glasses = $('gbat');
+  glasses.hidden = !fresh || b.gb == null;
+  if (!glasses.hidden) {
+    $('gbatText').textContent = `${b.gb}%`;
+    $('gbatFill').setAttribute('width', String(Math.max(1, (13.4 * b.gb) / 100)));
+    glasses.classList.toggle('charging', b.gc);
+    glasses.classList.toggle('low', !b.gc && b.gb <= 15);
+    glasses.setAttribute('aria-label', `Glasses battery ${b.gb}%${b.gc ? ', charging' : ''}`);
+  }
+  const band = $('bbat');
+  band.hidden = !fresh || b.bb == null;
+  if (!band.hidden) {
+    $('bbatText').textContent = `${b.bb}%`;
+    band.classList.toggle('low', b.bb <= 15);
+    band.setAttribute('aria-label', `Neural Band battery ${b.bb}%`);
+  }
 }
 
 // ---- calm: less light while nobody is touching it --------------------------------------------------
