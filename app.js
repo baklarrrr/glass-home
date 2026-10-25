@@ -3,9 +3,9 @@
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
 //
-// The link: two free public MQTT brokers at once (EMQX and HiveMQ), with shiftr.io on port 443 as a spare: the same
-// link Tidal Glass and Studio Glass use. No account, no daily cap, and any broker can be down without anything
-// stopping. The PC keeps the latest
+// The link: three free public MQTT brokers at once (EMQX, HiveMQ, and shiftr.io on port 443), the same link Tidal
+// Glass and Studio Glass use. No account, no daily cap, and any broker can be down without anything stopping. From
+// Bakar's home network only shiftr.io answers reliably, so none of them waits for another. The PC keeps the latest
 // session list retained there, so the list shows the moment a broker connects.
 //
 // Privacy: the brokers only carry ciphertext. The first time it runs, this page makes a P-256 key pair and keeps
@@ -17,11 +17,14 @@
 // every 2.5 minutes so the PC keeps sending. After 90 seconds without a key press it closes the link (10 minutes
 // while you watch a task you started). Times are clock times, so nothing ticks.
 
-const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
-// shiftr.io's public instance on port 443, for networks that let only web traffic through. The PC is always on it
-// too; the glasses join it only when neither broker above connects within 5 s, or 5 s after both drop.
-const SPARE = { url: 'wss://public.cloud.shiftr.io', username: 'public', password: 'public' };
-const SPARE_AFTER = 5000;
+const BROKERS = [
+  { url: 'wss://broker.emqx.io:8084/mqtt' },
+  { url: 'wss://broker.hivemq.com:8884/mqtt' },
+  { url: 'wss://public.cloud.shiftr.io', username: 'public', password: 'public' },
+];
+// A broker that connects late (or again) is also handed what went out in the last few seconds, so a hello that went
+// only to a broker the PC isn't on still arrives. The PC drops the repeat by its id.
+const RESEND_WINDOW = 10000;
 const OUTBOX_MAX_AGE = 60 * 1000;   // the PC drops commands older than 90 seconds
 const IDLE_MS = 90 * 1000;
 const WATCH_MS = 10 * 60 * 1000;
@@ -59,7 +62,7 @@ function addressParams() {
 }
 
 const S = {
-  topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [], linkId: '', spareTimer: 0,
+  topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [], linkId: '', sentLately: [],
   mqttTries: 0, mqttLoading: false, calmTimer: 0, tg: null, battery: null, tidalLast: '',
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
@@ -191,6 +194,7 @@ async function send(c, extra = {}) {
     openLink();
   } else {
     for (const l of live) l.publish(`bkr/${S.topic}/u`, payload, { qos: 1 });
+    remember(payload);
   }
   return id;
 }
@@ -202,11 +206,12 @@ function linkUp() {
 }
 
 function linkChanged() {
-  // Both main brokers down for 5 s (a network that lets only web traffic through, say): add the spare.
-  if (!linkUp() && S.links.length && !S.spareTimer && !S.links.some((l) => l.spare)) {
-    S.spareTimer = setTimeout(openSpare, SPARE_AFTER);
-  }
   renderState();
+}
+
+function remember(payload) {
+  S.sentLately.push({ payload, at: Date.now() });
+  if (S.sentLately.length > 20) S.sentLately.shift();
 }
 
 // The link library is a large file. On the first launch after an update the previous offline copy of this app can
@@ -226,11 +231,10 @@ function openLink() {
   if (S.links.length || !S.kUp) return;
   if (typeof mqtt === 'undefined') { loadMqtt(); return; }
   S.linkId = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
-  for (const url of BROKERS) addBroker(url);
-  S.spareTimer = setTimeout(openSpare, SPARE_AFTER);
+  for (const b of BROKERS) addBroker(b);
 }
 
-function addBroker(url, extra = {}) {
+function addBroker({ url, ...extra }) {
   // Random ids: shiftr.io shows client ids on a public dashboard.
   const client = mqtt.connect(url, {
     clientId: `ghg-${S.linkId}-${S.links.length}`, clean: true, keepalive: 45, protocolVersion: 4,
@@ -240,8 +244,14 @@ function addBroker(url, extra = {}) {
     const topics = [`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`];
     if (S.tg) topics.push(`bkr/${S.tg.t}/s`); // Tidal Glass's state, read only, for the glasses' battery
     client.subscribe(topics, { qos: 1 });
+    // What already went out on the other brokers in the last few seconds goes on this one too.
+    const now = Date.now();
+    S.sentLately = S.sentLately.filter((o) => now - o.at < RESEND_WINDOW);
+    for (const o of S.sentLately) client.publish(`bkr/${S.topic}/u`, o.payload, { qos: 1 });
     flushOutbox();
     linkChanged();
+    // Back after a drop: a hello the PC hasn't answered is asked again (the PC ignores a repeat).
+    if (!S.paused && S.askedAt && S.heardAt < S.askedAt && now - S.askedAt > 3000) hello();
   });
   client.on('message', (t, payload) => {
     const text = new TextDecoder().decode(payload);
@@ -255,17 +265,11 @@ function addBroker(url, extra = {}) {
   return client;
 }
 
-function openSpare() {
-  S.spareTimer = 0;
-  if (!S.links.length || linkUp() || S.links.some((l) => l.spare)) return;
-  addBroker(SPARE.url, { username: SPARE.username, password: SPARE.password }).spare = true;
-}
-
 function closeLink() {
   const old = S.links;
   S.links = [];
-  clearTimeout(S.spareTimer);
-  S.spareTimer = 0;
+  S.outbox = [];
+  S.sentLately = [];   // a reopened link never resends an old hello
   for (const l of old) { try { l.end(true); } catch (e) { /* already closed */ } }
 }
 
@@ -275,7 +279,10 @@ function flushOutbox() {
   const now = Date.now();
   const due = S.outbox.filter((o) => now - o.at < OUTBOX_MAX_AGE);
   S.outbox = [];
-  for (const o of due) for (const l of live) l.publish(`bkr/${S.topic}/u`, o.payload, { qos: 1 });
+  for (const o of due) {
+    for (const l of live) l.publish(`bkr/${S.topic}/u`, o.payload, { qos: 1 });
+    remember(o.payload);
+  }
 }
 
 async function handle(text) {
@@ -369,15 +376,39 @@ function armIdle() {
   S.idle = setTimeout(() => sleep('idle'), watchingOwnTask() ? WATCH_MS : IDLE_MS);
 }
 
+// ---- other apps' pairings ----------------------------------------------------------------------------
+// On the glasses each installed web app has its own storage, so Tidal Glass's and Studio Glass's saved pairings
+// aren't visible here. The phone puts them in Bakar Home's own address instead, after the # so they never reach a
+// server: #tg=<topic>~<key> (Tidal Glass, Sound Lab) and #sg=<topic>~<key> (Bakar Studio). Bakar Home keeps its own
+// copy ('gh.pass'), so a launch without them still works. On a desktop browser the apps share storage, so
+// Tidal's own 'tg.pair' is used when there's nothing else.
+function passPairing(name) {
+  let v = S.fragment.get(name);
+  const saved = local('gh.pass') || {};
+  if (v && v.includes('~')) {
+    if (saved[name] !== v) local('gh.pass', { ...saved, [name]: v });
+  } else {
+    v = saved[name] || '';
+  }
+  const [t, k] = (v || '').split('~');
+  if (t && k) return { t, k };
+  if (name === 'tg') {
+    try {
+      const own = JSON.parse(localStorage.getItem('tg.pair') || 'null');
+      if (own && own.t && own.k) return { t: own.t, k: own.k };
+    } catch (e) { /* none */ }
+  }
+  return null;
+}
+
 // ---- glasses battery -------------------------------------------------------------------------------
-// The phone's Tidal Glass app reports the glasses' battery (5% steps) in Tidal Glass's retained state. Tidal Glass
-// is on this same site, so its pairing ('tg.pair') is readable here. Bakar Home only listens on that topic and
-// decrypts; it never publishes there. No Tidal pairing, or no battery in the state: no chip.
+// The phone's Tidal Glass app reports the glasses' battery (5% steps) in Tidal Glass's retained state. With Tidal's
+// pairing (above), Bakar Home only listens on that topic and decrypts; it never publishes there. No Tidal pairing,
+// or no battery in the state: no chip.
 
 async function setupBattery() {
-  let pair = null;
-  try { pair = JSON.parse(localStorage.getItem('tg.pair') || 'null'); } catch (e) { pair = null; }
-  if (!pair || !pair.t || !pair.k || !window.crypto || !crypto.subtle) return;
+  const pair = passPairing('tg');
+  if (!pair || !window.crypto || !crypto.subtle) return;
   try {
     const key = await crypto.subtle.importKey('raw', fromB64url(pair.k), 'AES-GCM', false, ['decrypt']);
     S.tg = { t: pair.t, key };
@@ -654,11 +685,9 @@ function renderApps() {
 
 function launch(app) {
   let url = app.url;
-  const pass = app.pass && S.fragment.get(app.pass);
-  if (pass && pass.includes('~')) {
-    const [t, k] = pass.split('~');
-    url += `#t=${encodeURIComponent(t)}&k=${encodeURIComponent(k)}`;
-  }
+  // The app opens inside Bakar Home's own storage, so it gets its pairing in its address, the way it was added.
+  const pass = app.pass && passPairing(app.pass);
+  if (pass) url += `#t=${encodeURIComponent(pass.t)}&k=${encodeURIComponent(pass.k)}`;
   location.assign(url);
 }
 
