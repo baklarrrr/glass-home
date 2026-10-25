@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "Bakar Home",
+  "description": "Claude and Codex sessions from your studio PC, your glasses apps, and games kept separate.",
+  "appearance": {
+    "theme_color": "#AFC4FF",
+    "icon_background": {
+      "colors": ["#2E3546", "#0C0E13"],
+      "stops": [0.0, 1.0],
+      "inner_glow_color": "#DCE5FF"
+    },
+    "icon": {
+      "src": "../icon-mono.svg",
+      "type": "monochrome"
+    }
+  }
+}

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="Bakar Home">
+  <meta name="description" content="Bakar's glasses home: Claude and Codex sessions from the studio PC, his apps, and games kept apart.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#000000">
+  <title>Bakar Home</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
+      <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
+      <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
+    </nav>
+    <span class="state" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="stateText"></span></span>
+  </header>
+
+  <main>
+    <section id="work" class="pane" role="tabpanel" aria-labelledby="tab-work">
+      <p id="summary" class="summary"></p>
+      <button id="newTask" class="row new" hidden><span class="plus" aria-hidden="true">+</span><span class="ti">New task for Claude or Codex</span></button>
+      <ol id="rows" class="rows"></ol>
+    </section>
+
+    <section id="detail" class="pane" hidden aria-label="Session">
+      <div class="dhead">
+        <p id="dTitle" class="dtitle"></p>
+        <p id="dMeta" class="dmeta"></p>
+        <p id="dNow" class="dnow"></p>
+        <p id="dAsked" class="dasked"></p>
+      </div>
+      <div id="dQuestion" class="question" hidden>
+        <p class="label">Question for you</p>
+        <p id="dQText" class="qtext"></p>
+        <div id="dOptions" class="options"></div>
+        <p id="dQNote" class="note"></p>
+      </div>
+      <div id="dResult" class="result" tabindex="0" aria-label="Latest from this session"></div>
+      <div id="dActions" class="actions"></div>
+    </section>
+
+    <section id="compose" class="pane" hidden aria-label="Message">
+      <p id="cTitle" class="ctitle"></p>
+      <div id="cPick" class="pick"></div>
+      <label class="field">
+        <span id="cLabel" class="label">Speak your message</span>
+        <textarea id="cText" rows="4" maxlength="2000" autocomplete="off" spellcheck="false"></textarea>
+      </label>
+      <div class="actions"><button id="cSend" class="btn primary">Review</button></div>
+      <div id="cConfirm" class="confirm" hidden>
+        <p id="cSummary" class="csummary"></p>
+        <p id="cQuote" class="cquote"></p>
+        <div class="actions"><button id="cGo" class="btn primary">Send</button><button id="cEdit" class="btn">Edit</button></div>
+      </div>
+      <p id="cNote" class="note"></p>
+    </section>
+
+    <section id="apps" class="pane" role="tabpanel" aria-labelledby="tab-apps" hidden>
+      <ol id="appRows" class="rows"></ol>
+    </section>
+
+    <section id="games" class="pane" role="tabpanel" aria-labelledby="tab-games" hidden>
+      <ol id="gameRows" class="rows"></ol>
+      <p id="gamesNote" class="note wide"></p>
+    </section>
+
+    <section id="pair" class="pane center" hidden aria-label="Pairing">
+      <svg class="hero" viewBox="0 0 64 64" aria-hidden="true"><use href="icon-mono.svg#glyph"/></svg>
+      <h1 id="pTitle"></h1>
+      <p id="pText" class="subline"></p>
+      <p id="pCode" class="code"></p>
+      <button id="pRetry" class="btn">Try again</button>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
