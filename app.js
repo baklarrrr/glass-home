@@ -3,22 +3,26 @@
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
 //
-// Privacy: the studio PC's relay and this page talk through ntfy.sh, encrypted end to end. The first time it runs,
-// this page makes a P-256 key pair and keeps the private half in IndexedDB as a key that can't be exported. The PC
-// accepts that key once, while a pairing window is open at the PC. Both sides then derive the same AES-GCM keys
-// (ECDH + HKDF). The address carries only the ntfy topic and the PC's public key, so a copied link can't read or
-// send anything.
+// The link: two free public MQTT brokers at once (EMQX and HiveMQ), the same link Tidal Glass and Studio Glass use.
+// No account, no daily cap, and either broker can be down without anything stopping. The PC keeps the latest
+// session list retained there, so the list shows the moment a broker connects.
 //
-// Battery: nothing runs while the app is hidden. On screen, the page listens for the PC and says hello every
-// 2.5 minutes so the PC keeps sending. After 90 seconds without a key press it pauses itself (10 minutes while
-// you watch a task you started). Times are clock times, so nothing ticks.
+// Privacy: the brokers only carry ciphertext. The first time it runs, this page makes a P-256 key pair and keeps
+// the private half in IndexedDB as a key that can't be exported. The PC accepts that key once, while a pairing
+// window is open at the PC. Both sides then derive the same AES-GCM keys (ECDH + HKDF). The address carries only the
+// topic and the PC's public key, so a copied link can't read or send anything.
+//
+// Battery: nothing runs while the app is hidden. On screen, the page keeps one connection per broker and says hello
+// every 2.5 minutes so the PC keeps sending. After 90 seconds without a key press it closes the link (10 minutes
+// while you watch a task you started). Times are clock times, so nothing ticks.
 
-const DEFAULT_SERVER = 'https://ntfy.sh';
+const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const OUTBOX_MAX_AGE = 60 * 1000;   // the PC drops commands older than 90 seconds
 const IDLE_MS = 90 * 1000;
 const WATCH_MS = 10 * 60 * 1000;
 const HELLO_MS = 150 * 1000;
 const ANSWER_MS = 12 * 1000;
-const DAILY_SENDS = 30;
+const DAILY_SENDS = 400;            // a safety valve against a runaway loop, not a budget
 const HELP_OPTIONS = ['Give me THREE good options.', 'Unjumble this for me.'];
 
 const SITE = 'https://baklarrrr.github.io/';
@@ -50,10 +54,10 @@ function addressParams() {
 }
 
 const S = {
-  server: DEFAULT_SERVER, topic: '', relayPubB64: '', fragment: addressParams(),
+  topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [],
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
-  stream: null, paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
+  paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
   pending: {}, pairing: null, flash: '', compose: null, openedAt: 0, lastKeyAt: 0,
 };
 
@@ -112,15 +116,9 @@ function local(key, value) {
 
 // ---- keys ------------------------------------------------------------------------------------------
 
-function allowedServer(s) {
-  return s === DEFAULT_SERVER || /^http:\/\/(127\.0\.0\.1|localhost):\d{2,5}$/.test(s || '');
-}
-
 async function setupKeys() {
   let t = S.fragment.get('t');
   let p = S.fragment.get('p');
-  const s = S.fragment.get('s');
-  if (s && allowedServer(s)) S.server = s;
   if (t && p) await idbPut('pairing', { t, p }).catch(() => {});
   else {
     const saved = await idbGet('pairing').catch(() => null);
@@ -163,18 +161,12 @@ async function openDown(text) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-function sendsLeft() {
-  const today = new Date().toDateString();
-  const b = local('gh.sends') || {};
-  return b.d === today ? DAILY_SENDS - (b.n || 0) : DAILY_SENDS;
-}
-
 async function send(c, extra = {}) {
   if (!S.kUp) return '';
   const today = new Date().toDateString();
   const b = local('gh.sends') || {};
   const n = b.d === today ? (b.n || 0) : 0;
-  if (n >= DAILY_SENDS) { flash('Daily message limit reached'); return ''; }
+  if (n >= DAILY_SENDS) { flash('Too many messages today; check the PC'); return ''; }
   local('gh.sends', { d: today, n: n + 1 });
   const id = toB64url(crypto.getRandomValues(new Uint8Array(9)));
   if (c === 'hello') S.hellos = S.hellos.slice(-4).concat(id);
@@ -184,22 +176,70 @@ async function send(c, extra = {}) {
   const sealed = new Uint8Array(12 + ct.length);
   sealed.set(iv, 0);
   sealed.set(ct, 12);
-  try {
-    await fetch(`${S.server}/${S.topic}-u`, { method: 'POST', body: `1.${S.devPubB64}.${toB64url(sealed)}` });
-  } catch (e) { /* the state line reports a PC that goes quiet */ }
+  const payload = `1.${S.devPubB64}.${toB64url(sealed)}`;
+  const live = S.links.filter((l) => l.connected);
+  if (!live.length) {
+    // Not connected this instant (just opened, or the glasses' network is waking): it goes out the moment a
+    // broker connects. The PC drops a command it has already seen.
+    S.outbox.push({ payload, at: Date.now() });
+    openLink();
+  } else {
+    for (const l of live) l.publish(`bkr/${S.topic}/u`, payload, { qos: 1 });
+  }
   return id;
 }
 
 // ---- link ------------------------------------------------------------------------------------------
 
-const downTopic = () => `${S.server}/${S.topic}-${S.devId}`;
+function linkUp() {
+  return S.links.some((l) => l.connected);
+}
+
+function openLink() {
+  if (S.links.length || !S.kUp || typeof mqtt === 'undefined') return;
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
+  for (const url of BROKERS) {
+    const client = mqtt.connect(url, {
+      clientId: `ghg-${id}-${S.links.length}`, clean: true, keepalive: 45, protocolVersion: 4,
+      reconnectPeriod: 1500, connectTimeout: 8000,
+    });
+    client.on('connect', () => {
+      client.subscribe([`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`], { qos: 1 });
+      flushOutbox();
+      renderState();
+    });
+    client.on('message', (t, payload) => handle(new TextDecoder().decode(payload)));
+    client.on('offline', renderState);
+    client.on('close', renderState);
+    client.on('error', () => { /* mqtt.js reconnects by itself */ });
+    S.links.push(client);
+  }
+}
+
+function closeLink() {
+  const old = S.links;
+  S.links = [];
+  for (const l of old) { try { l.end(true); } catch (e) { /* already closed */ } }
+}
+
+function flushOutbox() {
+  const live = S.links.filter((l) => l.connected);
+  if (!live.length) return;
+  const now = Date.now();
+  const due = S.outbox.filter((o) => now - o.at < OUTBOX_MAX_AGE);
+  S.outbox = [];
+  for (const o of due) for (const l of live) l.publish(`bkr/${S.topic}/u`, o.payload, { qos: 1 });
+}
 
 async function handle(text) {
+  if (S.recent.includes(text)) return; // the same message from the other broker
+  S.recent.push(text);
+  if (S.recent.length > 24) S.recent.shift();
   let m;
   try { m = await openDown(text); } catch (e) { return; }
   if (!m || typeof m !== 'object') return;
-  // The stream starts with the last half hour's messages. A reply that names one of this visit's hellos is
-  // live, and so is anything the PC wrote after that reply (by the PC's own clock, so the two clocks needn't agree).
+  // The retained list can be minutes old. A reply that names one of this visit's hellos is live, and so is anything
+  // the PC wrote after that reply (by the PC's own clock, so the two clocks needn't agree).
   const live = Boolean(m.re && S.hellos.includes(m.re)) || (S.pcAt > 0 && (m.at || 0) >= S.pcAt);
   if (live) { S.heardAt = Date.now(); S.quiet = false; S.pcAt = Math.max(S.pcAt, m.at || 0); }
   if (m.t === 'snap') {
@@ -225,22 +265,6 @@ async function handle(text) {
     flash(`Paired · code ${m.code}`);
   }
   renderState();
-}
-
-// One connection does both: the last half hour (so the screen fills at once) and then whatever comes next.
-function openStream() {
-  if (S.stream || S.paused) return;
-  S.stream = new EventSource(`${downTopic()}/sse?since=30m`);
-  S.stream.addEventListener('message', (e) => {
-    try {
-      const ev = JSON.parse(e.data);
-      if (ev.event === 'message' && ev.message) handle(ev.message);
-    } catch (err) { /* keepalive */ }
-  });
-}
-
-function closeStream() {
-  if (S.stream) { S.stream.close(); S.stream = null; }
 }
 
 // Yes/no facts about this browser, sent once per visit so the PC can record what the glasses support. Only whether
@@ -271,7 +295,7 @@ function wake() {
   armIdle();
   if (!was) return;
   S.askedAt = Date.now();
-  openStream();
+  openLink();
   hello();
   clearInterval(S.hello);
   S.hello = setInterval(hello, HELLO_MS);
@@ -280,7 +304,7 @@ function wake() {
 
 function sleep(reason) {
   S.paused = true;
-  closeStream();
+  closeLink();
   clearInterval(S.hello);
   clearTimeout(S.idle);
   clearTimeout(S.answer);
@@ -331,6 +355,7 @@ function renderState() {
   else if (!S.kUp) text = '';
   else if (S.pairing) { text = 'Not paired'; tone = 'warn'; }
   else if (S.paused) text = S.snap ? `Paused · ${clock(S.snap.at)}` : 'Paused';
+  else if (!linkUp() && !S.snap) text = 'Connecting…';
   else if (S.quiet && !S.snap) { text = 'PC not answering'; tone = 'warn'; }
   else if (!S.snap) text = 'Asking your PC…';
   else if (S.quiet) { text = `PC quiet · ${clock(S.snap.at)}`; tone = 'warn'; }
