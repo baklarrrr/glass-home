@@ -22,14 +22,21 @@ const DAILY_SENDS = 30;
 const HELP_OPTIONS = ['Give me THREE good options.', 'Unjumble this for me.'];
 
 const SITE = 'https://baklarrrr.github.io/';
-const APPS = [
-  { group: 'Studio', name: 'Bakar Studio', path: 'studio-glass/', why: 'Renders, AI at work and today’s AI cost', pass: 'sg' },
-  { group: 'Listen', name: 'Tidal', path: 'tidal-glass/', why: 'Now playing and controls', pass: 'tg' },
-  { group: 'Listen', name: 'Sound Lab', path: 'tidal-glass/sound/', why: 'EQ, tone and loudness for the glasses’ speakers', pass: 'tg' },
-  { group: 'Faith', name: 'Quran', path: 'quran-glass/', why: 'Follow a recitation word by word' },
+// The Apps and Games lists live in apps.json so another session can add an app or a game without touching this
+// code. These are used when it can't be read.
+let APPS = [
+  { group: 'Studio', name: 'Bakar Studio', url: SITE + 'studio-glass/', why: 'Renders, AI at work and today’s AI cost', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
+  { group: 'Listen', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Now playing and controls', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Listen', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'EQ, tone and loudness for the glasses’ speakers', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
+  { group: 'Watch', name: 'Watchlight', url: 'https://watchlight.heralds.gg/', why: 'YouTube on the glasses, from Herald', icon: 'play' },
+  { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
 ];
-// Web games added to the glasses go here, so they stay out of Work and Apps.
-const GAMES = [];
+let GAMES = [];
+const GLYPHS = {
+  play: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='14' width='52' height='36' rx='9' fill='%23fff' opacity='.45'/%3E%3Cpath d='M27 23v18l15-9z' fill='%23fff'/%3E%3C/svg%3E",
+  game: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M18 20h28a12 12 0 0 1 11.6 15l-3 11a6 6 0 0 1-10.4 2L40 43H24l-4.2 5A6 6 0 0 1 9.4 46l-3-11A12 12 0 0 1 18 20z' fill='%23fff'/%3E%3C/svg%3E",
+  app: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='10' width='44' height='44' rx='12' fill='%23fff'/%3E%3C/svg%3E",
+};
 
 const $ = (id) => document.getElementById(id);
 const enc = (s) => new TextEncoder().encode(s);
@@ -425,9 +432,11 @@ function renderDetail() {
         opts.append(b);
       });
     } else {
-      $('dQNote').textContent = d.p === 'x'
+      // Its choices are shown so he can decide now, then answer where the session lives.
+      const choices = (q.opts || []).length ? `Choices: ${q.opts.join(' · ')}. ` : '';
+      $('dQNote').textContent = choices + (d.p === 'x'
         ? 'Answer this in Codex on your PC.'
-        : 'Answer this at your PC, or in the Claude app on your phone.';
+        : 'Answer this at your PC, or in the Claude app on your phone.');
     }
   }
   const res = $('dResult');
@@ -456,10 +465,22 @@ function renderDetail() {
 function appRow(app) {
   const b = el('button', 'row app');
   const icon = el('span', 'icon');
-  icon.style.setProperty('--icon', `url("${SITE}${app.path}icon-mono.svg")`);
-  b.append(icon, el('span', 'ti', app.name), el('span', 'why', app.why));
+  const src = GLYPHS[app.icon] || (app.icon ? SITE + app.icon : GLYPHS.app);
+  icon.style.setProperty('--icon', `url("${src}")`);
+  b.append(icon, el('span', 'ti', app.name), el('span', 'why', app.why || ''));
   b.addEventListener('click', () => launch(app));
   return b;
+}
+
+async function loadApps() {
+  try {
+    const r = await fetch('apps.json', { cache: 'no-cache' });
+    const list = await r.json();
+    const ok = (a) => a && typeof a.name === 'string' && /^https:\/\//.test(a.url || '');
+    if (Array.isArray(list.apps)) APPS = list.apps.filter(ok);
+    if (Array.isArray(list.games)) GAMES = list.games.filter(ok);
+  } catch (e) { /* the built-in list stays */ }
+  renderApps();
 }
 
 function renderApps() {
@@ -485,7 +506,7 @@ function renderApps() {
 }
 
 function launch(app) {
-  let url = SITE + app.path;
+  let url = app.url;
   const pass = app.pass && S.fragment.get(app.pass);
   if (pass && pass.includes('~')) {
     const [t, k] = pass.split('~');
@@ -752,6 +773,7 @@ async function main() {
   document.addEventListener('visibilitychange', () => (document.visibilityState === 'visible' ? wake() : sleep('hidden')));
   window.addEventListener('pagehide', () => sleep('hidden'));
   renderApps();
+  loadApps();
   const start = ['work', 'apps', 'games'].includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'work';
   history.replaceState({ v: 'list', tab: start }, '');
   S.tab = start;

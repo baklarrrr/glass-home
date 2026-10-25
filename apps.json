@@ -1,0 +1,11 @@
+{
+  "about": "Bakar Home's Apps and Games lists. Add an app or a web game here (an https URL that opens on the glasses); games go under games so they stay apart from work. icon: a path on baklarrrr.github.io to a monochrome SVG, or one of: play, game, app. pass: which pairing in Bakar Home's own address to hand on (sg = Studio Glass, tg = Tidal Glass).",
+  "apps": [
+    { "group": "Studio", "name": "Bakar Studio", "url": "https://baklarrrr.github.io/studio-glass/", "why": "Renders, AI at work and today’s AI cost", "icon": "studio-glass/icon-mono.svg", "pass": "sg" },
+    { "group": "Listen", "name": "Tidal", "url": "https://baklarrrr.github.io/tidal-glass/", "why": "Now playing and controls", "icon": "tidal-glass/icon-mono.svg", "pass": "tg" },
+    { "group": "Listen", "name": "Sound Lab", "url": "https://baklarrrr.github.io/tidal-glass/sound/", "why": "EQ, tone and loudness for the glasses’ speakers", "icon": "tidal-glass/sound/icon-mono.svg", "pass": "tg" },
+    { "group": "Watch", "name": "Watchlight", "url": "https://watchlight.heralds.gg/", "why": "YouTube on the glasses, from Herald", "icon": "play" },
+    { "group": "Faith", "name": "Quran", "url": "https://baklarrrr.github.io/quran-glass/", "why": "Follow a recitation word by word", "icon": "quran-glass/icon-mono.svg" }
+  ],
+  "games": []
+}
