@@ -35,7 +35,12 @@ svg { fill: currentColor; }
 .tab { font-size: 17px; font-weight: 650; color: var(--faint); padding: 6px 12px 7px; border-radius: 999px; border: 1.5px solid transparent; outline: none; }
 .tab[aria-selected="true"] { color: var(--ink); border-color: var(--hair); }
 .tab:focus { color: var(--ink); border-color: var(--mint); background: var(--mint-soft); box-shadow: var(--glow); }
+.side { display: inline-flex; align-items: center; gap: 12px; min-inline-size: 0; }
 .state { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--dim); white-space: nowrap; min-inline-size: 0; }
+.gbat { display: inline-flex; align-items: center; gap: 3px; font-size: 14px; color: var(--soft); font-variant-numeric: tabular-nums; }
+.gbat svg { inline-size: 18px; block-size: 18px; }
+.gbat.low { color: #ffb08a; }
+.gbat.charging { color: var(--mint); }
 #stateText { overflow: hidden; text-overflow: ellipsis; }
 .dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--faint); flex: none; }
 .dot.live { background: var(--mint); box-shadow: 0 0 7px var(--mint); }
@@ -143,6 +148,29 @@ h1 { font-size: 28px; }
 .code { font-size: 30px; font-weight: 700; letter-spacing: 0.18em; color: var(--warn); font-variant-numeric: tabular-nums; }
 .code:empty { display: none; }
 
+/* ---- calm: less light while nobody is touching it ----------------------------------------------------------
+   After 15 s without a swipe or pinch on a list or a session, secondary text, borders, icons and the question box
+   dim and the focus glow rests to a thin ring, so the display puts out less light. Titles, the question and the
+   result text stay as they are; the first swipe or pinch restores everything at once and still does its job. */
+body.calm .summary, body.calm .row .why, body.calm .row .age, body.calm .row .tag, body.calm .state, body.calm .gbat,
+body.calm .dmeta, body.calm .dnow, body.calm .dasked, body.calm .group, body.calm .note,
+body.calm .tab:not([aria-selected="true"]), body.calm .label { opacity: 0.6; }
+body.calm .row .mark { box-shadow: none; opacity: 0.75; }
+body.calm .dot.live { box-shadow: none; }
+body.calm .row.app .icon { background: var(--dim); }
+body.calm .tab[aria-selected="true"], body.calm .row.new, body.calm .btn, body.calm .result { border-color: rgba(255, 255, 255, 0.16); }
+body.calm .row.new .plus, body.calm .btn { color: var(--dim); }
+body.calm .question { background: transparent; border-color: rgba(244, 206, 144, 0.3); }
+body.calm .row:focus, body.calm .tab:focus, body.calm .btn:focus, body.calm .result:focus {
+  background: transparent; box-shadow: none; border-color: rgba(139, 219, 182, 0.45);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .row, .btn, .tab { transition: box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease; }
+  /* Easing into calm is slow so it never draws the eye; waking is instant (no transition back). */
+  body.calm .summary, body.calm .row .why, body.calm .row .age, body.calm .row .tag, body.calm .state, body.calm .gbat,
+  body.calm .dmeta, body.calm .dnow, body.calm .dasked, body.calm .group, body.calm .note, body.calm .label,
+  body.calm .tab, body.calm .row, body.calm .btn, body.calm .question, body.calm .row .mark, body.calm .row.app .icon {
+    transition: opacity 900ms ease, border-color 900ms ease, background-color 900ms ease, box-shadow 900ms ease, color 900ms ease;
+  }
 }

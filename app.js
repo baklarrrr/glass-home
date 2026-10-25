@@ -60,7 +60,7 @@ function addressParams() {
 
 const S = {
   topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [], linkId: '', spareTimer: 0,
-  mqttTries: 0, mqttLoading: false,
+  mqttTries: 0, mqttLoading: false, calmTimer: 0, tg: null, battery: null, tidalLast: '',
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
   paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
@@ -237,11 +237,17 @@ function addBroker(url, extra = {}) {
     reconnectPeriod: 1500, connectTimeout: 8000, ...extra,
   });
   client.on('connect', () => {
-    client.subscribe([`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`], { qos: 1 });
+    const topics = [`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`];
+    if (S.tg) topics.push(`bkr/${S.tg.t}/s`); // Tidal Glass's state, read only, for the glasses' battery
+    client.subscribe(topics, { qos: 1 });
     flushOutbox();
     linkChanged();
   });
-  client.on('message', (t, payload) => handle(new TextDecoder().decode(payload)));
+  client.on('message', (t, payload) => {
+    const text = new TextDecoder().decode(payload);
+    if (S.tg && t === `bkr/${S.tg.t}/s`) handleTidal(text);
+    else handle(text);
+  });
   client.on('offline', linkChanged);
   client.on('close', linkChanged);
   client.on('error', () => { /* mqtt.js reconnects by itself */ });
@@ -346,6 +352,7 @@ function wake() {
 function sleep(reason) {
   S.paused = true;
   closeLink();
+  if (reason === 'hidden') { clearTimeout(S.calmTimer); S.calmTimer = 0; }
   clearInterval(S.hello);
   clearTimeout(S.idle);
   clearTimeout(S.answer);
@@ -360,6 +367,68 @@ function watchingOwnTask() {
 function armIdle() {
   clearTimeout(S.idle);
   S.idle = setTimeout(() => sleep('idle'), watchingOwnTask() ? WATCH_MS : IDLE_MS);
+}
+
+// ---- glasses battery -------------------------------------------------------------------------------
+// The phone's Tidal Glass app reports the glasses' battery (5% steps) in Tidal Glass's retained state. Tidal Glass
+// is on this same site, so its pairing ('tg.pair') is readable here. Bakar Home only listens on that topic and
+// decrypts; it never publishes there. No Tidal pairing, or no battery in the state: no chip.
+
+async function setupBattery() {
+  let pair = null;
+  try { pair = JSON.parse(localStorage.getItem('tg.pair') || 'null'); } catch (e) { pair = null; }
+  if (!pair || !pair.t || !pair.k || !window.crypto || !crypto.subtle) return;
+  try {
+    const key = await crypto.subtle.importKey('raw', fromB64url(pair.k), 'AES-GCM', false, ['decrypt']);
+    S.tg = { t: pair.t, key };
+  } catch (e) { S.tg = null; }
+}
+
+async function handleTidal(text) {
+  if (!text || text === S.tidalLast) return; // the same state from the other broker
+  S.tidalLast = text;
+  let m;
+  try {
+    const buf = fromB64url(text.trim());
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, S.tg.key, buf.slice(12));
+    m = JSON.parse(new TextDecoder().decode(plain));
+  } catch (e) { return; }
+  if (!m || m.t !== 'state') return;
+  if (S.battery && m.at && S.battery.at && m.at < S.battery.at) return;
+  S.battery = Number.isFinite(m.gb) ? { gb: m.gb, gc: Boolean(m.gc), at: m.at || Date.now() } : null;
+  renderBattery();
+}
+
+function renderBattery() {
+  const b = S.battery;
+  const chip = $('gbat');
+  // A reading over 30 minutes old (the phone app stopped, say) is hidden rather than shown as current.
+  const fresh = Boolean(b) && Date.now() - (b.at || 0) < 30 * 60 * 1000;
+  chip.hidden = !fresh;
+  if (!fresh) return;
+  $('gbatText').textContent = `${b.gb}%`;
+  $('gbatFill').setAttribute('width', String(Math.max(1, (13.4 * b.gb) / 100)));
+  chip.classList.toggle('charging', b.gc);
+  chip.classList.toggle('low', !b.gc && b.gb <= 15);
+  chip.setAttribute('aria-label', `Glasses battery ${b.gb}%${b.gc ? ', charging' : ''}`);
+}
+
+// ---- calm: less light while nobody is touching it --------------------------------------------------
+// After CALM_AFTER without a swipe or pinch on a list or a session, the page dims what doesn't need full light
+// (see style.css). The first input wakes it at once and is handled as usual. One timer, reset by input; none while
+// the app is hidden.
+const CALM_AFTER = 15000;
+const CALM_PANES = ['work', 'detail', 'apps', 'games'];
+
+function enterCalm() {
+  const pane = PANES.find((p) => !$(p).hidden);
+  if (CALM_PANES.includes(pane) && document.visibilityState === 'visible') document.body.classList.add('calm');
+}
+
+function wakeUp() {
+  document.body.classList.remove('calm');
+  clearTimeout(S.calmTimer);
+  S.calmTimer = document.visibilityState === 'visible' ? setTimeout(enterCalm, CALM_AFTER) : 0;
 }
 
 // ---- words -----------------------------------------------------------------------------------------
@@ -617,6 +686,7 @@ const PANES = ['work', 'detail', 'compose', 'apps', 'games', 'pair'];
 
 function showPane(id) {
   for (const p of PANES) $(p).hidden = p !== id;
+  if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['work', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
@@ -904,9 +974,14 @@ async function main() {
     $('cText').focus();
   });
   $('pRetry').addEventListener('click', () => { if (S.paused) wake(); else hello(); });
+  // Any swipe or pinch wakes the page from calm before anything else handles it (and is still handled).
+  document.addEventListener('keydown', wakeUp, true);
+  document.addEventListener('pointerdown', wakeUp, true);
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('popstate', (e) => apply(e.state));
-  document.addEventListener('visibilitychange', () => (document.visibilityState === 'visible' ? wake() : sleep('hidden')));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else sleep('hidden');
+  });
   window.addEventListener('pagehide', () => sleep('hidden'));
   renderApps();
   loadApps();
@@ -915,6 +990,8 @@ async function main() {
   S.tab = start;
   let ready = false;
   try { ready = await setupKeys(); } catch (e) { ready = false; }
+  try { await setupBattery(); } catch (e) { S.tg = null; }
+  wakeUp();
   renderWork();
   showPane(start);
   focusFirst(start);
