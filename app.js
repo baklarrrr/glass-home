@@ -3,8 +3,9 @@
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
 //
-// The link: two free public MQTT brokers at once (EMQX and HiveMQ), the same link Tidal Glass and Studio Glass use.
-// No account, no daily cap, and either broker can be down without anything stopping. The PC keeps the latest
+// The link: two free public MQTT brokers at once (EMQX and HiveMQ), with shiftr.io on port 443 as a spare: the same
+// link Tidal Glass and Studio Glass use. No account, no daily cap, and any broker can be down without anything
+// stopping. The PC keeps the latest
 // session list retained there, so the list shows the moment a broker connects.
 //
 // Privacy: the brokers only carry ciphertext. The first time it runs, this page makes a P-256 key pair and keeps
@@ -17,6 +18,10 @@
 // while you watch a task you started). Times are clock times, so nothing ticks.
 
 const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+// shiftr.io's public instance on port 443, for networks that let only web traffic through. The PC is always on it
+// too; the glasses join it only when neither broker above connects within 5 s, or 5 s after both drop.
+const SPARE = { url: 'wss://public.cloud.shiftr.io', username: 'public', password: 'public' };
+const SPARE_AFTER = 5000;
 const OUTBOX_MAX_AGE = 60 * 1000;   // the PC drops commands older than 90 seconds
 const IDLE_MS = 90 * 1000;
 const WATCH_MS = 10 * 60 * 1000;
@@ -54,7 +59,8 @@ function addressParams() {
 }
 
 const S = {
-  topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [],
+  topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [], linkId: '', spareTimer: 0,
+  mqttTries: 0, mqttLoading: false,
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
   snap: null, details: {}, view: 'list', tab: 'work', open: '',
   paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
@@ -195,30 +201,65 @@ function linkUp() {
   return S.links.some((l) => l.connected);
 }
 
-function openLink() {
-  if (S.links.length || !S.kUp || typeof mqtt === 'undefined') return;
-  const id = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
-  for (const url of BROKERS) {
-    const client = mqtt.connect(url, {
-      clientId: `ghg-${id}-${S.links.length}`, clean: true, keepalive: 45, protocolVersion: 4,
-      reconnectPeriod: 1500, connectTimeout: 8000,
-    });
-    client.on('connect', () => {
-      client.subscribe([`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`], { qos: 1 });
-      flushOutbox();
-      renderState();
-    });
-    client.on('message', (t, payload) => handle(new TextDecoder().decode(payload)));
-    client.on('offline', renderState);
-    client.on('close', renderState);
-    client.on('error', () => { /* mqtt.js reconnects by itself */ });
-    S.links.push(client);
+function linkChanged() {
+  // Both main brokers down for 5 s (a network that lets only web traffic through, say): add the spare.
+  if (!linkUp() && S.links.length && !S.spareTimer && !S.links.some((l) => l.spare)) {
+    S.spareTimer = setTimeout(openSpare, SPARE_AFTER);
   }
+  renderState();
+}
+
+// The link library is a large file. On the first launch after an update the previous offline copy of this app can
+// give up on it before it arrives, so it is fetched again for about half a minute instead of waiting silently.
+function loadMqtt() {
+  if (S.mqttLoading || S.mqttTries >= 10) return;
+  S.mqttLoading = true;
+  S.mqttTries += 1;
+  const tag = document.createElement('script');
+  tag.src = `vendor/mqtt.min.js?try=${S.mqttTries}`;
+  tag.onload = () => { S.mqttLoading = false; if (!S.paused) openLink(); };
+  tag.onerror = () => { S.mqttLoading = false; tag.remove(); setTimeout(loadMqtt, 3000); };
+  document.head.append(tag);
+}
+
+function openLink() {
+  if (S.links.length || !S.kUp) return;
+  if (typeof mqtt === 'undefined') { loadMqtt(); return; }
+  S.linkId = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
+  for (const url of BROKERS) addBroker(url);
+  S.spareTimer = setTimeout(openSpare, SPARE_AFTER);
+}
+
+function addBroker(url, extra = {}) {
+  // Random ids: shiftr.io shows client ids on a public dashboard.
+  const client = mqtt.connect(url, {
+    clientId: `ghg-${S.linkId}-${S.links.length}`, clean: true, keepalive: 45, protocolVersion: 4,
+    reconnectPeriod: 1500, connectTimeout: 8000, ...extra,
+  });
+  client.on('connect', () => {
+    client.subscribe([`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`], { qos: 1 });
+    flushOutbox();
+    linkChanged();
+  });
+  client.on('message', (t, payload) => handle(new TextDecoder().decode(payload)));
+  client.on('offline', linkChanged);
+  client.on('close', linkChanged);
+  client.on('error', () => { /* mqtt.js reconnects by itself */ });
+  S.links.push(client);
+  return client;
+}
+
+function openSpare() {
+  S.spareTimer = 0;
+  if (!S.links.length || linkUp() || S.links.some((l) => l.spare)) return;
+  addBroker(SPARE.url, { username: SPARE.username, password: SPARE.password }).spare = true;
 }
 
 function closeLink() {
   const old = S.links;
   S.links = [];
+  clearTimeout(S.spareTimer);
+  S.spareTimer = 0;
   for (const l of old) { try { l.end(true); } catch (e) { /* already closed */ } }
 }
 
