@@ -18,6 +18,7 @@
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
       <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
       <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
+      <span id="tabline" class="tabline" aria-hidden="true"></span>
     </nav>
     <span class="side">
       <span id="gbat" class="gbat" hidden aria-label="Glasses battery">
@@ -32,15 +33,17 @@
 
   <main>
     <section id="work" class="pane" role="tabpanel" aria-labelledby="tab-work">
-      <p id="summary" class="summary"></p>
-      <button id="newTask" class="row new" hidden><span class="plus" aria-hidden="true">+</span><span class="ti">New task for Claude or Codex</span></button>
+      <div class="sumline">
+        <p id="summary" class="summary"></p>
+        <button id="newTask" class="pill new" hidden><span class="plus" aria-hidden="true">+</span>New task</button>
+      </div>
       <ol id="rows" class="rows"></ol>
     </section>
 
     <section id="detail" class="pane" hidden aria-label="Session">
       <div class="dhead">
-        <p id="dTitle" class="dtitle"></p>
         <p id="dMeta" class="dmeta"></p>
+        <p id="dTitle" class="dtitle"></p>
         <p id="dNow" class="dnow"></p>
         <p id="dAsked" class="dasked"></p>
       </div>
@@ -50,7 +53,10 @@
         <div id="dOptions" class="options"></div>
         <p id="dQNote" class="note"></p>
       </div>
-      <div id="dResult" class="result" tabindex="0" aria-label="Latest from this session"></div>
+      <div class="rwrap">
+        <div id="dResult" class="result" tabindex="0" aria-label="Latest from this session"></div>
+        <span class="rtrack" aria-hidden="true"><span id="rThumb" class="rthumb"></span></span>
+      </div>
       <div id="dActions" class="actions"></div>
     </section>
 
@@ -80,11 +86,10 @@
     </section>
 
     <section id="pair" class="pane center" hidden aria-label="Pairing">
-      <svg class="hero" viewBox="0 0 64 64" aria-hidden="true"><use href="icon-mono.svg#glyph"/></svg>
       <h1 id="pTitle"></h1>
-      <p id="pText" class="subline"></p>
       <p id="pCode" class="code"></p>
-      <button id="pRetry" class="btn">Try again</button>
+      <p id="pText" class="subline"></p>
+      <button id="pRetry" class="btn primary">Try again</button>
     </section>
   </main>
   <script src="vendor/mqtt.min.js"></script>

@@ -581,17 +581,27 @@ function renderWork() {
   });
   const can = s.can || {};
   $('newTask').hidden = !(can.new && can.new.length);
-  for (const r of s.rows || []) {
+  (s.rows || []).forEach((r, i) => {
     const li = el('li');
-    const b = el('button', `row ${r.st}`);
+    const why = r.st === 'work' && !r.why ? 'Working' : r.why;
+    // The first session is the hero: the same row in the same place in the order, drawn with more presence.
+    const b = el('button', `row ${r.st}${i === 0 ? ' hero' : ''}`);
     b.dataset.k = r.k;
-    b.append(el('span', `mark ${r.st}`), el('span', 'ti', r.ti), el('span', 'tag', (r.own ? 'Glasses · ' : '') + PROVIDER[r.p]));
-    b.append(el('span', 'why', r.st === 'work' && !r.why ? 'Working' : r.why), el('span', 'age', age(r.at)));
+    if (i === 0) {
+      const kicker = el('span', 'kicker');
+      const meta = el('span', 'km', ` · ${r.own ? 'Glasses · ' : ''}${PROVIDER[r.p]} · `);
+      meta.append(el('span', 'ag', age(r.at)));
+      kicker.append(el('span', 'st', STATUS[r.st]), meta);
+      b.append(kicker, el('span', 'ti', r.ti), el('span', 'why', why));
+    } else {
+      b.append(el('span', `mark ${r.st}`), el('span', 'ti', r.ti), el('span', 'tag', (r.own ? 'Glasses · ' : '') + PROVIDER[r.p]));
+      b.append(el('span', 'why', why), el('span', 'age', age(r.at)));
+    }
     b.setAttribute('aria-label', `${r.ti}. ${PROVIDER[r.p]}. ${STATUS[r.st]}. ${r.why}`);
     b.addEventListener('click', () => openDetail(r.k));
     li.append(b);
     list.append(li);
-  }
+  });
   if (s.more) list.append(el('li', 'empty', `${s.more} more on your PC`));
   if (focusedKey) {
     const again = list.querySelector(`[data-k="${CSS.escape(focusedKey)}"]`);
@@ -655,6 +665,7 @@ function renderDetail() {
   }
   const res = $('dResult');
   res.textContent = S.details[k] ? (d.res || (d.st === 'work' ? 'Nothing to report yet.' : 'No message yet.')) : 'Loading…';
+  requestAnimationFrame(updateGauge);
 
   const actions = $('dActions');
   actions.textContent = '';
@@ -670,6 +681,12 @@ function renderDetail() {
     b.addEventListener('click', () => startCompose({ mode: 'stop', k }));
     actions.append(b);
   }
+  if ('speechSynthesis' in window && S.details[k]) {
+    const b = el('button', 'btn', S.speaking === k ? 'Stop reading' : 'Read aloud');
+    b.dataset.f = 'read';
+    b.addEventListener('click', () => readAloud(k));
+    actions.append(b);
+  }
   if (focusId) {
     const again = document.querySelector(`[data-f="${focusId}"]`);
     if (again) again.focus({ preventScroll: true });
@@ -680,11 +697,61 @@ function renderDetail() {
   }
 }
 
+// The hairline gauge beside a long result: where you are in it. Shown only when there is more to read.
+function updateGauge() {
+  const r = $('dResult');
+  const wrap = r.parentElement;
+  const max = r.scrollHeight - r.clientHeight;
+  const scrolls = max > 4;
+  wrap.classList.toggle('scrolls', scrolls);
+  r.classList.toggle('above', scrolls && r.scrollTop > 2);
+  r.classList.toggle('below', scrolls && r.scrollTop < max - 2);
+  if (!scrolls) return;
+  const track = wrap.clientHeight - 16;
+  const thumb = Math.max(24, (track * r.clientHeight) / r.scrollHeight);
+  const t = $('rThumb');
+  t.style.blockSize = `${thumb}px`;
+  t.style.transform = `translateY(${((track - thumb) * r.scrollTop) / max}px)`;
+}
+
+// Read aloud through the glasses' speaker, on request only: the title, its state, the question, then the result.
+function readAloud(k) {
+  const synth = window.speechSynthesis;
+  if (S.speaking === k) { stopReading(); renderDetail(); return; }
+  const d = S.details[k];
+  if (!d) return;
+  synth.cancel();
+  const parts = [`${d.ti}.`, `${PROVIDER[d.p]}, ${STATUS[d.st].toLowerCase()}.`];
+  if (d.q) parts.push(`Question: ${d.q.text}`);
+  if (d.res) parts.push(d.res.replace(/•/g, '').slice(0, 1200));
+  const u = new SpeechSynthesisUtterance(parts.join(' '));
+  const done = () => {
+    clearInterval(S.speakCheck);
+    if (S.speaking !== k) return;
+    S.speaking = '';
+    if (S.view === 'detail' && S.open === k) renderDetail();
+  };
+  u.onend = done;
+  u.onerror = done;
+  S.speaking = k;
+  synth.speak(u);
+  renderDetail();
+  // In case the end of speech is never reported, look once a second while reading (and only then).
+  clearInterval(S.speakCheck);
+  S.speakCheck = setInterval(() => { if (!synth.speaking && !synth.pending) done(); }, 1000);
+}
+
+function stopReading() {
+  clearInterval(S.speakCheck);
+  if (S.speaking && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+  S.speaking = '';
+}
+
 function appRow(app) {
   const b = el('button', 'row app');
   const icon = el('span', 'icon');
-  const src = GLYPHS[app.icon] || (app.icon ? SITE + app.icon : GLYPHS.app);
-  icon.style.setProperty('--icon', `url("${src}")`);
+  if (app.icon && !GLYPHS[app.icon]) icon.dataset.src = SITE + app.icon;
+  icon.style.setProperty('--icon', `url("${iconSrc(app)}")`);
   b.append(icon, el('span', 'ti', app.name), el('span', 'why', app.why || ''));
   b.addEventListener('click', () => launch(app));
   return b;
@@ -699,6 +766,7 @@ async function loadApps() {
     if (Array.isArray(list.games)) GAMES = list.games.filter(ok);
   } catch (e) { /* the built-in list stays */ }
   renderApps();
+  keepIcons();
 }
 
 function renderApps() {
@@ -721,6 +789,39 @@ function renderApps() {
   $('gamesNote').textContent = GAMES.length
     ? 'Games stay here, away from Work and Apps.'
     : 'No web games added yet. Games you add will appear here, away from Work and Apps. Meta’s own games stay in the glasses’ main app list.';
+}
+
+// App icons are kept here as data: addresses, so a section paints with its icons on its first frame; an icon fetched
+// from the site arrives a few frames after its section has slid in. Refreshed in place at most once a day.
+const ICONS_KEY = 'glass-home.icons';
+const iconsKept = local(ICONS_KEY) || {};
+let iconData = iconsKept.data || {};
+
+function iconSrc(app) {
+  if (GLYPHS[app.icon]) return GLYPHS[app.icon];
+  if (!app.icon) return GLYPHS.app;
+  return iconData[SITE + app.icon] || SITE + app.icon;
+}
+
+async function keepIcons() {
+  const wanted = [...new Set(APPS.concat(GAMES).filter((a) => a.icon && !GLYPHS[a.icon]).map((a) => SITE + a.icon))];
+  if (Date.now() - (iconsKept.at || 0) < 86400000 && wanted.every((url) => iconData[url])) return;
+  const kept = {};
+  for (const url of wanted) {
+    kept[url] = iconData[url];
+    try {
+      const r = await fetch(url);
+      const svg = r.ok ? await r.text() : '';
+      if (svg.length < 20000 && /<svg[\s>]/i.test(svg)) kept[url] = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    } catch (e) { /* keep what we had */ }
+  }
+  for (const url of Object.keys(kept)) if (!kept[url]) delete kept[url];
+  local(ICONS_KEY, { at: Date.now(), data: kept });
+  if (JSON.stringify(kept) === JSON.stringify(iconData)) return;
+  iconData = kept;
+  for (const icon of document.querySelectorAll('.row.app .icon[data-src]')) {
+    if (iconData[icon.dataset.src]) icon.style.setProperty('--icon', `url("${iconData[icon.dataset.src]}")`);
+  }
 }
 
 function launch(app) {
@@ -752,8 +853,12 @@ function closePairing() {
 // ---- screens and history ---------------------------------------------------------------------------
 
 const PANES = ['work', 'detail', 'compose', 'apps', 'games', 'pair'];
+const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DEPTH = { work: 0, apps: 0, games: 0, pair: 0, detail: 1, compose: 2 };
+const TABS = ['work', 'apps', 'games'];
 
 function showPane(id) {
+  const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['work', 'apps', 'games', 'pair'].includes(id);
@@ -761,6 +866,46 @@ function showPane(id) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
     t.tabIndex = listView ? 0 : -1;
   }
+  placeTabline();
+  // Continuity: deeper screens come in from the right and go back to the left; sections slide the way you swiped.
+  if (MOTION && before && before !== id && $(id).animate) {
+    let dir = Math.sign(DEPTH[id] - DEPTH[before]);
+    if (!dir) dir = S.slide || Math.sign(TABS.indexOf(id) - TABS.indexOf(before)) || 1;
+    // Mostly a slide: opacity starts at 0.92 (about 83% of the light), because a dark first frame between screens
+    // reads as a blink on a see-through display.
+    $(id).animate([{ opacity: 0.92, transform: `translateX(${dir * 22}px)` }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+  }
+  S.slide = 0;
+}
+
+// The section underline glides to the selected section (transform only).
+function placeTabline() {
+  const t = document.querySelector(`.tab[data-tab="${S.tab}"]`);
+  const line = $('tabline');
+  if (!t || !line) return;
+  line.style.transform = `translateX(${t.offsetLeft + 12}px) scaleX(${Math.max(1, t.offsetWidth - 24)})`;
+}
+
+// At the end of a list a further press nudges the focus that way and springs it back past rest, so the end is felt
+// rather than silent. Added to the control's own transform, so a lifted row keeps its lift.
+function rubberBand(dy, dx) {
+  if (!MOTION) return;
+  const a = document.activeElement;
+  const target = a && a !== document.body && a.animate ? a : $(PANES.find((p) => !$(p).hidden));
+  if (!target || !target.animate) return;
+  target.animate([
+    { transform: 'translate(0, 0)', easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    { transform: `translate(${dx * 6}px, ${dy * 6}px)`, offset: 0.28, easing: 'cubic-bezier(0.34, 1.45, 0.64, 1)' },
+    { transform: 'translate(0, 0)' },
+  ], { duration: 300, composite: 'add' });
+}
+
+// A press: a short sink and a brighter rim, settled within 100 ms; the control's spring brings it back.
+function press(target) {
+  if (!target || !target.matches || !target.matches('button')) return;
+  target.classList.add('pressing');
+  setTimeout(() => target.classList.remove('pressing'), 90);
 }
 
 function focusFirst(pane) {
@@ -799,6 +944,7 @@ function openDetail(k) {
 function apply(state) {
   closeConfirm();
   if (!state || state.v === 'list') {
+    stopReading();
     const backTo = S.open;
     S.view = 'list';
     S.open = '';
@@ -980,11 +1126,11 @@ function moveFocus(dy, dx) {
   if (dx) {
     const g = groups[gi];
     const next = g[g.indexOf(a) + dx];
-    if (next) next.focus();
+    if (next) next.focus(); else rubberBand(0, dx);
     return;
   }
   gi += dy;
-  if (gi < 0 || gi >= groups.length) return;
+  if (gi < 0 || gi >= groups.length) { rubberBand(dy, 0); return; }
   const g = groups[gi];
   const pick = g.find((n) => n.getAttribute('aria-selected') === 'true' || n.getAttribute('aria-pressed') === 'true') || g[0];
   pick.focus();
@@ -994,6 +1140,7 @@ function moveFocus(dy, dx) {
 function onKey(e) {
   if (document.visibilityState !== 'visible') return;
   if (e.key !== 'Enter') S.lastKeyAt = Date.now();
+  if (e.key === 'Enter' && !e.target.closest('textarea')) press(e.target);
   if (S.paused && S.kUp) wake(); else if (S.kUp) armIdle();
   const k = e.key;
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
@@ -1001,6 +1148,7 @@ function onKey(e) {
     const i = tabs.indexOf(S.tab);
     const next = tabs[(i + (k === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     e.preventDefault();
+    S.slide = k === 'ArrowRight' ? 1 : -1;
     selectTab(next, Boolean(e.target.closest('.tabs')));
     return;
   }
@@ -1009,7 +1157,7 @@ function onKey(e) {
     const down = k === 'ArrowDown';
     const room = down ? r.scrollHeight - r.clientHeight - r.scrollTop : r.scrollTop;
     e.preventDefault();
-    if (room > 2) r.scrollBy({ top: down ? 150 : -150 });
+    if (room > 2) r.scrollBy({ top: down ? 150 : -150, behavior: MOTION ? 'smooth' : 'auto' });
     else moveFocus(down ? 1 : -1, 0);
     return;
   }
@@ -1046,12 +1194,17 @@ async function main() {
   // Any swipe or pinch wakes the page from calm before anything else handles it (and is still handled).
   document.addEventListener('keydown', wakeUp, true);
   document.addEventListener('pointerdown', wakeUp, true);
+  document.addEventListener('pointerdown', (e) => press(e.target.closest && e.target.closest('button')), true);
   document.addEventListener('keydown', onKey, true);
+  $('dResult').addEventListener('scroll', updateGauge, { passive: true });
+  for (const id of ['rows', 'appRows', 'gameRows']) {
+    $(id).addEventListener('scroll', (e) => e.target.classList.toggle('scrolled', e.target.scrollTop > 2), { passive: true });
+  }
   window.addEventListener('popstate', (e) => apply(e.state));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else sleep('hidden');
+    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else { stopReading(); sleep('hidden'); }
   });
-  window.addEventListener('pagehide', () => sleep('hidden'));
+  window.addEventListener('pagehide', () => { stopReading(); sleep('hidden'); });
   // The network is back (signal again after driving through a dead zone, say): fresh links, tried fast.
   window.addEventListener('online', () => {
     if (!S.kUp || S.paused || document.visibilityState !== 'visible') return;
@@ -1070,6 +1223,7 @@ async function main() {
   wakeUp();
   renderWork();
   showPane(start);
+  requestAnimationFrame(placeTabline);
   focusFirst(start);
   renderState();
   registerServiceWorker();
