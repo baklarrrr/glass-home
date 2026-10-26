@@ -234,13 +234,38 @@ function openLink() {
   for (const b of BROKERS) addBroker(b);
 }
 
+// Retries are scheduled here, not by mqtt.js (reconnectPeriod 0). On 2026-10-25 a Tidal Glass page left open without
+// signal on Bakar's glasses tried every broker about every 2 s for 8.5 minutes, which keeps the radio awake. Now: 1 s
+// for the first three tries, then doubling to 30 s while nothing is connected; a broker that keeps failing while
+// another carries the link backs off to 10 min. A connect, the network coming back ('online') or a new visit starts
+// it fast again.
+function retryDelay(fails, othersUp) {
+  if (othersUp) return Math.min(600000, 1000 * 2 ** Math.min(fails, 10));
+  return fails <= 3 ? 1000 : Math.min(30000, 1000 * 2 ** (fails - 3));
+}
+
+function scheduleRetry(client) {
+  if (client.retryTimer || !S.links.includes(client) || client.connected) return;
+  client.fails = (client.fails || 0) + 1;
+  client.retryTimer = setTimeout(() => {
+    client.retryTimer = 0;
+    if (!S.links.includes(client) || client.connected) return;
+    try { client.reconnect(); } catch (e) { scheduleRetry(client); }
+  }, retryDelay(client.fails, linkUp()));
+}
+
+// Connect timeout 6 s: the slowest good connect the glasses reported was 4.1 s, and a try that hangs costs the whole
+// timeout before the next one.
 function addBroker({ url, ...extra }) {
   // Random ids: shiftr.io shows client ids on a public dashboard.
   const client = mqtt.connect(url, {
     clientId: `ghg-${S.linkId}-${S.links.length}`, clean: true, keepalive: 45, protocolVersion: 4,
-    reconnectPeriod: 1500, connectTimeout: 8000, ...extra,
+    reconnectPeriod: 0, connectTimeout: 6000, ...extra,
   });
   client.on('connect', () => {
+    client.fails = 0;
+    clearTimeout(client.retryTimer);
+    client.retryTimer = 0;
     const topics = [`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`];
     if (S.tg) topics.push(`bkr/${S.tg.t}/s`); // Tidal Glass's state, read only, for the glasses' battery
     client.subscribe(topics, { qos: 1 });
@@ -259,8 +284,8 @@ function addBroker({ url, ...extra }) {
     else handle(text);
   });
   client.on('offline', linkChanged);
-  client.on('close', linkChanged);
-  client.on('error', () => { /* mqtt.js reconnects by itself */ });
+  client.on('close', () => { linkChanged(); scheduleRetry(client); });
+  client.on('error', () => { /* a 'close' follows, and the retry is scheduled there */ });
   S.links.push(client);
   return client;
 }
@@ -270,7 +295,11 @@ function closeLink() {
   S.links = [];
   S.outbox = [];
   S.sentLately = [];   // a reopened link never resends an old hello
-  for (const l of old) { try { l.end(true); } catch (e) { /* already closed */ } }
+  for (const l of old) {
+    clearTimeout(l.retryTimer);
+    l.retryTimer = 0;
+    try { l.end(true); } catch (e) { /* already closed */ }
+  }
 }
 
 function flushOutbox() {
@@ -1023,6 +1052,13 @@ async function main() {
     if (document.visibilityState === 'visible') { wakeUp(); wake(); } else sleep('hidden');
   });
   window.addEventListener('pagehide', () => sleep('hidden'));
+  // The network is back (signal again after driving through a dead zone, say): fresh links, tried fast.
+  window.addEventListener('online', () => {
+    if (!S.kUp || S.paused || document.visibilityState !== 'visible') return;
+    closeLink();
+    openLink();
+    hello();
+  });
   renderApps();
   loadApps();
   const start = ['work', 'apps', 'games'].includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'work';
