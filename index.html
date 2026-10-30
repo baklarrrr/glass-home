@@ -20,6 +20,7 @@
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
       <button class="tab" role="tab" id="tab-watch" data-tab="watch" aria-controls="watch">Watch</button>
+      <button class="tab" role="tab" id="tab-route" data-tab="route" aria-controls="route">Route</button>
       <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
       <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
       <span id="tabline" class="tabline" aria-hidden="true"></span>
@@ -89,6 +90,17 @@
     <section id="watch" class="pane" role="tabpanel" aria-labelledby="tab-watch" hidden>
       <p id="watchLine" class="nowline"></p>
       <ol id="watchRows" class="rows"></ol>
+    </section>
+
+    <section id="route" class="pane" role="tabpanel" aria-labelledby="tab-route" hidden>
+      <p id="routeLine" class="nowline"></p>
+      <svg id="routeMap" class="routemap" viewBox="-40 -40 1080 1080" role="img" aria-label="Outline of the route" hidden>
+        <path id="routeGlow" class="routeglow" pathLength="1"/>
+        <path id="routeTrace" class="routetrace" pathLength="1"/>
+        <circle id="routeEnd" class="routeend" r="26"/>
+        <g id="routeDot" class="routedot"><circle r="30"/></g>
+      </svg>
+      <ol id="routeRows" class="rows"></ol>
     </section>
 
     <section id="play" class="pane" hidden aria-label="Video">

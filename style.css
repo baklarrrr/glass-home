@@ -310,3 +310,21 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
 @keyframes pushopen { from { opacity: 0; scale: 0.55; } to { opacity: 1; scale: 1; } }
 @keyframes pushspin { to { rotate: 360deg; } }
 @keyframes pushin { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
+
+/* Route: a planning view, drawn as light. A thin bright line over a faint wide one, a hollow ring for the arrival, and a
+   dot that follows the turn in focus. Every lit pixel costs battery, so nothing here is filled in. */
+.routemap { display: block; inline-size: 210px; block-size: 210px; margin: 0 auto 4px; overflow: visible; }
+.routemap path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.routeglow { stroke: rgba(var(--accent-rgb), 0.18); stroke-width: 7; }
+.routetrace { stroke: var(--accent); stroke-width: 2; }
+.routeend { fill: none; stroke: var(--ink); stroke-width: 12; }
+.routedot circle { fill: var(--ink); }
+#routeRows { max-block-size: 230px; }
+.row.step { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row.step .ti { flex: 1 1 auto; min-inline-size: 0; white-space: normal; text-align: start; font-size: 18px; line-height: 1.2; }
+.row.step .tag { flex: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .routedot { transition: transform 320ms var(--settle); }
+  .routemap.draw .routetrace, .routemap.draw .routeglow { stroke-dasharray: 1; animation: routedraw 1.4s var(--settle) both; }
+}
+@keyframes routedraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }

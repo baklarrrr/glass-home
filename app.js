@@ -490,7 +490,7 @@ function renderBattery() {
 // (see style.css). The first input wakes it at once and is handled as usual. One timer, reset by input; none while
 // the app is hidden.
 const CALM_AFTER = 15000;
-const CALM_PANES = ['now', 'work', 'detail', 'watch', 'play', 'apps', 'games'];
+const CALM_PANES = ['now', 'work', 'detail', 'watch', 'route', 'play', 'apps', 'games'];
 
 function enterCalm() {
   const pane = PANES.find((p) => !$(p).hidden);
@@ -557,6 +557,7 @@ function flash(text) {
 function renderWork() {
   renderNow();
   renderWatch();
+  renderRoute();
   const s = S.snap;
   const list = $('rows');
   const focusedKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : '';
@@ -780,6 +781,52 @@ function clockTime(sec) {
   const m = Math.floor((sec % 3600) / 60);
   const s = String(sec % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+// ---- route: a parked preview, drawn from relay/route.py ---------------------------------------------
+
+function fitDistance(km) { return km < 1 ? `${Math.round(km * 1000)} m` : `${km} km`; }
+
+function renderRoute() {
+  const r = (S.snap && S.snap.rt) || {};
+  const line = $('routeLine');
+  const map = $('routeMap');
+  const list = $('routeRows');
+  if (!r.id) {
+    map.setAttribute('hidden', '');   // an svg has no .hidden property
+    list.textContent = '';
+    line.textContent = S.snap ? 'No route yet. Ask an AI or use Send route on your PC. This is for planning, before you set off.' : 'Asking your PC for your route…';
+    return;
+  }
+  const hours = Math.floor(r.min / 60);
+  line.textContent = `${r.ti}. ${r.km} km, ${hours ? `${hours} h ` : ''}${r.min % 60} min. Traffic not included.`;
+  if (S.routeShown === r.id) return;
+  S.routeShown = r.id;
+  map.removeAttribute('hidden');
+  const path = r.pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ');
+  for (const id of ['routeTrace', 'routeGlow']) $(id).setAttribute('d', path);
+  const end = r.pts[r.pts.length - 1];
+  $('routeEnd').setAttribute('cx', end[0]);
+  $('routeEnd').setAttribute('cy', end[1]);
+  placeRouteDot(r.steps[0]);
+  map.classList.remove('draw');
+  void map.getBoundingClientRect();   // restart the line drawing itself on for a new route
+  map.classList.add('draw');
+  list.textContent = '';
+  r.steps.forEach((s, i) => {
+    const li = el('li');
+    const b = el('button', 'row step');
+    b.dataset.s = i;
+    b.append(el('span', 'ti', s.t), el('span', 'tag', fitDistance(s.km)));
+    b.setAttribute('aria-label', `${s.t}. ${fitDistance(s.km)}`);
+    li.append(b);
+    list.append(li);
+  });
+}
+
+function placeRouteDot(s) {
+  if (!s) return;
+  $('routeDot').setAttribute('transform', `translate(${s.x} ${s.y})`);
 }
 
 function renderWatch() {
@@ -1138,10 +1185,10 @@ function closePairing() {
 
 // ---- screens and history ---------------------------------------------------------------------------
 
-const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'play', 'apps', 'games', 'pair'];
+const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'route', 'play', 'apps', 'games', 'pair'];
 const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const DEPTH = { now: 0, work: 0, watch: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
-const TABS = ['now', 'work', 'watch', 'apps', 'games'];
+const DEPTH = { now: 0, work: 0, watch: 0, route: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
+const TABS = ['now', 'work', 'watch', 'route', 'apps', 'games'];
 // Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
 const NEEDS_PC = ['now', 'work'];
 
@@ -1149,7 +1196,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   if (!CALM_PANES.includes(id)) wakeUp();
-  const listView = ['now', 'work', 'watch', 'apps', 'games', 'pair'].includes(id);
+  const listView = ['now', 'work', 'watch', 'route', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
     t.tabIndex = listView ? 0 : -1;
@@ -1403,11 +1450,12 @@ function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
-  if (['now', 'work', 'watch', 'apps', 'games', 'pair'].includes(pane)) {
+  if (['now', 'work', 'watch', 'route', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'watch') for (const b of $('watchRows').querySelectorAll('.row')) add([b]);
+    else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'play') {
@@ -1560,3 +1608,9 @@ async function main() {
 }
 
 main();
+
+// Moving through the turns moves the dot along the route.
+$('routeRows').addEventListener('focusin', (e) => {
+  const b = e.target.closest('[data-s]');
+  if (b && S.snap && S.snap.rt) placeRouteDot(S.snap.rt.steps[+b.dataset.s]);
+});
