@@ -833,10 +833,12 @@ function renderWatch() {
   const list = $('watchRows');
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.v : '';
   list.textContent = '';
-  const items = (S.snap && S.snap.yt) || [];
+  const found = S.ytFound;
+  const items = found || (S.snap && S.snap.yt) || [];
   const line = $('watchLine');
   line.hidden = false;
-  line.textContent = !S.snap ? 'Asking your PC for your videos…'
+  line.textContent = found ? `${found.length} results. Press Back for your list.`
+    : !S.snap ? 'Asking your PC for your videos…'
     : items.length ? 'To add more, share a video from YouTube on your phone to Studio Desk.'
     : 'Nothing to watch yet. On your phone, share a YouTube video to Studio Desk and it appears here.';
   items.forEach((v) => {
@@ -849,7 +851,7 @@ function renderWatch() {
     b.append(el('span', `mark ${started ? 'work' : 'done'}`), el('span', 'ti', v.ti || 'YouTube video'), el('span', 'tag', status),
       el('span', 'why', v.ch || ''), el('span', 'age', ''));
     b.setAttribute('aria-label', `${v.ti || 'YouTube video'}. ${v.ch || ''}. ${status}`);
-    b.addEventListener('click', () => openPlayer(v));
+    b.addEventListener('click', () => { if (found) send('ytadd', { u: `https://youtu.be/${v.id}` }); openPlayer(v); });
     li.append(b);
     list.append(li);
   });
@@ -1293,6 +1295,7 @@ function apply(state) {
       return;
     }
     const backTo = S.open;
+    if (S.ytFound && S.view === 'list') { S.ytFound = null; renderWatch(); }
     S.view = 'list';
     S.open = '';
     showPane(S.pairing && NEEDS_PC.includes(S.tab) ? 'pair' : S.tab);
@@ -1345,6 +1348,10 @@ function startCompose(c) {
     for (const p of projects) where.append(choice(p.n, 'project', p.k));
     pick.append(who, where);
     syncChoices();
+  } else if (c.mode === 'yt') {
+    $('cTitle').textContent = 'Search YouTube';
+    $('cLabel').textContent = 'Say what to find';
+    $('cSend').textContent = 'Search';
   } else if (c.mode === 'say') {
     $('cTitle').textContent = `Reply to ${d.ti || 'this task'}`;
     $('cLabel').textContent = 'Say your reply';
@@ -1378,6 +1385,7 @@ function syncChoices() {
 function review() {
   const c = S.compose;
   if (!c) return;
+  if (c.mode === 'yt') { findVideos(); return; }
   const text = c.mode === 'answer' ? c.text : $('cText').value.trim();
   if ((c.mode === 'new' || c.mode === 'say') && !text) {
     $('cNote').textContent = 'Nothing to send yet. Focus the box and speak.';
@@ -1403,6 +1411,25 @@ function review() {
   $('cEdit').textContent = c.mode === 'answer' || c.mode === 'stop' ? 'Cancel' : 'Edit';
   $('cGo').disabled = false;
   $('cGo').focus();
+}
+
+async function findVideos() {
+  const q = $('cText').value.trim();
+  if (!q) { $('cNote').textContent = 'Nothing to search for yet. Focus the box and speak.'; $('cText').focus(); return; }
+  $('cNote').textContent = 'Searching…';
+  const id = await send('ytfind', { q });
+  if (!id) { $('cNote').textContent = 'Not sent. Check the connection and try again.'; return; }
+  const timer = setTimeout(() => { if (S.pending[id]) { delete S.pending[id]; $('cNote').textContent = 'Your PC hasn’t answered yet.'; } }, 20000);
+  S.pending[id] = (ack) => {
+    clearTimeout(timer);
+    if (!ack.ok) { $('cNote').textContent = ack.why || 'Search failed.'; return; }
+    S.ytFound = ack.items || [];
+    S.compose = null;
+    history.back();
+    selectTab('watch');
+    renderWatch();
+    focusFirst('watch');
+  };
 }
 
 function closeConfirm() {
@@ -1454,7 +1481,7 @@ function rowsOfControls() {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
-    else if (pane === 'watch') for (const b of $('watchRows').querySelectorAll('.row')) add([b]);
+    else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
@@ -1614,3 +1641,6 @@ $('routeRows').addEventListener('focusin', (e) => {
   const b = e.target.closest('[data-s]');
   if (b && S.snap && S.snap.rt) placeRouteDot(S.snap.rt.steps[+b.dataset.s]);
 });
+
+// Watch: search lives above the list.
+$('ytFind').addEventListener('click', () => startCompose({ mode: 'yt' }));
