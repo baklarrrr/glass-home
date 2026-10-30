@@ -489,7 +489,7 @@ function renderBattery() {
 // (see style.css). The first input wakes it at once and is handled as usual. One timer, reset by input; none while
 // the app is hidden.
 const CALM_AFTER = 15000;
-const CALM_PANES = ['now', 'work', 'detail', 'apps', 'games'];
+const CALM_PANES = ['now', 'work', 'detail', 'watch', 'play', 'apps', 'games'];
 
 function enterCalm() {
   const pane = PANES.find((p) => !$(p).hidden);
@@ -555,6 +555,7 @@ function flash(text) {
 
 function renderWork() {
   renderNow();
+  renderWatch();
   const s = S.snap;
   const list = $('rows');
   const focusedKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : '';
@@ -745,6 +746,137 @@ function renderNow() {
     if (!a || a === document.body || a.dataset.tab === 'now') focusFirst('now');
   }
   S.nowShown = S.nowShown || cards.length > 0;
+}
+
+// ---- watch: YouTube on the glasses ---------------------------------------------------------------
+// The list lives on the PC (relay/youtube.py): videos shared from the phone, or the newest from chosen channels.
+// Playback is YouTube's own embedded player; this page only drives it with the arrows and Enter, and tells the PC where
+// he stopped so the next visit picks up there. Meta's driving detection keeps the display off at driving speed.
+
+function clockTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = String(sec % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+function renderWatch() {
+  const list = $('watchRows');
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.v : '';
+  list.textContent = '';
+  const items = (S.snap && S.snap.yt) || [];
+  const line = $('watchLine');
+  line.hidden = false;
+  line.textContent = !S.snap ? 'Asking your PC for your videos…'
+    : items.length ? 'To add more, share a video from YouTube on your phone to Studio Desk.'
+    : 'Nothing to watch yet. On your phone, share a YouTube video to Studio Desk and it appears here.';
+  items.forEach((v) => {
+    const li = el('li');
+    const started = v.pos > 5;
+    const left = v.len ? Math.max(0, v.len - v.pos) : 0;
+    const b = el('button', `row ${started ? 'work' : 'done'}`);
+    b.dataset.v = v.id;
+    const status = started ? (left ? `${Math.max(1, Math.round(left / 60))} min left` : `at ${clockTime(v.pos)}`) : (v.src === 'feed' ? 'New' : 'Saved');
+    b.append(el('span', `mark ${started ? 'work' : 'done'}`), el('span', 'ti', v.ti || 'YouTube video'), el('span', 'tag', status),
+      el('span', 'why', v.ch || ''), el('span', 'age', ''));
+    b.setAttribute('aria-label', `${v.ti || 'YouTube video'}. ${v.ch || ''}. ${status}`);
+    b.addEventListener('click', () => openPlayer(v));
+    li.append(b);
+    list.append(li);
+  });
+  if (focused) {
+    const again = list.querySelector(`[data-v="${CSS.escape(focused)}"]`);
+    if (again) again.focus({ preventScroll: true });
+  }
+}
+
+let YT_READY = null;
+function loadYouTube() {
+  if (!YT_READY) {
+    YT_READY = new Promise((resolve, reject) => {
+      window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => { YT_READY = null; reject(new Error('YouTube could not load')); };
+      document.head.append(s);
+    });
+  }
+  return YT_READY;
+}
+
+const SPEEDS = [1, 1.25, 1.5, 2];
+
+async function openPlayer(v) {
+  S.video = v;
+  S.view = 'play';
+  history.pushState({ v: 'play', id: v.id }, '');
+  showPane('play');
+  $('pvTitle').textContent = v.ti || 'YouTube video';
+  $('pvTime').textContent = v.ch || '';
+  $('pvNote').textContent = 'Loading…';
+  $('pvPlay').focus();
+  armIdle();
+  try {
+    const YT = await loadYouTube();
+    if (S.view !== 'play' || S.video !== v) return;
+    const start = v.len && v.pos > v.len - 15 ? 0 : Math.floor(v.pos || 0);
+    if (S.player && S.player.loadVideoById) {
+      S.player.loadVideoById({ videoId: v.id, startSeconds: start });
+    } else {
+      S.player = new YT.Player('ytPlayer', {
+        width: 600, height: 338, videoId: v.id,
+        playerVars: { autoplay: 1, start, playsinline: 1, controls: 0, disablekb: 1, rel: 0, fs: 0, iv_load_policy: 3, origin: location.origin },
+        events: {
+          onReady: (e) => { e.target.setPlaybackRate(SPEEDS[S.speedAt || 0]); e.target.playVideo(); },
+          onStateChange: playerState,
+          onError: () => { $('pvNote').textContent = 'YouTube won’t play this one on the glasses (the owner may block embedding).'; },
+        },
+      });
+      const frame = $('ytWrap').querySelector('iframe');
+      if (frame) frame.tabIndex = -1;   // the arrows stay with this page's controls
+    }
+    $('pvNote').textContent = 'Enter pauses · ← → choose · ↑ ↓ jump 10 s · Back keeps your place';
+  } catch (e) {
+    $('pvNote').textContent = 'YouTube didn’t load. Check the glasses’ connection and try again.';
+  }
+}
+
+function playerState(e) {
+  const playing = e.data === 1;
+  $('pvPlay').textContent = playing ? 'Pause' : 'Play';
+  clearInterval(S.pvTick);
+  if (playing) S.pvTick = setInterval(tickPlayer, 1000);
+  tickPlayer();
+  if (e.data === 2) savePosition();          // paused
+  if (e.data === 0) savePosition(true);      // ended
+}
+
+function tickPlayer() {
+  const p = S.player;
+  if (!p || !p.getCurrentTime) return;
+  const t = p.getCurrentTime() || 0;
+  const len = p.getDuration() || 0;
+  $('pvTime').textContent = `${clockTime(t)} / ${clockTime(len)}${S.video && S.video.ch ? ` · ${S.video.ch}` : ''}`;
+  $('pvBar').style.transform = `scaleX(${len ? Math.min(1, t / len) : 0})`;
+  if (Date.now() - (S.savedAt || 0) > 30000) savePosition();
+  armIdle();   // watching counts as using the page
+}
+
+function savePosition(done) {
+  const p = S.player;
+  if (!p || !p.getCurrentTime || !S.video) return;
+  S.savedAt = Date.now();
+  const t = p.getCurrentTime() || 0;
+  const len = p.getDuration() || 0;
+  S.video.pos = t;
+  S.video.len = len;
+  send('ytpos', { v: S.video.id, t: Math.floor(t), l: Math.floor(len), d: done ? 1 : 0 });
+}
+
+function closePlayer() {
+  clearInterval(S.pvTick);
+  if (S.player && S.player.pauseVideo) { savePosition(); S.player.pauseVideo(); }
 }
 
 function rowFor(k) {
@@ -985,10 +1117,10 @@ function closePairing() {
 
 // ---- screens and history ---------------------------------------------------------------------------
 
-const PANES = ['now', 'work', 'detail', 'compose', 'apps', 'games', 'pair'];
+const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'play', 'apps', 'games', 'pair'];
 const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const DEPTH = { now: 0, work: 0, apps: 0, games: 0, pair: 0, detail: 1, compose: 2 };
-const TABS = ['now', 'work', 'apps', 'games'];
+const DEPTH = { now: 0, work: 0, watch: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
+const TABS = ['now', 'work', 'watch', 'apps', 'games'];
 // Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
 const NEEDS_PC = ['now', 'work'];
 
@@ -996,7 +1128,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   if (!CALM_PANES.includes(id)) wakeUp();
-  const listView = ['now', 'work', 'apps', 'games', 'pair'].includes(id);
+  const listView = ['now', 'work', 'watch', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
     t.tabIndex = listView ? 0 : -1;
@@ -1081,6 +1213,17 @@ function apply(state) {
   closeConfirm();
   if (!state || state.v === 'list') {
     stopReading();
+    if (S.view === 'play') {
+      // Leaving a video: pause it, keep the place, and land back on its row.
+      const v = S.video;
+      closePlayer();
+      S.view = 'list';
+      showPane(S.tab);
+      renderWatch();
+      const vrow = v && $('watchRows').querySelector(`[data-v="${CSS.escape(v.id)}"]`);
+      if (vrow) vrow.focus(); else focusFirst(S.tab);
+      return;
+    }
     const backTo = S.open;
     S.view = 'list';
     S.open = '';
@@ -1093,6 +1236,9 @@ function apply(state) {
     showPane('detail');
     renderDetail();
     ($('dActions').querySelector('button') || $('dOptions').querySelector('button') || $('dResult')).focus();
+  } else if (state.v === 'play') {
+    // Back from a video is the list; Forward never reopens the player.
+    history.back();
   } else if (state.v === 'compose') {
     history.back();
   }
@@ -1236,12 +1382,15 @@ function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
-  if (['now', 'work', 'apps', 'games', 'pair'].includes(pane)) {
+  if (['now', 'work', 'watch', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
+    else if (pane === 'watch') for (const b of $('watchRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
+  } else if (pane === 'play') {
+    add($('pvControls').querySelectorAll('button'));
   } else if (pane === 'detail') {
     add($('dOptions').querySelectorAll('button'));
     if ($('dResult').textContent) add([$('dResult')]);
@@ -1305,6 +1454,12 @@ function onKey(e) {
     if (k === 'ArrowUp' && t.selectionStart === 0) { e.preventDefault(); moveFocus(-1, 0); }
     return;
   }
+  // In a video, up and down jump 10 seconds; left and right move along the controls.
+  if (S.view === 'play' && (k === 'ArrowDown' || k === 'ArrowUp')) {
+    e.preventDefault();
+    if (S.player && S.player.getCurrentTime) S.player.seekTo(Math.max(0, S.player.getCurrentTime() + (k === 'ArrowUp' ? 10 : -10)), true);
+    return;
+  }
   if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); moveFocus(k === 'ArrowDown' ? 1 : -1, 0); return; }
   if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); moveFocus(0, k === 'ArrowRight' ? 1 : -1); }
 }
@@ -1328,6 +1483,22 @@ async function main() {
     $('cText').focus();
   });
   $('pRetry').addEventListener('click', () => { if (S.paused) wake(); else hello(); });
+  // The video controls: the player's own controls are hidden so the arrows and pinch drive these.
+  const seek = (d) => { if (S.player && S.player.getCurrentTime) S.player.seekTo(Math.max(0, S.player.getCurrentTime() + d), true); };
+  $('pvBack10').addEventListener('click', () => seek(-10));
+  $('pvFwd10').addEventListener('click', () => seek(10));
+  $('pvPlay').addEventListener('click', () => {
+    const p = S.player;
+    if (!p || !p.getPlayerState) return;
+    if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo();
+  });
+  $('pvSpeed').addEventListener('click', () => {
+    S.speedAt = ((S.speedAt || 0) + 1) % SPEEDS.length;
+    $('pvSpeed').textContent = `${SPEEDS[S.speedAt]}×`;
+    if (S.player && S.player.setPlaybackRate) S.player.setPlaybackRate(SPEEDS[S.speedAt]);
+  });
+  // Back keeps the place; a video leaves the list on its own once it has played to the end.
+  $('pvDone').addEventListener('click', () => history.back());
   // Any swipe or pinch wakes the page from calm before anything else handles it (and is still handled).
   document.addEventListener('keydown', wakeUp, true);
   document.addEventListener('pointerdown', wakeUp, true);
@@ -1339,7 +1510,7 @@ async function main() {
   }
   window.addEventListener('popstate', (e) => apply(e.state));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else { stopReading(); sleep('hidden'); }
+    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else { stopReading(); if (S.view === 'play') closePlayer(); sleep('hidden'); }
   });
   window.addEventListener('pagehide', () => { stopReading(); sleep('hidden'); });
   // The network is back (signal again after driving through a dead zone, say): fresh links, tried fast.

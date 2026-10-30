@@ -7,6 +7,8 @@
   <meta name="description" content="Bakar's glasses home: Claude and Codex sessions from the studio PC, his apps, and games kept apart.">
   <meta name="mrbd-web-app-capable" content="yes">
   <meta name="robots" content="noindex, nofollow">
+  <!-- YouTube's embedded player needs this page's origin as the referrer of its request (error 153 without it). -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#000000">
   <title>Bakar Home</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -17,6 +19,7 @@
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
+      <button class="tab" role="tab" id="tab-watch" data-tab="watch" aria-controls="watch">Watch</button>
       <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
       <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
       <span id="tabline" class="tabline" aria-hidden="true"></span>
@@ -80,6 +83,28 @@
         <div class="actions"><button id="cGo" class="btn primary">Send</button><button id="cEdit" class="btn">Edit</button></div>
       </div>
       <p id="cNote" class="note"></p>
+    </section>
+
+    <section id="watch" class="pane" role="tabpanel" aria-labelledby="tab-watch" hidden>
+      <p id="watchLine" class="nowline"></p>
+      <ol id="watchRows" class="rows"></ol>
+    </section>
+
+    <section id="play" class="pane" hidden aria-label="Video">
+      <div id="ytWrap" class="ytwrap"><div id="ytPlayer"></div></div>
+      <div class="playhead">
+        <p id="pvTitle" class="pvtitle"></p>
+        <p id="pvMeta" class="pvmeta"><span id="pvTime"></span></p>
+        <span class="pvtrack" aria-hidden="true"><span id="pvBar" class="pvbar"></span></span>
+      </div>
+      <div id="pvControls" class="actions pvcontrols">
+        <button id="pvBack10" class="btn" aria-label="Back 10 seconds">−10 s</button>
+        <button id="pvPlay" class="btn">Pause</button>
+        <button id="pvFwd10" class="btn" aria-label="Forward 10 seconds">+10 s</button>
+        <button id="pvSpeed" class="btn" aria-label="Playback speed">1×</button>
+        <button id="pvDone" class="btn">Back</button>
+      </div>
+      <p id="pvNote" class="note"></p>
     </section>
 
     <section id="apps" class="pane" role="tabpanel" aria-labelledby="tab-apps" hidden>

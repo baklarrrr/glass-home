@@ -58,7 +58,7 @@ svg { fill: currentColor; }
 /* ---- top line: sections, the glasses' batteries and the link ---- */
 .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: none; block-size: 44px; margin-bottom: 6px; }
 .tabs { position: relative; display: flex; gap: 2px; }
-.tab { font-size: 17px; font-weight: var(--w-strong); color: var(--faint); padding: 6px 11px 9px; border-radius: 999px;
+.tab { font-size: 17px; font-weight: var(--w-strong); color: var(--faint); padding: 6px 8px 9px; border-radius: 999px;
   transition: color 160ms var(--settle); }
 .tab[aria-selected="true"] { color: var(--ink); }
 .tab:focus { color: var(--ink); }
@@ -279,3 +279,16 @@ body.calm :is(.row, .tab, .btn, .pill):focus {
 .rows.now { gap: 6px; padding-top: 6px; }
 body.calm .nowline { color: var(--faint); }
 
+
+/* Watch: the video sits at the top at its own 16:9 size; one quiet line of title and time, a hairline progress bar,
+   and five controls the arrows reach. YouTube's own controls are hidden so focus never falls into the player. */
+.ytwrap { flex: none; inline-size: 100%; aspect-ratio: 16 / 9; max-block-size: 338px; border-radius: 14px; overflow: hidden; background: #000; }
+.ytwrap iframe, .ytwrap #ytPlayer { inline-size: 100%; block-size: 100%; border: 0; pointer-events: none; }
+.playhead { flex: none; padding: 8px 6px 4px; display: grid; gap: 3px; }
+.pvtitle { font-size: 17px; font-weight: var(--w-strong); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+.pvmeta { font-size: 14px; color: var(--soft); font-variant-numeric: tabular-nums; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pvtrack { display: block; block-size: 2px; background: rgba(255, 255, 255, 0.12); border-radius: 2px; overflow: hidden; }
+.pvbar { display: block; block-size: 100%; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); transition: transform 900ms linear; }
+.pvcontrols { flex: none; justify-content: center; }
+.pvcontrols .btn { min-inline-size: 64px; }
+body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
