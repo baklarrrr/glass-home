@@ -328,6 +328,7 @@ async function handle(text) {
   if (m.t === 'snap') {
     if (!S.snap || m.at >= S.snap.at) {
       S.snap = m;
+      showPush(m.say);
       if (S.pairing && live) closePairing();
       renderWork();
       if (S.view === 'detail') renderDetail();
@@ -643,6 +644,26 @@ function duration(sec) {
 function openStudio() {
   const app = APPS.find((a) => /studio-glass/.test(a.url));
   if (app) launch(app); else selectTab('apps');
+}
+
+// ---- messages from the PC (relay/push.py, MCP glasses_say) ------------------------------------------
+
+function showPush(p) {
+  if (!p || !p.id || p.id === S.pushed) return;
+  S.pushed = p.id;
+  const box = $('push');
+  $('pushTitle').textContent = p.ti || '';
+  $('pushText').textContent = p.tx || '';
+  box.hidden = false;
+  box.classList.remove('go');
+  void box.offsetWidth;   // restart the light sweep for a second message
+  box.classList.add('go');
+  clearTimeout(S.pushTimer);
+  S.pushTimer = setTimeout(() => { box.hidden = true; box.classList.remove('go'); }, 7000);
+  if (p.sp && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance([p.ti, p.tx].filter(Boolean).join('. ')));
+  }
 }
 
 function speakNote(text) {
