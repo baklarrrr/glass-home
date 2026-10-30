@@ -65,7 +65,7 @@ const S = {
   topic: '', relayPubB64: '', fragment: addressParams(), links: [], outbox: [], recent: [], linkId: '', sentLately: [],
   mqttTries: 0, mqttLoading: false, calmTimer: 0, tg: null, battery: null, tidalLast: '',
   devId: '', devPubB64: '', kUp: null, kDown: null, z: 0,
-  snap: null, details: {}, view: 'list', tab: 'work', open: '',
+  snap: null, details: {}, view: 'list', tab: 'now', open: '',
   paused: true, idle: 0, hello: 0, answer: 0, askedAt: 0, heardAt: 0, quiet: false, hellos: [], pcAt: 0,
   pending: {}, pairing: null, flash: '', compose: null, openedAt: 0, lastKeyAt: 0,
 };
@@ -489,7 +489,7 @@ function renderBattery() {
 // (see style.css). The first input wakes it at once and is handled as usual. One timer, reset by input; none while
 // the app is hidden.
 const CALM_AFTER = 15000;
-const CALM_PANES = ['work', 'detail', 'apps', 'games'];
+const CALM_PANES = ['now', 'work', 'detail', 'apps', 'games'];
 
 function enterCalm() {
   const pane = PANES.find((p) => !$(p).hidden);
@@ -554,6 +554,7 @@ function flash(text) {
 }
 
 function renderWork() {
+  renderNow();
   const s = S.snap;
   const list = $('rows');
   const focusedKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : '';
@@ -612,6 +613,138 @@ function renderWork() {
     if (!a || a === document.body || a.dataset.tab === 'work') focusFirst('work');
   }
   S.listShown = S.listShown || Boolean((s.rows || []).length);
+}
+
+// ---- now: the first screen -------------------------------------------------------------------------
+// One hero and at most three quiet cards: what in Bakar's world needs him or is moving right now. Built from the
+// session list plus the PC's glance (renders from the shared queue, open GreenCitizen site notes). The hero is the
+// most pressing card; when nothing is, the screen says so and stays dark.
+
+function ago(sec) {
+  const a = age(sec);
+  return a === 'now' ? 'just now' : `${a} ago`;
+}
+
+// A line short enough for one row on the glasses, cut between words.
+function shortAt(text, n) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n - 1);
+  const sp = cut.lastIndexOf(' ');
+  return `${(sp > n / 2 ? cut.slice(0, sp) : cut).replace(/[\s,;:·-]+$/, '')}…`;
+}
+
+function duration(sec) {
+  if (!sec) return '';
+  return sec < 90 ? `${sec} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
+}
+
+function openStudio() {
+  const app = APPS.find((a) => /studio-glass/.test(a.url));
+  if (app) launch(app); else selectTab('apps');
+}
+
+function speakNote(text) {
+  if (!('speechSynthesis' in window)) return;
+  const synth = window.speechSynthesis;
+  if (S.speaking === 'now') { stopReading(); return; }
+  stopReading();
+  const u = new SpeechSynthesisUtterance(text);
+  u.onend = u.onerror = () => { if (S.speaking === 'now') S.speaking = ''; };
+  S.speaking = 'now';
+  synth.speak(u);
+}
+
+function nowCards() {
+  const s = S.snap;
+  if (!s) return [];
+  const g = s.g || {};
+  const n = s.n || {};
+  const rows = s.rows || [];
+  const cards = [];
+  const needs = rows.filter((r) => r.st === 'needs');
+  if (needs.length) {
+    const one = needs.length === 1;
+    cards.push({ id: 'needs', st: 'needs', rank: 0, kick: 'Needs you',
+      ti: one ? needs[0].ti : `${needs.length} sessions need you`,
+      meta: one ? ` · ${PROVIDER[needs[0].p]} · ${age(needs[0].at)}` : '',
+      why: one ? needs[0].why : needs.slice(0, 2).map((r) => r.ti).join(' · '),
+      go: () => (one ? openDetail(needs[0].k) : selectTab('work')) });
+  }
+  const r = g.r;
+  if (r && r.run) {
+    // The longest-running job, named from its .blend, with how long it has run: the card moves on its own.
+    const job = r.job || {};
+    const running = job.since ? `Running ${duration(Math.max(1, Math.round(Date.now() / 1000 - job.since)))}` : 'Running';
+    // A headless Blender run that isn't rendering frames (a bake, an export) is only "busy", and never the hero.
+    const verb = job.busy ? 'Blender busy' : 'Rendering';
+    cards.push({ id: 'render', st: 'work', rank: job.busy ? 2.2 : 1, kick: r.run === 1 ? verb : `${verb} · ${r.run} jobs`,
+      ti: job.ti || 'Blender render',
+      why: `${running}${r.last ? ` · last done: ${r.last.ti}` : ''}`, go: openStudio });
+  } else if (r && r.last) {
+    cards.push({ id: 'render', st: r.last.ok ? 'done' : 'needs', rank: r.last.ok ? 3 : 0.5,
+      kick: r.last.ok ? 'Last render' : 'Render failed', ti: r.last.ti,
+      why: `${r.last.ok ? 'Finished' : 'Stopped'} ${ago(r.last.at)}${r.last.sec ? ` · took ${duration(r.last.sec)}` : ''}`,
+      go: openStudio });
+  }
+  if (n.work) {
+    const w = rows.filter((x) => x.st === 'work');
+    cards.push({ id: 'work', st: 'work', rank: 2, kick: 'Claude and Codex',
+      ti: `${n.work} session${n.work === 1 ? '' : 's'} working`,
+      why: w.length ? `Newest: ${w[0].ti}${w.length > 1 ? ` and ${w.length - 1} more` : ''}` : '', go: () => selectTab('work') });
+  }
+  // Site notes are steady background: they show beside anything else, and on a quiet screen only when one changed
+  // in the last day, so "Nothing needs you" never sits above an old pile.
+  const gc = g.gc;
+  const fresh = gc && gc.up && Date.now() / 1000 - gc.up < 86400;
+  if (gc && gc.open && (fresh || cards.some((c) => c.rank < 2.5))) {
+    cards.push({ id: 'gc', st: 'done', rank: 2.5, kick: 'GreenCitizen · reads aloud',
+      ti: `${gc.open} site note${gc.open === 1 ? '' : 's'} open`,
+      why: gc.top ? shortAt(`${gc.pg ? gc.pg[0].toUpperCase() + gc.pg.slice(1) + ' · ' : ''}${gc.top.replace(/…$/, '')}`, 50) : '',
+      go: () => speakNote(`GreenCitizen. ${gc.open} site notes open. Newest${gc.pg ? `, on ${gc.pg}` : ''}: ${gc.top || ''}`) });
+  }
+  cards.sort((a, b) => a.rank - b.rank);
+  return cards.slice(0, 4);
+}
+
+function renderNow() {
+  const list = $('nowRows');
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.now : '';
+  list.textContent = '';
+  const line = $('nowLine');
+  if (!S.kUp) { line.textContent = 'Open Bakar Home from its own link to see your studio.'; return; }
+  if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
+  const cards = nowCards();
+  const calm = !cards.length || cards[0].rank >= 2;
+  line.textContent = calm ? 'Nothing needs you right now.' : '';
+  line.hidden = !calm;
+  cards.forEach((c, i) => {
+    const li = el('li');
+    const hero = i === 0 && !calm;
+    const b = el('button', `row ${c.st}${hero ? ' hero' : ''}`);
+    b.dataset.now = c.id;
+    if (hero) {
+      const kicker = el('span', 'kicker');
+      kicker.append(el('span', 'st', c.kick));
+      if (c.meta) kicker.append(el('span', 'km', c.meta));
+      b.append(kicker, el('span', 'ti', c.ti), el('span', 'why', c.why));
+    } else {
+      // A quiet card's line is cut between words to fit beside its tag; the full text is in its label and read aloud.
+      b.append(el('span', `mark ${c.st}`), el('span', 'ti', c.ti), el('span', 'tag', c.kick), el('span', 'why', shortAt(c.why, 54)), el('span', 'age', ''));
+    }
+    b.setAttribute('aria-label', `${c.kick}. ${c.ti}. ${c.why}`);
+    b.addEventListener('click', c.go);
+    li.append(b);
+    list.append(li);
+  });
+  if (focused) {
+    const again = list.querySelector(`[data-now="${CSS.escape(focused)}"]`);
+    if (again) again.focus({ preventScroll: true });
+  } else if (S.view === 'list' && S.tab === 'now' && !S.pairing && !S.nowShown) {
+    const a = document.activeElement;
+    if (!a || a === document.body || a.dataset.tab === 'now') focusFirst('now');
+  }
+  S.nowShown = S.nowShown || cards.length > 0;
 }
 
 function rowFor(k) {
@@ -852,16 +985,18 @@ function closePairing() {
 
 // ---- screens and history ---------------------------------------------------------------------------
 
-const PANES = ['work', 'detail', 'compose', 'apps', 'games', 'pair'];
+const PANES = ['now', 'work', 'detail', 'compose', 'apps', 'games', 'pair'];
 const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const DEPTH = { work: 0, apps: 0, games: 0, pair: 0, detail: 1, compose: 2 };
-const TABS = ['work', 'apps', 'games'];
+const DEPTH = { now: 0, work: 0, apps: 0, games: 0, pair: 0, detail: 1, compose: 2 };
+const TABS = ['now', 'work', 'apps', 'games'];
+// Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
+const NEEDS_PC = ['now', 'work'];
 
 function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   if (!CALM_PANES.includes(id)) wakeUp();
-  const listView = ['work', 'apps', 'games', 'pair'].includes(id);
+  const listView = ['now', 'work', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
     t.tabIndex = listView ? 0 : -1;
@@ -911,6 +1046,7 @@ function press(target) {
 function focusFirst(pane) {
   // On Work, start on the top session (needs-you sessions sort first); New task is one press up.
   const first = (pane === 'work' && $('rows').querySelector('.row[data-k]'))
+    || (pane === 'now' && $('nowRows').querySelector('.row'))
     || $(pane).querySelector('button:not([hidden]), [tabindex="0"]');
   (first || document.querySelector(`.tab[data-tab="${S.tab}"]`)).focus();
 }
@@ -919,10 +1055,10 @@ function selectTab(tab, focusTab) {
   S.tab = tab;
   S.view = 'list';
   history.replaceState({ v: 'list', tab }, '');
-  if (S.pairing && tab === 'work') showPane('pair');
+  if (S.pairing && NEEDS_PC.includes(tab)) showPane('pair');
   else showPane(tab);
   if (focusTab) document.querySelector(`.tab[data-tab="${tab}"]`).focus();
-  else focusFirst(tab === 'work' && S.pairing ? 'pair' : tab);
+  else focusFirst(NEEDS_PC.includes(tab) && S.pairing ? 'pair' : tab);
 }
 
 function openDetail(k) {
@@ -948,7 +1084,7 @@ function apply(state) {
     const backTo = S.open;
     S.view = 'list';
     S.open = '';
-    showPane(S.pairing && S.tab === 'work' ? 'pair' : S.tab);
+    showPane(S.pairing && NEEDS_PC.includes(S.tab) ? 'pair' : S.tab);
     const row = backTo && $('rows').querySelector(`[data-k="${CSS.escape(backTo)}"]`);
     if (row) row.focus(); else focusFirst(S.tab);
   } else if (state.v === 'detail') {
@@ -1100,9 +1236,10 @@ function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
-  if (['work', 'apps', 'games', 'pair'].includes(pane)) {
+  if (['now', 'work', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
+    else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'detail') {
@@ -1144,7 +1281,7 @@ function onKey(e) {
   if (S.paused && S.kUp) wake(); else if (S.kUp) armIdle();
   const k = e.key;
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
-    const tabs = ['work', 'apps', 'games'];
+    const tabs = TABS;
     const i = tabs.indexOf(S.tab);
     const next = tabs[(i + (k === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     e.preventDefault();
@@ -1214,7 +1351,7 @@ async function main() {
   });
   renderApps();
   loadApps();
-  const start = ['work', 'apps', 'games'].includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'work';
+  const start = TABS.includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'now';
   history.replaceState({ v: 'list', tab: start }, '');
   S.tab = start;
   let ready = false;

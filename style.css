@@ -9,7 +9,7 @@
   --ink: #f2efe8;
   --soft: #cfd6d1;
   --dim: #8e9a93;
-  --faint: #6f7a73;
+  --faint: #8c978f;
   --accent: #8bdbb6;
   --accent-rgb: 139, 219, 182;
   --needs: #f4ce90;
@@ -244,7 +244,7 @@ h1 { font-size: 24px; font-weight: var(--w-strong); }
    swipe or pinch restores everything at once and still does its job. */
 body.calm .summary, body.calm .row .why, body.calm .row .age, body.calm .row .tag, body.calm .state, body.calm .gbat,
 body.calm .dmeta, body.calm .dnow, body.calm .dasked, body.calm .group, body.calm .note, body.calm .kicker .km,
-body.calm .tab:not([aria-selected="true"]), body.calm .label, body.calm .tabline { opacity: 0.6; }
+body.calm .tab:not([aria-selected="true"]), body.calm .label, body.calm .tabline { opacity: 0.8; }
 /* What Bakar is being asked stays as it is. */
 body.calm .row.needs .why, body.calm .question .note { opacity: 1; }
 body.calm .row .mark, body.calm .dot.live { box-shadow: none; }
@@ -272,3 +272,10 @@ body.calm :is(.row, .tab, .btn, .pill):focus {
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .row:focus, .pill:focus, .btn:focus { transform: none; }
 }
+
+/* Now: one hero, a few quiet cards, and one plain line when nothing needs Bakar. */
+.nowline { flex: none; font-size: 15px; color: var(--dim); padding: 10px 6px 6px; }
+.nowline[hidden] { display: none; }
+.rows.now { gap: 6px; padding-top: 6px; }
+body.calm .nowline { color: var(--faint); }
+

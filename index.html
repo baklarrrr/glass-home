@@ -15,6 +15,7 @@
 <body>
   <header class="top">
     <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
       <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
       <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
@@ -32,7 +33,12 @@
   </header>
 
   <main>
-    <section id="work" class="pane" role="tabpanel" aria-labelledby="tab-work">
+    <section id="now" class="pane" role="tabpanel" aria-labelledby="tab-now">
+      <p id="nowLine" class="nowline"></p>
+      <ol id="nowRows" class="rows now"></ol>
+    </section>
+
+    <section id="work" class="pane" role="tabpanel" aria-labelledby="tab-work" hidden>
       <div class="sumline">
         <p id="summary" class="summary"></p>
         <button id="newTask" class="pill new" hidden><span class="plus" aria-hidden="true">+</span>New task</button>
