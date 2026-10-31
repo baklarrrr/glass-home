@@ -1673,7 +1673,7 @@ function moveFocus(dy, dx) {
   gi += dy;
   if (gi < 0 || gi >= groups.length) { rubberBand(dy, 0); return; }
   const g = groups[gi];
-  const pick = g.find((n) => n.getAttribute('aria-selected') === 'true' || n.getAttribute('aria-pressed') === 'true') || g[0];
+  const pick = g.find((n) => n.getAttribute('aria-selected') === 'true' || n.getAttribute('aria-pressed') === 'true' || n.getAttribute('aria-current') === 'page') || g[0];
   pick.focus();
   if (pick.scrollIntoView) pick.scrollIntoView({ block: 'nearest' });
 }
