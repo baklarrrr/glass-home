@@ -1,6 +1,6 @@
 'use strict';
 
-// Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
+// Bakar Studio (formerly Bakar Home) on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
 //
 // The link: three free public MQTT brokers at once (EMQX, HiveMQ, and shiftr.io on port 443), the same link Tidal
@@ -566,7 +566,7 @@ function renderWork() {
   const sum = $('summary');
   sum.textContent = '';
   if (!S.kUp) {
-    sum.textContent = 'Open Bakar Home from its own link to see Claude and Codex.';
+    sum.textContent = 'Open Bakar Studio from its own link to see Claude and Codex.';
     return;
   }
   if (!s) {
@@ -777,7 +777,7 @@ function renderNow() {
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.now : '';
   list.textContent = '';
   const line = $('nowLine');
-  if (!S.kUp) { line.textContent = 'Open Bakar Home from its own link to see your studio.'; return; }
+  if (!S.kUp) { line.textContent = 'Open Bakar Studio from its own link to see your studio.'; return; }
   if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
   const cards = nowCards();
   const calm = !cards.length || cards[0].rank >= 2;
