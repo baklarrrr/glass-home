@@ -388,6 +388,7 @@ function wake() {
 
 function sleep(reason) {
   S.paused = true;
+  if (reason === 'hidden') clearTimeout(S.renderStatusTimer);
   closeLink();
   if (reason === 'hidden') { clearTimeout(S.calmTimer); S.calmTimer = 0; }
   clearInterval(S.hello);
@@ -678,6 +679,31 @@ function speakNote(text) {
   synth.speak(u);
 }
 
+function renderObservation(r, now = Date.now() / 1000) {
+  const observed = (x) => x && Number.isInteger(x.run) && x.run >= 0
+    && Number.isFinite(x.checkedAt) && x.checkedAt > 0 && x.checkedAt <= now;
+  const validFor = r && Number.isFinite(r.validFor) && r.validFor > 0 && r.validFor <= 120 ? r.validFor : 0;
+  const trusted = r && r.state === 'ok' && observed(r);
+  const known = Boolean(trusted && validFor && now - r.checkedAt < validFor);
+  return { known, validFor,
+    lastKnown: trusted ? r : r && observed(r.lastKnown) ? r.lastKnown : null,
+    reason: trusted ? 'Last check is stale' : !r || r.error === 'Not checked yet' ? 'Awaiting a process check' : 'Process check unavailable' };
+}
+
+function scheduleRenderStatusRefresh() {
+  clearTimeout(S.renderStatusTimer);
+  S.renderStatusTimer = 0;
+  if (document.visibilityState !== 'visible' || $('now').hidden || !S.snap) return;
+  const r = (S.snap.g || {}).r;
+  const observation = renderObservation(r);
+  if (!observation.known && !observation.lastKnown) return;
+  const delay = observation.known ? Math.min(60000, Math.max(1000, (r.checkedAt + observation.validFor - Date.now() / 1000) * 1000 + 10)) : 60000;
+  // UI age/expiry only: no query, broker request or timer while this pane is hidden.
+  S.renderStatusTimer = setTimeout(() => {
+    if (document.visibilityState === 'visible' && !$('now').hidden) renderNow();
+  }, delay);
+}
+
 function nowCards() {
   const s = S.snap;
   if (!s) return [];
@@ -695,7 +721,15 @@ function nowCards() {
       go: () => (one ? openDetail(needs[0].k) : selectTab('work')) });
   }
   const r = g.r;
-  if (r && r.run) {
+  const observation = renderObservation(r);
+  if (!observation.known) {
+    const last = observation.lastKnown;
+    cards.push({ id: 'render-status', st: 'stop', rank: 2.1, unknown: true,
+      kick: observation.reason === 'Last check is stale' ? 'Stale' : 'Unknown', ti: 'Blender activity unknown',
+      why: last ? `Last known: ${last.run} background job${last.run === 1 ? '' : 's'} · ${ago(last.checkedAt)}` : observation.reason,
+      go: openStudio });
+  }
+  if (observation.known && r.run > 0) {
     // The longest-running job, named from its .blend, with how long it has run: the card moves on its own.
     const job = r.job || {};
     const running = job.since ? `Running ${duration(Math.max(1, Math.round(Date.now() / 1000 - job.since)))}` : 'Running';
@@ -703,12 +737,19 @@ function nowCards() {
     const verb = job.busy ? 'Blender busy' : 'Rendering';
     cards.push({ id: 'render', st: 'work', rank: job.busy ? 2.2 : 1, kick: r.run === 1 ? verb : `${verb} · ${r.run} jobs`,
       ti: job.ti || 'Blender render',
-      why: `${running}${r.last ? ` · last done: ${r.last.ti}` : ''}`, go: openStudio });
+      why: `${running}${r.last ? ` · last ${r.last.ok ? 'finished' : 'failed'}: ${r.last.ti}` : ''}`, go: openStudio });
   } else if (r && r.last) {
     cards.push({ id: 'render', st: r.last.ok ? 'done' : 'needs', rank: r.last.ok ? 3 : 0.5,
       kick: r.last.ok ? 'Last render' : 'Render failed', ti: r.last.ti,
-      why: `${r.last.ok ? 'Finished' : 'Stopped'} ${ago(r.last.at)}${r.last.sec ? ` · took ${duration(r.last.sec)}` : ''}`,
+      why: `${observation.known ? '0 background jobs · ' : ''}${r.last.ok ? 'Finished' : 'Stopped'} ${ago(r.last.at)}${r.last.sec ? ` · took ${duration(r.last.sec)}` : ''}`,
       go: openStudio });
+  } else if (observation.known) {
+    cards.push({ id: 'render', st: 'stop', rank: 3, kick: 'Checked', ti: 'No background Blender jobs',
+      why: `Checked ${ago(r.checkedAt)}`, go: openStudio });
+  }
+  if (observation.known && r.run > 0 && r.last && r.last.ok === false) {
+    cards.push({ id: 'render-history', st: 'needs', rank: 0.5, kick: 'Earlier render failed', ti: r.last.ti,
+      why: `Stopped ${ago(r.last.at)}${r.last.sec ? ` · took ${duration(r.last.sec)}` : ''}`, go: openStudio });
   }
   if (n.work) {
     const w = rows.filter((x) => x.st === 'work');
@@ -731,6 +772,7 @@ function nowCards() {
 }
 
 function renderNow() {
+  clearTimeout(S.renderStatusTimer);
   const list = $('nowRows');
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.now : '';
   list.textContent = '';
@@ -739,8 +781,9 @@ function renderNow() {
   if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
   const cards = nowCards();
   const calm = !cards.length || cards[0].rank >= 2;
-  line.textContent = calm ? 'Nothing needs you right now.' : '';
+  line.textContent = calm ? (cards.some((c) => c.unknown) ? 'Some activity is unknown.' : 'Nothing needs you right now.') : '';
   line.hidden = !calm;
+  scheduleRenderStatusRefresh();
   cards.forEach((c, i) => {
     const li = el('li');
     const hero = i === 0 && !calm;
@@ -760,8 +803,9 @@ function renderNow() {
     li.append(b);
     list.append(li);
   });
-  if (focused) {
-    const again = list.querySelector(`[data-now="${CSS.escape(focused)}"]`);
+  if (focused && document.visibilityState === 'visible' && !$('now').hidden) {
+    const again = list.querySelector(`[data-now="${CSS.escape(focused)}"]`)
+      || list.querySelector('[data-now="render-status"]') || list.querySelector('button');
     if (again) again.focus({ preventScroll: true });
   } else if (S.view === 'list' && S.tab === 'now' && !S.pairing && !S.nowShown) {
     const a = document.activeElement;
@@ -1197,6 +1241,8 @@ const NEEDS_PC = ['now', 'work'];
 function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
+  clearTimeout(S.renderStatusTimer);
+  if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
@@ -1606,7 +1652,7 @@ async function main() {
   }
   window.addEventListener('popstate', (e) => apply(e.state));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { wakeUp(); wake(); } else { stopReading(); if (S.view === 'play') closePlayer(); sleep('hidden'); }
+    if (document.visibilityState === 'visible') { wakeUp(); wake(); if (!$('now').hidden) renderNow(); } else { stopReading(); if (S.view === 'play') closePlayer(); sleep('hidden'); }
   });
   window.addEventListener('pagehide', () => { stopReading(); sleep('hidden'); });
   // The network is back (signal again after driving through a dead zone, say): fresh links, tried fast.
