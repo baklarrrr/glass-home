@@ -344,6 +344,20 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
   .drivesheen { animation: drivesheen 18s linear infinite; }
 }
 @keyframes drivesheen { to { transform: rotate(360deg); } }
+/* Day: glass can't survive a bright sky, so everything turns solid and heavy. Night: dim enough not to pull the eye. */
+.drivehud[data-light="day"] .driveenergy, .drivehud[data-light="day"] .drivesheen, .drivehud[data-light="day"]::before { display: none; }
+.drivehud[data-light="day"] .drivespeed { font-weight: 500; color: #fff; }
+.drivehud[data-light="day"] .drivegear b { font-weight: 500; color: #fff; }
+.drivehud[data-light="day"] .drivestate, .drivehud[data-light="day"] .driveunit, .drivehud[data-light="day"] .driveside span { color: #fff; font-weight: 600; }
+.drivehud[data-light="day"] .drivefill { stroke: #fff; stroke-width: 7; }
+.drivehud[data-light="day"] .drivetrack { stroke: rgba(255, 255, 255, 0.6); stroke-width: 2; }
+.drivehud[data-light="day"] .driveticks line, .drivehud[data-light="day"] .driveticks line.major { stroke: #fff; stroke-width: 2; }
+.drivehud[data-light="day"] .driveg svg { stroke: #fff; stroke-width: 2; }
+.drivehud[data-light="day"] .drivegdot { fill: #fff; }
+.drivehud[data-light="night"] { opacity: 0.5; }
+#drive[data-light="day"] .driverun, #drive[data-light="day"] .note { color: #fff; font-weight: 600; }
+#drive[data-light="night"] .driverun, #drive[data-light="night"] .note { opacity: 0.55; }
+.drivehud[data-light="night"] .driveenergy { display: none; }
 .drivearc { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; }
 .drivetrack, .drivefill { fill: none; }
 .drivetrack { stroke: rgba(255, 210, 122, 0.2); stroke-width: 1; }

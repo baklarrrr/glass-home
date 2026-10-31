@@ -974,6 +974,38 @@ async function runDriveLive() {
   S.driveQuiet = setTimeout(() => { $('driveNote').textContent = 'No motion readings from these glasses yet.'; }, 4000);
 }
 
+// Light: the display adds to whatever is behind it, so a bright sky needs solid, simple shapes and a dark road needs
+// far less light. Auto follows the sun at Toronto's latitude; pressing the button picks one by hand and it's remembered.
+const DRIVE_LIGHTS = ['auto', 'day', 'dusk', 'night'];
+
+function sunLight(when = new Date()) {
+  const day = (when - new Date(when.getFullYear(), 0, 0)) / 86400000;
+  const tilt = -23.44 * Math.cos(2 * Math.PI * (day + 10) / 365) * Math.PI / 180;
+  const lat = 43.7 * Math.PI / 180;
+  const halfDay = Math.acos(Math.max(-1, Math.min(1, -Math.tan(lat) * Math.tan(tilt)))) * 12 / Math.PI;
+  const zone = -when.getTimezoneOffset() / 60;
+  const noon = 12 + zone + 79.4 / 15;            // Toronto's longitude
+  const hour = when.getHours() + when.getMinutes() / 60;
+  const fromNoon = Math.abs(hour - noon);
+  if (fromNoon < halfDay - 0.75) return 'day';
+  return fromNoon < halfDay + 0.75 ? 'dusk' : 'night';
+}
+
+function applyDriveLight() {
+  let pick = 'auto';
+  try { pick = localStorage.getItem('driveLight') || 'auto'; } catch (e) { /* private window: stay on Auto */ }
+  $('driveHud').dataset.light = $('drive').dataset.light = pick === 'auto' ? sunLight() : pick;
+  $('driveLight').textContent = `Light: ${pick[0].toUpperCase()}${pick.slice(1)}`;
+}
+
+function nextDriveLight() {
+  let pick = 'auto';
+  try { pick = localStorage.getItem('driveLight') || 'auto'; } catch (e) { /* stays on Auto */ }
+  const next = DRIVE_LIGHTS[(DRIVE_LIGHTS.indexOf(pick) + 1) % DRIVE_LIGHTS.length];
+  try { localStorage.setItem('driveLight', next); } catch (e) { /* forgotten next launch, which is fine */ }
+  applyDriveLight();
+}
+
 function renderWatch() {
   const list = $('watchRows');
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.v : '';
@@ -1343,7 +1375,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
-  if (id !== 'drive') { stopDriveDemo(); stopDriveLive(); }
+  if (id !== 'drive') { stopDriveDemo(); stopDriveLive(); } else applyDriveLight();
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
@@ -1631,7 +1663,7 @@ function rowsOfControls() {
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
-    else if (pane === 'drive') { add([$('driveRun')]); add([$('driveLive')]); }
+    else if (pane === 'drive') { add([$('driveRun')]); add([$('driveLive')]); add([$('driveLight')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'play') {
@@ -1798,6 +1830,8 @@ for (let kmh = 0; kmh <= DRIVE_FULL; kmh += 20) {
   $('driveTicks').append(mark);
 }
 $('driveRun').addEventListener('click', runDriveDemo);
+$('driveLight').addEventListener('click', nextDriveLight);
+applyDriveLight();
 $('driveLive').addEventListener('click', runDriveLive);
 showDrive(0, 0, 0);
 
