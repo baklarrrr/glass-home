@@ -431,7 +431,6 @@ function renderReviewControls() {
   $('reviewFeedback').disabled = !canReview() || review.busy;
   $('sendFeedback').disabled = true;
   $('sendFeedback').textContent='Send unavailable in preview';
-  $('sendFeedback').textContent = `Send to ${draft?.provider === 'claude' ? 'Claude' : draft?.provider === 'codex' ? 'Codex' : 'Studio'}`;
   for (const id of ['retryFeedback', 'checkReceipt', 'usePictureVersion']) {
     $(id).disabled = false; $(id).setAttribute('aria-disabled', String(review.busy));
   }
