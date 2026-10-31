@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gesture test</title>
+<style>
+  /* Meta says drag needs this on body in the first stylesheet. Black is see-through on the glasses. */
+  body { touch-action: none; margin: 0; background: #000; color: #fff; font: 22px/1.25 system-ui, sans-serif; user-select: none; }
+  main { width: 600px; height: 600px; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; gap: 14px; outline: none; }
+  h1 { margin: 0; font-size: 26px; font-weight: 600; }
+  #tiles { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 10px; }
+  .tile { border: 2px solid #777; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .tile b { font-size: 40px; font-weight: 600; line-height: 1; }
+  .tile span { font-size: 18px; }
+  .tile i { font-style: normal; font-size: 18px; color: #bbb; min-height: 22px; }
+  .tile.seen { border-color: #fff; background: #fff; color: #000; }
+  .tile.seen i { color: #000; }
+  #last { min-height: 58px; font-size: 20px; overflow-wrap: anywhere; }
+  #detail { font-size: 18px; color: #bbb; min-height: 24px; }
+  #clear { font: inherit; font-size: 20px; color: #fff; background: #000; border: 2px solid #777; border-radius: 12px; padding: 6px; outline: none; }
+  #clear:focus { background: #fff; color: #000; border-color: #fff; }
+</style>
+</head>
+<body>
+<main id="page" tabindex="0">
+  <h1 id="head">Try each gesture once</h1>
+  <div id="tiles"></div>
+  <div id="last">Waiting…</div>
+  <div id="detail"></div>
+  <button id="clear" type="button" tabindex="-1" aria-label="Clear results">Clear results ↓↓ ●</button>
+</main>
+<script>
+  // Real glasses settle what the docs can't: which keys arrive, whether a held pinch repeats, how far a drag reaches, whether Back
+  // comes to the page. Nothing leaves this page. Results stay for the next visit on this device only.
+  const TILES = [
+    ['up', '↑', 'Swipe up'], ['down', '↓', 'Swipe down'], ['left', '←', 'Swipe left'], ['right', '→', 'Swipe right'],
+    ['pinch', '●', 'Pinch'], ['hold', '●●', 'Hold pinch'], ['drag', '✥', 'Pinch drag'], ['back', '↩', 'Back'],
+  ];
+  const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'pinch', ' ': 'pinch' };
+  const DRAG_PX = 12;
+  // This page shares its site with Bakar Home, so everything it keeps starts with this name and can't touch that app's keys.
+  const STORE = 'gesture-tester.results-v1';
+  const CLEAR_WAIT_MS = 5000;
+  const counts = {};
+  let reach = { x: 0, y: 0 };
+  let press = null;
+  let unknown = 0;
+  let before = null;
+  let armed = null;
+  const clear = document.getElementById('clear');
+  const tiles = {};
+  const box = document.getElementById('tiles');
+  for (const [id, mark, name] of TILES) {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.innerHTML = `<b>${mark}</b><span>${name}</span><i></i>`;
+    box.append(tile);
+    tiles[id] = tile;
+  }
+
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify({ counts, reach, unknown })); } catch (e) { /* a private window keeps nothing */ }
+  }
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; }
+  }
+
+  function draw() {
+    let done = 0;
+    for (const [id] of TILES) {
+      const n = counts[id] || 0;
+      tiles[id].classList.toggle('seen', n > 0);
+      tiles[id].querySelector('i').textContent = n ? '×' + n : '';
+      if (n) done += 1;
+    }
+    document.getElementById('head').textContent = done === TILES.length ? 'All eight arrived' : `Try each gesture once: ${done} of ${TILES.length}`;
+    document.getElementById('detail').textContent =
+      (reach.x || reach.y ? `Drag reached ${Math.round(reach.x)} × ${Math.round(reach.y)} px. ` : '') + (unknown ? `${unknown} other keys.` : '');
+  }
+
+  function seen(id, text) {
+    counts[id] = (counts[id] || 0) + 1;
+    document.getElementById('last').textContent = text;
+    save();
+    draw();
+  }
+
+  function stepOff() {
+    clearTimeout(armed);
+    armed = null;
+    clear.textContent = 'Clear results ↓↓ ●';
+    document.getElementById('page').focus();
+  }
+
+  // The glasses send only arrows and Enter, and those are the test itself. Swiping down twice in a row reaches this button,
+  // and it takes two separate pinches, so a held pinch or a stray swipe can't lose the results.
+  function pressClear() {
+    if (armed === null) {
+      clear.textContent = 'Pinch again to clear';
+      armed = setTimeout(stepOff, CLEAR_WAIT_MS);
+      return;
+    }
+    try { localStorage.removeItem(STORE); } catch (e) { /* a private window kept nothing */ }
+    for (const id of Object.keys(counts)) delete counts[id];
+    reach = { x: 0, y: 0 };
+    unknown = 0;
+    document.getElementById('last').textContent = 'Results cleared';
+    stepOff();
+    draw();
+  }
+
+  clear.addEventListener('click', pressClear);
+
+  addEventListener('keydown', (event) => {
+    event.preventDefault();
+    const id = KEYS[event.key];
+    if (id === 'pinch' && document.activeElement === clear) {
+      if (!event.repeat) pressClear();
+      return;
+    }
+    const again = id === 'down' && before === 'down' && !event.repeat;
+    before = again ? null : id;
+    stepOff();
+    if (again) clear.focus();
+    if (id === 'pinch' && event.repeat) return seen('hold', `Enter is repeating, so a held pinch can be told apart`);
+    if (id) return seen(id, `key ${JSON.stringify(event.key)} code ${event.code}`);
+    unknown += 1;
+    document.getElementById('last').textContent = `other key ${JSON.stringify(event.key)} code ${event.code}`;
+    save();
+    draw();
+  });
+
+  // Back stays inside this page once, so it can be counted. The next Back leaves as normal, so this never traps anyone.
+  history.pushState({ test: 1 }, '');
+  addEventListener('popstate', () => { stepOff(); seen('back', 'Back reached the page. Back again leaves.'); });
+
+  addEventListener('pointerdown', (event) => { press = { x: event.clientX, y: event.clientY, id: event.pointerId, moved: 0 }; });
+  addEventListener('pointermove', (event) => {
+    if (!press || event.pointerId !== press.id) return;
+    const dx = Math.abs(event.clientX - press.x);
+    const dy = Math.abs(event.clientY - press.y);
+    reach = { x: Math.max(reach.x, dx), y: Math.max(reach.y, dy) };
+    if (dx + dy > DRAG_PX && !press.moved) { press.moved = 1; seen('drag', `pointer drag, type ${event.pointerType}`); }
+    draw();
+  });
+  addEventListener('pointerup', () => { press = null; save(); });
+  addEventListener('pointercancel', () => {
+    press = null;
+    document.getElementById('last').textContent = 'The system took the drag back';
+  });
+
+  const kept = load();
+  Object.assign(counts, kept.counts || {});
+  reach = kept.reach || reach;
+  unknown = kept.unknown || 0;
+  document.getElementById('page').focus();
+  draw();
+</script>
+</body>
+</html>
