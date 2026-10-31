@@ -328,7 +328,22 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
   .routemap.draw .routetrace, .routemap.draw .routeglow { stroke-dasharray: 1; animation: routedraw 1.4s var(--settle) both; }
 }
 /* Drive: a parked demo of a sports gauge. One thin lit arc over black; everything else stays dark and see-through. */
+/* Glass on a see-through display can't frost what's behind it, so it's made of light: a soft cabin glow inside the dial
+   that rises with speed, a bright rim, a curved reflection and a highlight that slowly travels round the edge. */
 .drivehud { position: relative; inline-size: 340px; block-size: 340px; margin: 0 auto; }
+.drivehud::before { content: ""; position: absolute; inset: 22px; border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), transparent 34%);
+  -webkit-mask: radial-gradient(circle at 50% 66%, transparent 62%, #000 74%); mask: radial-gradient(circle at 50% 66%, transparent 62%, #000 74%); }
+.driveenergy { position: absolute; inset: 12px; border-radius: 50%; opacity: 0.34;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 50% 30%, rgba(57, 198, 230, 0.2), rgba(84, 92, 214, 0.11) 46%, rgba(198, 0, 126, 0.08) 64%, transparent 74%); }
+.drivesheen { position: absolute; inset: 7px; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.05), rgba(255, 240, 204, 0.8) 8%, rgba(255, 255, 255, 0.07) 22%, rgba(57, 198, 230, 0.32) 52%, rgba(255, 255, 255, 0.05) 76%, rgba(198, 0, 126, 0.26) 90%, rgba(255, 255, 255, 0.05));
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.4px)); mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.4px)); }
+@media (prefers-reduced-motion: no-preference) {
+  .drivesheen { animation: drivesheen 18s linear infinite; }
+}
+@keyframes drivesheen { to { transform: rotate(360deg); } }
 .drivearc { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; }
 .drivetrack, .drivefill { fill: none; }
 .drivetrack { stroke: rgba(255, 210, 122, 0.2); stroke-width: 1; }
@@ -337,9 +352,7 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
 .drivetip { fill: #fff0cc; }
 .driveticks line { stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
 .driveticks line.major { stroke: rgba(255, 210, 122, 0.75); stroke-width: 1.5; }
-.drivemark { position: absolute; inset-inline: 0; top: 52px; text-align: center; font-size: 12px; letter-spacing: 0.36em;
-  text-indent: 0.36em; color: #ffd27a; font-weight: var(--w-strong); }
-.drivestate { position: absolute; inset-inline: 0; top: 74px; text-align: center; font-size: 11px; letter-spacing: 0.26em;
+.drivestate { position: absolute; inset-inline: 0; top: 70px; text-align: center; font-size: 11px; letter-spacing: 0.26em;
   text-indent: 0.26em; color: var(--soft); }
 .drivespeed { position: absolute; inset-inline: 0; top: 112px; text-align: center; font-size: 100px; line-height: 1; font-weight: 200;
   letter-spacing: -3px; font-variant-numeric: tabular-nums; }

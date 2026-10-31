@@ -891,6 +891,7 @@ function driveSpeedAt(ms) {
 
 function showDrive(speed, sideG, brakeG, rate = 0) {
   const kmh = Math.round(speed);
+  $('driveEnergy').style.opacity = (0.34 + 0.66 * Math.min(1, speed / 130)).toFixed(3);
   const swept = Math.min(1, speed / DRIVE_FULL) * DRIVE_SWEEP;
   $('driveSpeed').textContent = kmh;
   $('driveFill').setAttribute('stroke-dasharray', `${swept.toFixed(1)} 360`);
