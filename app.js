@@ -1427,7 +1427,7 @@ function focusFirst(pane) {
 
 function selectTab(tab, focusTab) {
   if (S.view !== 'list') return; // Native Back preserves the current draft and bounds shared history.
-  if (!HomeShell.canLeaveReview(tab)) return;
+  if (!HomeShell.canEnterRoute(tab, focusTab) || !HomeShell.canLeaveReview(tab)) return;
   S.tab = tab;
   S.view = 'list';
   history.replaceState({ v: 'list', tab }, '');
