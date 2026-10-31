@@ -566,7 +566,7 @@ function renderWork() {
   const sum = $('summary');
   sum.textContent = '';
   if (!S.kUp) {
-    sum.textContent = 'Open Bakar Home from its own link to see Claude and Codex.';
+    sum.textContent = 'Open Bakar Studio from its existing link to see Claude and Codex.';
     return;
   }
   if (!s) {
@@ -644,13 +644,13 @@ function duration(sec) {
 }
 
 function openStudio() {
-  const app = APPS.find((a) => /studio-glass/.test(a.url));
-  if (app) launch(app); else selectTab('apps');
+  selectTab('review');
 }
 
 // ---- messages from the PC (relay/push.py, MCP glasses_say) ------------------------------------------
 
 function showPush(p) {
+  if (S.tab === 'drive' || S.tab === 'route') return; // Never reveal or speak an incoming banner in Drive.
   if (!p || !p.id || p.id === S.pushed) return;
   S.pushed = p.id;
   const box = $('push');
@@ -777,7 +777,7 @@ function renderNow() {
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.now : '';
   list.textContent = '';
   const line = $('nowLine');
-  if (!S.kUp) { line.textContent = 'Open Bakar Home from its own link to see your studio.'; return; }
+  if (!S.kUp) { line.textContent = 'Open Bakar Studio from its existing link to see your studio.'; return; }
   if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
   const cards = nowCards();
   const calm = !cards.length || cards[0].rank >= 2;
@@ -909,28 +909,14 @@ function showDrive(speed, sideG, brakeG, rate = 0) {
 }
 
 function stopDriveDemo() {
-  if (!S.driveFrame) return;
-  cancelAnimationFrame(S.driveFrame);
-  S.driveFrame = 0;
-  showDrive(0, 0, 0);
-  $('driveRun').textContent = 'Run demo';
+  if (S.driveFrame) cancelAnimationFrame(S.driveFrame);
+  S.driveFrame=0;S.driveSample=false;showDrive(0,0,0);$('driveRun').textContent='Show sample';
 }
-
 function runDriveDemo() {
-  if (S.driveFrame) { stopDriveDemo(); return; }
-  stopDriveLive();
-  if (!MOTION) { showDrive(118, 0.2, 0); return; }
-  const start = performance.now();
-  $('driveRun').textContent = 'Stop demo';
-  const frame = (now) => {
-    const ms = now - start;
-    if (ms >= DRIVE_MS) { stopDriveDemo(); return; }
-    S.driveFrame = requestAnimationFrame(frame);
-    const rate = (driveSpeedAt(ms + 50) - driveSpeedAt(ms - 50)) / 0.1;     // km/h a second, read from the clock so a dropped frame can't jerk it
-    const brakeG = Math.max(-0.9, Math.min(0.9, -rate / 3.6 / 9.8));
-    showDrive(driveSpeedAt(ms), 0.25 * Math.sin(ms / 1600) * Math.sin(Math.PI * ms / DRIVE_MS), brakeG, rate);
-  };
-  S.driveFrame = requestAnimationFrame(frame);
+  if (!StudioParked.confirmed() || HomeShell.driveQuiet()) return;
+  stopDriveLive();S.driveSample=!S.driveSample;showDrive(S.driveSample?118:0,S.driveSample ? 0.2 : 0,0);
+  $('driveRun').textContent=S.driveSample?'Reset sample':'Show sample';
+  $('driveState').textContent='STATIC SAMPLE';$('driveNote').textContent='Simulated. Not vehicle data. Parked only.';
 }
 
 // Real motion from the glasses' own sensors, while parked: how hard the head is moving, side to side and front to back.
@@ -952,13 +938,14 @@ function stopDriveLive() {
   S.driveSide = S.driveBrake = 0;
   clearTimeout(S.driveQuiet);
   window.removeEventListener('devicemotion', onDriveMotion);
-  $('driveLive').textContent = 'Live head motion';
+  $('driveLive').textContent = 'Check head sensor';
   $('driveState').textContent = 'PARKED DEMO';
-  $('driveNote').textContent = 'Sample numbers, not your car. The screen sleeps while driving.';
+  $('driveNote').textContent = 'No vehicle telemetry. Interact only while parked.';
   showDrive(0, 0, 0);
 }
 
 async function runDriveLive() {
+  if (!StudioParked.confirmed() || HomeShell.driveQuiet()) return;
   if (S.driveLive) { stopDriveLive(); return; }
   stopDriveDemo();
   const ask = window.DeviceMotionEvent && DeviceMotionEvent.requestPermission;
@@ -966,6 +953,7 @@ async function runDriveLive() {
     const answer = await ask.call(DeviceMotionEvent).catch(() => 'denied');
     if (answer !== 'granted') { $('driveNote').textContent = 'The glasses did not allow motion readings.'; return; }
   }
+  if (!StudioParked.confirmed() || HomeShell.driveQuiet() || S.tab !== 'drive' || document.hidden) return;
   S.driveLive = true;
   $('driveLive').textContent = 'Stop live motion';
   $('driveState').textContent = 'LIVE HEAD MOTION';
@@ -1337,6 +1325,7 @@ async function keepIcons() {
 }
 
 function launch(app) {
+  if (/studio-glass/.test(app.url)) { selectTab('review'); return; }
   let url = app.url;
   // The app opens inside Bakar Home's own storage, so it gets its pairing in its address, the way it was added.
   const pass = app.pass && passPairing(app.pass);
@@ -1364,10 +1353,10 @@ function closePairing() {
 
 // ---- screens and history ---------------------------------------------------------------------------
 
-const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'route', 'drive', 'play', 'apps', 'games', 'pair'];
+const PANES = ['review', 'now', 'work', 'detail', 'compose', 'watch', 'route', 'drive', 'play', 'apps', 'games', 'pair'];
 const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const DEPTH = { now: 0, work: 0, watch: 0, route: 0, drive: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
-const TABS = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games'];
+const DEPTH = { review: 0, now: 0, work: 0, watch: 0, route: 0, drive: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
+const TABS = ['review', 'now', 'work', 'watch', 'route', 'drive', 'apps', 'games'];
 // Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
 const NEEDS_PC = ['now', 'work'];
 
@@ -1385,7 +1374,7 @@ function showPane(id) {
   }
   placeTabline();
   // Continuity: deeper screens come in from the right and go back to the left; sections slide the way you swiped.
-  if (MOTION && before && before !== id && $(id).animate) {
+  if (id !== 'drive' && before !== 'drive' && MOTION && before && before !== id && $(id).animate) {
     let dir = Math.sign(DEPTH[id] - DEPTH[before]);
     if (!dir) dir = S.slide || Math.sign(TABS.indexOf(id) - TABS.indexOf(before)) || 1;
     // Mostly a slide: opacity starts at 0.92 (about 83% of the light), because a dark first frame between screens
@@ -1394,6 +1383,7 @@ function showPane(id) {
       { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
   }
   S.slide = 0;
+  HomeShell.onPane(id, before);
 }
 
 // The section underline glides to the selected section (transform only).
@@ -1426,6 +1416,8 @@ function press(target) {
 }
 
 function focusFirst(pane) {
+  if (pane === 'drive' && HomeShell.driveQuiet()) { $('driveReveal').focus(); return; }
+  if (pane === 'review') { HomeShell.focusReview(); return; }
   // On Work, start on the top session (needs-you sessions sort first); New task is one press up.
   const first = (pane === 'work' && $('rows').querySelector('.row[data-k]'))
     || (pane === 'now' && $('nowRows').querySelector('.row'))
@@ -1434,12 +1426,15 @@ function focusFirst(pane) {
 }
 
 function selectTab(tab, focusTab) {
+  if (S.view !== 'list') return; // Native Back preserves the current draft and bounds shared history.
+  if (!HomeShell.canLeaveReview(tab)) return;
   S.tab = tab;
   S.view = 'list';
   history.replaceState({ v: 'list', tab }, '');
   if (S.pairing && NEEDS_PC.includes(tab)) showPane('pair');
   else showPane(tab);
-  if (focusTab) document.querySelector(`.tab[data-tab="${tab}"]`).focus();
+  if (tab === 'review') HomeShell.focusReview();
+  else if (focusTab) document.querySelector(`.tab[data-tab="${tab}"]`).focus();
   else focusFirst(NEEDS_PC.includes(tab) && S.pairing ? 'pair' : tab);
 }
 
@@ -1517,12 +1512,12 @@ function startCompose(c) {
     $('cTitle').textContent = 'New task';
     $('cLabel').textContent = 'Say what you want done';
     const providers = can.new || [];
-    S.compose.provider = providers[0] || '';
+    S.compose.provider = ''; // The wearer chooses a provider explicitly.
     const who = el('div', 'pickgroup');
     who.append(el('span', 'label', 'AI'));
     for (const p of providers) who.append(choice(PROVIDER[p], 'provider', p));
     const projects = can.projects || [];
-    S.compose.project = projects.length ? projects[0].k : '';
+    S.compose.project = '';
     const where = el('div', 'pickgroup');
     where.append(el('span', 'label', 'Folder'));
     for (const p of projects) where.append(choice(p.n, 'project', p.k));
@@ -1566,8 +1561,8 @@ function review() {
   const c = S.compose;
   if (!c) return;
   if (c.mode === 'yt') { findVideos(); return; }
-  const text = c.mode === 'answer' ? c.text : $('cText').value.trim();
-  if ((c.mode === 'new' || c.mode === 'say') && !text) {
+  const text = c.mode === 'answer' ? c.text : $('cText').value;
+  if ((c.mode === 'new' || c.mode === 'say') && !text.trim()) {
     $('cNote').textContent = 'Nothing to send yet. Focus the box and speak.';
     $('cText').focus();
     return;
@@ -1576,10 +1571,13 @@ function review() {
   const d = S.details[c.k] || rowFor(c.k) || {};
   let summary = '';
   if (c.mode === 'new') {
+    if (!(can.new || []).includes(c.provider) || !(can.projects || []).some(p=>p.k===c.project)) {
+      $('cNote').textContent='Choose an available agent and folder before reviewing.';return;
+    }
     const project = (can.projects || []).find((p) => p.k === c.project);
     const place = !project ? 'the chosen folder' : project.k === 'desk' ? 'a fresh folder' : project.n;
     summary = `Send to ${PROVIDER[c.provider] || 'the AI'}, working in ${place}:`;
-  } else if (c.mode === 'say') summary = `Send this reply to ${d.ti}:`;
+  } else if (c.mode === 'say') summary = `Send to ${PROVIDER[d.p] || 'Unknown agent'} - ${d.ti}:`;
   else if (c.mode === 'answer') summary = `Answer ${d.ti} with:`;
   else summary = `Stop ${d.ti}? Its work so far is kept.`;
   c.final = text;
@@ -1589,8 +1587,10 @@ function review() {
   $('cGo').textContent = c.mode === 'stop' ? 'Stop task' : 'Send';
   // An answer or a stop has no text to edit, so its second button goes back instead.
   $('cEdit').textContent = c.mode === 'answer' || c.mode === 'stop' ? 'Cancel' : 'Edit';
-  $('cGo').disabled = false;
-  $('cGo').focus();
+  $('cGo').disabled = true;
+  $('cGo').textContent='Send unavailable';
+  $('cNote').textContent='Real task sending is disabled in this preparation build.';
+  $('cEdit').focus();
 }
 
 async function findVideos() {
@@ -1617,32 +1617,7 @@ function closeConfirm() {
 }
 
 async function go() {
-  const c = S.compose;
-  if (!c || $('cGo').disabled) return;
-  $('cGo').disabled = true;
-  $('cNote').textContent = 'Sending…';
-  let id = '';
-  if (c.mode === 'new') id = await send('new', { p: c.provider, w: c.project, text: c.final });
-  else if (c.mode === 'say' || c.mode === 'answer') id = await send('say', { k: c.k, text: c.final, answer: c.mode === 'answer' });
-  else if (c.mode === 'stop') id = await send('stop', { k: c.k });
-  if (!id) { $('cNote').textContent = 'Not sent. Check the connection and try again.'; $('cGo').disabled = false; return; }
-  const timer = setTimeout(() => {
-    if (S.pending[id]) { delete S.pending[id]; $('cNote').textContent = 'Sent, but your PC hasn’t confirmed it yet.'; $('cGo').disabled = false; }
-  }, 20000);
-  S.pending[id] = (ack) => {
-    clearTimeout(timer);
-    if (!ack.ok) { $('cNote').textContent = ack.why || 'Your PC refused that.'; $('cGo').disabled = false; return; }
-    S.compose = null;
-    const k = ack.k || c.k;
-    S.open = k;
-    S.view = 'detail';
-    history.replaceState({ v: 'detail', k }, '');
-    if (ack.det) S.details[k] = ack.det;
-    showPane('detail');
-    renderDetail();
-    ($('dActions').querySelector('button') || $('dResult')).focus();
-    armIdle();
-  };
+  $('cNote').textContent='Task sending is disabled in this preparation build.';
 }
 
 // ---- keys ------------------------------------------------------------------------------------------
@@ -1657,12 +1632,15 @@ function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
-  if (['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(pane)) {
+  add(document.querySelectorAll('[data-section]'));
+  if (pane === 'review') { add([$('reviewEnter')]); }
+  else if (['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
+    else if (pane === 'drive' && HomeShell.driveQuiet()) add([$('driveReveal')]);
     else if (pane === 'drive') { add([$('driveRun')]); add([$('driveLive')]); add([$('driveLight')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
@@ -1702,13 +1680,17 @@ function moveFocus(dy, dx) {
 
 function onKey(e) {
   if (document.visibilityState !== 'visible') return;
+  if (HomeShell.handleKey(e)) return;
   if (e.key !== 'Enter') S.lastKeyAt = Date.now();
   if (e.key === 'Enter' && !e.target.closest('textarea')) press(e.target);
   if (S.paused && S.kUp) wake(); else if (S.kUp) armIdle();
   const k = e.key;
+  if (e.target.closest('.sections') && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+    e.preventDefault();moveFocus(0,k === 'ArrowRight' ? 1 : -1);return;
+  }
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
-    const tabs = TABS;
-    const i = tabs.indexOf(S.tab);
+    const tabs = HomeShell.tabsForInput(e.target);
+    const i = Math.max(0,tabs.indexOf(S.tab));
     const next = tabs[(i + (k === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     e.preventDefault();
     S.slide = k === 'ArrowRight' ? 1 : -1;
@@ -1725,10 +1707,7 @@ function onKey(e) {
     return;
   }
   if (e.target === $('cText')) {
-    const t = $('cText');
-    if (k === 'Enter' && !e.shiftKey) { e.preventDefault(); $('cSend').focus(); return; }
-    if (k === 'ArrowDown' && t.selectionEnd >= t.value.length) { e.preventDefault(); moveFocus(1, 0); return; }
-    if (k === 'ArrowUp' && t.selectionStart === 0) { e.preventDefault(); moveFocus(-1, 0); }
+    // A normal activated textarea belongs to the glasses' system composer.
     return;
   }
   // In a video, up and down jump 10 seconds; left and right move along the controls.
@@ -1797,6 +1776,7 @@ async function main() {
     openLink();
     hello();
   });
+  HomeShell.init();
   renderApps();
   loadApps();
   const start = TABS.includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'now';
@@ -1813,6 +1793,7 @@ async function main() {
   renderState();
   registerServiceWorker();
   if (ready) wake();
+  if (S.tab !== 'drive') StudioParked.request();
 }
 
 main();

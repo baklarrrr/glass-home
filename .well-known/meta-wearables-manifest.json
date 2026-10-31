@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "name": "Bakar Home",
-  "description": "Claude and Codex sessions from your studio PC, your glasses apps, and games kept separate.",
+  "name": "Bakar Studio",
+  "description": "Work, picture review and parked Drive controls in one existing app.",
   "appearance": {
     "theme_color": "#AFC4FF",
     "icon_background": {

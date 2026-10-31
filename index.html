@@ -3,20 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="application-name" content="Bakar Home">
-  <meta name="description" content="Bakar's glasses home: Claude and Codex sessions from the studio PC, his apps, and games kept apart.">
+  <meta name="application-name" content="Bakar Studio">
+  <meta name="description" content="Bakar Studio: work, picture review and parked Drive controls in one glasses app.">
   <meta name="mrbd-web-app-capable" content="yes">
   <meta name="robots" content="noindex, nofollow">
   <!-- YouTube's embedded player needs this page's origin as the referrer of its request (error 153 without it). -->
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#000000">
-  <title>Bakar Home</title>
+  <title>Bakar Studio</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="home-shell.css">
 </head>
 <body>
+  <div id="glance" class="glance">
   <header class="top">
-    <nav class="tabs" role="tablist" aria-label="Sections">
+    <nav class="sections" aria-label="Studio sections"><button id="section-work" data-section="work">Work</button><button id="section-review" data-section="review">Review</button><button id="section-drive" data-section="drive">Drive</button></nav>
+    <nav class="tabs" role="tablist" aria-label="Section views">
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
       <button class="tab" role="tab" id="tab-watch" data-tab="watch" aria-controls="watch">Watch</button>
@@ -106,6 +109,7 @@
     </section>
 
     <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
+      <button id="driveReveal" class="btn quiet-reveal">Drive<span>No vehicle data - parked controls</span></button>
       <div id="driveHud" class="drivehud">
         <span id="driveEnergy" class="driveenergy" aria-hidden="true"></span>
         <span class="drivesheen" aria-hidden="true"></span>
@@ -130,11 +134,13 @@
           <span id="driveGVal">0.0 G</span>
         </div>
       </div>
-      <button id="driveRun" class="row driverun">Run demo</button>
-      <button id="driveLive" class="row driverun">Live head motion</button>
+      <button id="driveRun" class="row driverun">Show sample</button>
+      <button id="driveLive" class="row driverun">Check head sensor</button>
       <button id="driveLight" class="row driverun">Light: Auto</button>
-      <p id="driveNote" class="note">Sample numbers, not your car. The screen sleeps while driving.</p>
+      <p id="driveNote" class="note">No vehicle telemetry. Interact only while parked.</p>
     </section>
+
+    <section id="review" class="pane" aria-labelledby="section-review" hidden><p id="reviewState" class="note">Connecting picture review.</p><button id="reviewEnter" class="btn" hidden>Enter pictures</button><iframe id="reviewFrame" title="Pictures and saved feedback" referrerpolicy="no-referrer" hidden></iframe></section>
 
     <section id="play" class="pane" hidden aria-label="Video">
       <div id="ytWrap" class="ytwrap"><div id="ytPlayer"></div></div>
@@ -169,6 +175,10 @@
       <button id="pRetry" class="btn primary">Try again</button>
     </section>
   </main>
+  </div>
+  <section id="parkedGate" class="parked-gate" role="dialog" aria-modal="true" aria-labelledby="parkedTitle" hidden><h1 id="parkedTitle">Controls while parked</h1><p>Vehicle motion is not checked. Use menus, messages and feedback only while parked.</p><button id="parkedConfirm" class="btn">I'm parked - show controls</button><button id="parkedCancel" class="btn">View only</button></section>
+  <script src="parked.js"></script>
+  <script src="home-shell.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="app.js"></script>
 </body>

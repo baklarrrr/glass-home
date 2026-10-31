@@ -1,0 +1,4 @@
+/* Internal Review component; the existing parent app owns its section navigation. */
+.topline, #studioTab, #desktopBack { display:none !important; }
+body { padding:6px; }
+#glance { gap:8px; }

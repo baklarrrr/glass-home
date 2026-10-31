@@ -1,0 +1,260 @@
+/* Bakar Studio on Meta Ray-Ban Display.
+   Additive display: black is see-through, so only type, hairlines and the focus glow are lit. Colours
+   follow the studio hub: mint for work moving, warm amber for anything that needs Bakar's eyes. */
+:root {
+  --ink: #f4f1e9;
+  --soft: #d7dbd6;
+  --dim: #9aa59e;
+  --hair: rgba(255, 255, 255, 0.3);
+  --mint: #8bdbb6;
+  --mint-soft: rgba(139, 219, 182, 0.16);
+  --warn: #f4ce90;
+  --bad: #f0a5a5;
+  --glow: 0 0 0 2px var(--mint), 0 0 8px rgba(139, 219, 182, 0.35);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0; inline-size: 100%; block-size: 100%;
+  background: #000; color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { block-size: 100%; }
+p, h1 { margin: 0; }
+button { font: inherit; color: inherit; background: transparent; cursor: pointer; }
+.pictures-entry, .pictures-link { border: 1.5px solid var(--hair); border-radius: 12px; padding: 9px 16px; min-block-size: 48px; text-align: left; font-size: 20px; flex: none; }
+.pictures-entry span { float: right; font-size: 15px; color: var(--soft); padding-top: 3px; }
+.pictures-link { font-size: 16px; }
+.pictures-entry:focus, .pictures-link:focus { outline: none; border-color: var(--mint); box-shadow: var(--glow); }
+svg { fill: currentColor; }
+
+.screen { display: flex; flex-direction: column; gap: 12px; block-size: 100%; padding: 22px 30px 20px; overflow: hidden; }
+.screen.center { justify-content: center; gap: 10px; }
+
+.topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; font-size: 15px; color: var(--dim); }
+.brand { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 13px; color: var(--soft); white-space: nowrap; }
+.right { display: inline-flex; align-items: center; gap: 14px; min-inline-size: 0; }
+.state { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; min-inline-size: 0; }
+#stateText { overflow: hidden; text-overflow: ellipsis; }
+/* A link warning is the one thing on this line that must read outdoors: bright, not dim grey. */
+.state.warn { color: var(--warn); font-weight: 600; }
+.dot { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--dim); }
+.dot.live { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.state.warn .dot { background: var(--warn); }
+
+/* The glasses' battery, as in Tidal Glass: a bolt while charging, warm at 15% or less. */
+.gbat { display: inline-flex; align-items: center; gap: 4px; flex: none; font-variant-numeric: tabular-nums; }
+.gbat svg { inline-size: 18px; block-size: 18px; }
+.gbat.low { color: var(--warn); font-weight: 600; }
+.gbat.charging { color: var(--mint); }
+.gbat .gbat-bolt { display: none; }
+.gbat.charging .gbat-bolt { display: inline; }
+
+.head, .block { border: 1.5px solid var(--hair); border-radius: 18px; outline: none; }
+.head { padding: 12px 18px 14px; flex: none; }
+.headline { font-size: 34px; font-weight: 760; letter-spacing: -0.01em; line-height: 1.1; }
+.headline.moving { color: var(--mint); }
+.headline.attention { color: var(--warn); }
+.headline.quiet, .headline.offline { color: var(--soft); }
+.subline { font-size: 19px; color: var(--soft); margin-top: 4px; }
+
+.block { padding: 10px 16px 12px; min-block-size: 0; }
+.block.renders { flex: 1; overflow: hidden; }
+.label { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin-bottom: 4px; }
+.open-hint { float: right; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--soft); }
+.value { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.note { font-size: 14px; color: var(--dim); margin-top: 2px; }
+
+.items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.items li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; font-size: 19px; }
+.items .mark { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--mint); align-self: center; }
+.items .mark.attention { background: var(--warn); border-radius: 2px; transform: rotate(45deg); }
+.items .mark.idle { background: var(--dim); }
+.items .ti { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.items .st { font-size: 15px; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.items .why { grid-column: 2 / 4; font-size: 15px; color: var(--warn); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -4px; }
+.items li.more .ti { color: var(--dim); font-size: 16px; }
+
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; flex: none; }
+.pair .value, .pair .note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.block.line { display: flex; align-items: baseline; gap: 14px; flex: none; padding: 8px 16px 9px; min-block-size: 44px; }
+.block.line .label { margin-bottom: 0; }
+.line-text { display: flex; align-items: baseline; gap: 12px; min-inline-size: 0; }
+.line-text .note { margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.value.low { color: var(--warn); }
+.value.quiet { color: var(--soft); font-weight: 600; font-size: 18px; }
+.line-text .value { white-space: nowrap; flex: none; }
+
+/* Focus is a ring, never a fill: preserve the additive display's black background. */
+.head:focus, .block:focus { border-color: var(--mint); box-shadow: var(--glow); }
+.head[aria-disabled="false"], .renders[role="button"] { cursor: pointer; }
+
+/* Readable pages, with every control kept inside the glasses' 600 × 600 display. */
+.job-screen { display: flex; flex-direction: column; gap: 12px; flex: 1; min-block-size: 0; }
+.job-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; }
+.job-heading-row h1 { font-size: 26px; font-weight: 700; line-height: 1.15; }
+.job-heading-row .detail-heading { min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 22px; }
+.job-actions { display: flex; gap: 8px; flex: none; }
+.job-actions button, .job-pager button { border: 1.5px solid var(--hair); border-radius: 12px; min-block-size: 48px; padding: 8px 12px; font-size: 17px; }
+.job-screen button:focus { outline: none; border-color: var(--mint); box-shadow: var(--glow); }
+.job-screen button:disabled { opacity: 0.35; cursor: default; }
+.job-context { color: var(--soft); font-size: 15px; line-height: 1.35; flex: none; white-space: pre-line; }
+.job-context:empty { display: none; }
+.job-context.saved { color: var(--warn); }
+.job-body { flex: 1; min-block-size: 0; overflow: hidden; }
+.job-list { list-style: none; margin: 0; padding: 3px; display: flex; flex-direction: column; gap: 10px; }
+.job-button { display: block; inline-size: 100%; text-align: left; border: 1.5px solid var(--hair); border-radius: 16px; padding: 11px 14px; min-block-size: 74px; }
+.job-name { display: block; font-size: 21px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-meta { display: block; color: var(--mint); font-size: 16px; margin-top: 4px; }
+.job-button.attention .job-meta { color: var(--warn); }
+.job-button.queued .job-meta { color: var(--soft); }
+.job-empty { font-size: 22px; line-height: 1.4; padding: 12px 3px; }
+.detail-text { font-size: 22px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; padding: 3px; }
+.job-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; }
+#pagePosition { color: var(--soft); font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.job-disclosure { font-size: 14px; line-height: 1.3; color: var(--dim); flex: none; }
+body.calm .job-screen button { border-color: rgba(255, 255, 255, 0.14); }
+body.calm .job-screen button:focus { border-color: rgba(139, 219, 182, 0.5); box-shadow: none; }
+body.calm .job-disclosure { opacity: 0.55; }
+@media (max-width: 480px) {
+  .screen { padding-inline: 18px; }
+  .job-heading-row { align-items: flex-start; }
+  .job-heading-row h1 { font-size: 24px; }
+  .job-actions { gap: 5px; }
+  .job-actions button { padding-inline: 9px; }
+}
+
+h1 { font-size: 32px; }
+.hero { inline-size: 72px; block-size: 72px; color: var(--mint); }
+
+/* The PC isn't answering, or the link is down: everything below the top line is its last update. */
+body.stale .head, body.stale .block { opacity: 0.55; }
+
+/* ---- calm: less light while nobody is touching it ------------------------------------------
+   After 15 s without a swipe or pinch, borders, labels and secondary text dim. A link warning keeps
+   everything bright; a render problem's headline and reasons, and a low battery, stay bright. */
+body.calm .head, body.calm .block { border-color: rgba(255, 255, 255, 0.14); }
+body.calm .head:focus, body.calm .block:focus { border-color: rgba(139, 219, 182, 0.5); box-shadow: none; }
+body.calm .brand, body.calm .state, body.calm .label, body.calm .note, body.calm .subline,
+body.calm .items .st, body.calm .items .mark, body.calm .gbat:not(.low) { opacity: 0.55; }
+body.calm .headline:not(.attention), body.calm .value, body.calm .items .ti { opacity: 0.7; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .head, .block { transition: box-shadow 140ms ease, border-color 140ms ease; }
+  /* Easing into calm is slow so it never draws the eye; waking is instant (no transition back). */
+  body.calm .brand, body.calm .state, body.calm .label, body.calm .note, body.calm .subline,
+  body.calm .items .st, body.calm .items .mark, body.calm .gbat, body.calm .headline, body.calm .value,
+  body.calm .items .ti { transition: opacity 900ms ease; }
+}
+
+/* Picture review: one image, its identity, and deliberate feedback; never a fabricated preview. */
+.review-screen { display: flex; flex: 1; min-block-size: 0; flex-direction: column; gap: 10px; }
+.review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; }
+.review-heading h1 { font-size: 26px; line-height: 1.2; min-inline-size: 0; }
+.review-heading .picture-heading { font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-top-actions { display: flex; gap: 8px; flex: none; }
+.review-screen button { border: 1.5px solid var(--hair); border-radius: 12px; min-block-size: 46px; padding: 8px 12px; font-size: 17px; }
+.review-screen button:focus, .review-screen textarea:focus, .picture-frame:focus { outline: none; border-color: var(--mint); box-shadow: var(--glow); }
+.review-screen button:disabled { opacity: 0.38; cursor: default; }
+.review-message { flex: none; font-size: 15px; line-height: 1.3; color: var(--warn); overflow-wrap: anywhere; }
+.review-identity { flex: none; font-size: 14px; line-height: 1.3; color: var(--soft); overflow-wrap: anywhere; }
+.review-content { flex: 1; min-block-size: 0; overflow: hidden; }
+.picture-list { margin: 0; padding: 3px; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.picture-list .picture-button { inline-size: 100%; block-size: 68px; display: flex; flex-direction: column; justify-content: center; text-align: left; padding: 8px 14px; }
+.picture-button span { font-size: 20px; font-weight: 700; inline-size: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picture-button small { color: var(--soft); font-size: 14px; margin-top: 3px; }
+.picture-frame { block-size: 100%; inline-size: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 4px; }
+.picture-frame img { display: block; block-size: 100%; inline-size: 100%; object-fit: contain; transform-origin: center; }
+.review-pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex: none; }
+.review-pager span { font-size: 15px; color: var(--soft); text-align: center; }
+.review-actions { display: flex; gap: 10px; flex: none; flex-wrap: wrap; }
+.review-actions button { flex: 1; }
+.review-actions #giveFeedback, .review-actions #reviewFeedback, .review-actions #sendFeedback { border-color: var(--mint); }
+.feedback-form { display: flex; flex-direction: column; block-size: 100%; gap: 8px; }
+.feedback-form label { font-size: 21px; font-weight: 700; }
+.feedback-form textarea { flex: 1; min-block-size: 70px; resize: none; background: transparent; color: var(--ink); border: 1.5px solid var(--hair); border-radius: 12px; padding: 12px; font: 20px/1.4 system-ui,sans-serif; }
+.feedback-form textarea::placeholder { color: var(--dim); }
+.provider-row { display: flex; align-items: center; gap: 8px; flex: none; }
+.provider-row span { font-size: 15px; color: var(--soft); }
+.provider-row button { flex: 1; padding-inline: 8px; }
+.provider-row [aria-pressed="true"] { border-color: var(--mint); color: var(--mint); }
+.review-small { font-size: 14px; line-height: 1.3; color: var(--soft); flex: none; }
+.review-text { font-size: 21px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; padding: 3px; }
+@media (max-width: 420px) {
+  .screen { padding: 16px; gap: 10px; }
+  .topline { gap: 8px; }
+  .brand { font-size: 11px; }
+  .right { gap: 7px; }
+  .state { font-size: 13px; gap: 5px; }
+  .review-heading { align-items: flex-start; gap: 8px; }
+  .review-heading h1 { font-size: 22px; }
+  .review-top-actions { gap: 5px; }
+  .review-top-actions button { padding-inline: 8px; font-size: 15px; }
+  .review-text { font-size: 19px; }
+  .review-actions { gap: 8px; }
+  .provider-row { gap: 5px; }
+  .provider-row button { font-size: 15px; }
+  .pictures-entry span { float: none; display: block; padding-top: 1px; }
+}
+@media (max-height: 430px) {
+  .screen { padding-block: 10px; gap: 6px; }
+  .review-screen { gap: 6px; }
+  .review-heading h1 { font-size: 22px; }
+  .review-screen button { min-block-size: 38px; padding-block: 5px; }
+  .feedback-form { gap: 5px; }
+  .feedback-form textarea { min-block-size: 42px; padding: 6px 10px; font-size: 18px; }
+  .feedback-form label { font-size: 18px; }
+}
+
+/* Native navigation: root peers, one content scroller, and a docked action rail. */
+.root-navigation { display: flex; flex: none; gap: 10px; }
+.root-navigation button { flex: 1; min-block-size: 44px; border: 1.5px solid var(--hair); border-radius: 10px; font-size: 18px; padding: 7px 10px; }
+.root-navigation [aria-current="page"] { color: var(--mint); }
+.root-navigation button:focus, .desktop-back:focus, .native-scroll:focus { outline: 2px solid var(--mint); outline-offset: 2px; }
+.head, button.renders { text-align: left; }
+.headline, .subline { display: block; }
+#picturesButton { display: none; }
+.desktop-only { display: none; }
+.desktop-preview .desktop-only { display: block; }
+.desktop-back { align-self: flex-start; flex: none; border: 0; padding: 0 2px; min-block-size: 26px; color: var(--soft); font-size: 15px; }
+.native-scroll { overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--dim) #000; scrollbar-width: thin; scroll-padding-block: 6px; }
+.job-body, .review-content { overflow: auto; padding: 3px; }
+.job-list { padding: 3px; }
+.job-button, .picture-list li { flex: none; }
+.picture-list .picture-button { min-block-size: 72px; block-size: auto; }
+.picture-button small { line-height: 1.3; }
+.feedback-excerpt { color: var(--soft); font-size: 15px; line-height: 1.3; margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.review-content.image-content { overflow: hidden; padding: 0; }
+.review-screen .picture-frame { display: block; block-size: 100%; inline-size: 100%; padding: 0; border: 0; border-radius: 0; min-block-size: 0; background: #000; }
+.review-screen .picture-frame:focus { outline: 2px solid var(--mint); outline-offset: -2px; box-shadow: none; }
+.review-content:focus { outline-offset: 0; }
+.review-actions button { min-inline-size: 0; }
+.review-actions #giveFeedback, .review-actions #revisePicture, .review-actions #reviewFeedback, .review-actions #sendFeedback { border-color: var(--hair); font-weight: 600; }
+.review-actions button:focus { border-color: var(--mint) !important; }
+.review-screen button[aria-disabled="true"] { opacity: .6; }
+.review-heading { align-items: center; }
+.review-top-actions:has(button[hidden]) { display: none; }
+.review-identity { max-block-size: 3.9em; overflow: auto; }
+.feedback-form textarea { flex: 1 1 auto; inline-size: 100%; }
+#finishEditing { align-self: flex-end; min-block-size: 30px; padding: 3px 9px; font-size: 14px; }
+.feedback-edit-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+.review-screen #feedbackCount { font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) {
+  .root-navigation { gap: 7px; }
+  .root-navigation button { font-size: 16px; padding-inline: 6px; }
+  .headline { font-size: 29px; }
+  .subline { font-size: 17px; }
+  .review-actions button { font-size: 15px; padding-inline: 8px; }
+  .feedback-form textarea { font-size: 18px; }
+}
+@media (max-height: 430px) {
+  .topline { font-size: 12px; }
+  .review-heading h1 { font-size: 20px; }
+  .review-identity, .review-message, .review-small { font-size: 12px; }
+  .feedback-form { gap: 4px; }
+  .feedback-form textarea { min-block-size: 64px; }
+  .feedback-form { min-block-size: 0; }
+}
