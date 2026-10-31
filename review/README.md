@@ -15,6 +15,12 @@ The original app and its saved drafts are not deleted or migrated. Storage that
 Meta isolates per installed app cannot be assumed to appear here. Missing
 connections are shown explicitly; no new pairing is performed automatically.
 
+Focus has one owner. `moveFocus` in the parent's `app.js` walks the frame's controls
+as more rows of the same list. `embedded.js` sends up the arrow keys that land in this
+document, and stops the browser's own focus move. A text box's caret, long-text scrolling
+and Inspect's pan take a press first; at their end the press moves on. Back stays the
+shell's `history.back()`, and `navigation.js` remains the only history owner.
+
 Feedback submission and agent Send remain disabled in this preparation candidate.
 Future enablement requires an authorized target, verified delivery and a correlated
 receipt. Current task status is not proof that it answers a new instruction.

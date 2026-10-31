@@ -1398,7 +1398,7 @@ function placeTabline() {
 // rather than silent. Added to the control's own transform, so a lifted row keeps its lift.
 function rubberBand(dy, dx) {
   if (!MOTION) return;
-  const a = document.activeElement;
+  const a = focusedControl();
   const target = a && a !== document.body && a.animate ? a : $(PANES.find((p) => !$(p).hidden));
   if (!target || !target.animate) return;
   target.animate([
@@ -1427,7 +1427,7 @@ function focusFirst(pane) {
 
 function selectTab(tab, focusTab) {
   if (S.view !== 'list') return; // Native Back preserves the current draft and bounds shared history.
-  if (!HomeShell.canLeaveReview(tab)) return;
+  if (!HomeShell.canEnterRoute(tab, focusTab) || !HomeShell.canLeaveReview(tab)) return;
   S.tab = tab;
   S.view = 'list';
   history.replaceState({ v: 'list', tab }, '');
@@ -1628,12 +1628,23 @@ function visible(n) {
   return n && !n.hidden && !n.disabled && n.offsetParent !== null && !n.closest('[hidden]');
 }
 
+// One focus model: the review frame is same-origin, so its controls join the rows moveFocus already walks.
+function reviewRows() {
+  const f = $('reviewFrame');
+  return (!f.hidden && !f.inert && f.contentWindow.reviewRows?.()) || [];
+}
+
+function focusedControl() {
+  const a = document.activeElement;
+  return a === $('reviewFrame') ? a.contentDocument?.activeElement : a;
+}
+
 function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
   add(document.querySelectorAll('[data-section]'));
-  if (pane === 'review') { add([$('reviewEnter')]); }
+  if (pane === 'review') { add([$('reviewEnter')]); for (const g of reviewRows()) add(g); }
   else if (['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
@@ -1661,9 +1672,9 @@ function rowsOfControls() {
 
 function moveFocus(dy, dx) {
   const groups = rowsOfControls();
-  const a = document.activeElement;
+  const a = focusedControl();
   let gi = groups.findIndex((g) => g.includes(a));
-  if (gi < 0) { (groups[0] || [])[0]?.focus(); return; }
+  if (gi < 0) { (document.activeElement === $('reviewFrame') && reviewRows()[0] || groups[0] || [])[0]?.focus(); return; }
   if (dx) {
     const g = groups[gi];
     const next = g[g.indexOf(a) + dx];
@@ -1678,6 +1689,13 @@ function moveFocus(dy, dx) {
   if (pick.scrollIntoView) pick.scrollIntoView({ block: 'nearest' });
 }
 
+// A swipe that landed inside the picture frame: the same rows and the same mover as everywhere else.
+function reviewKey(k) {
+  wakeUp();
+  if (k === 'ArrowDown' || k === 'ArrowUp') moveFocus(k === 'ArrowDown' ? 1 : -1, 0);
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') moveFocus(0, k === 'ArrowRight' ? 1 : -1);
+}
+
 function onKey(e) {
   if (document.visibilityState !== 'visible') return;
   if (HomeShell.handleKey(e)) return;
@@ -1690,6 +1708,7 @@ function onKey(e) {
   }
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
     const tabs = HomeShell.tabsForInput(e.target);
+    if (tabs.length < 2) { e.preventDefault(); moveFocus(0, k === 'ArrowRight' ? 1 : -1); return; } // Review has no tab to step to.
     const i = Math.max(0,tabs.indexOf(S.tab));
     const next = tabs[(i + (k === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     e.preventDefault();
