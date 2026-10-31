@@ -327,4 +327,25 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
   .routedot { transition: transform 320ms var(--settle); }
   .routemap.draw .routetrace, .routemap.draw .routeglow { stroke-dasharray: 1; animation: routedraw 1.4s var(--settle) both; }
 }
+/* Drive: a parked demo of a sports gauge. One thin lit arc over black; everything else stays dark and see-through. */
+.drivehud { position: relative; inline-size: 340px; block-size: 340px; margin: 0 auto; }
+.drivearc { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; }
+.drivetrack, .drivefill { fill: none; }
+.drivetrack { stroke: rgba(255, 255, 255, 0.16); stroke-width: 2; }
+.drivefill { stroke: var(--accent); stroke-width: 6; stroke-linecap: round; }
+.drivetip { fill: var(--ink); }
+.drivestate { position: absolute; inset-inline: 0; top: 58px; text-align: center; font-size: 13px; letter-spacing: 0.26em;
+  text-indent: 0.26em; color: var(--accent); font-weight: var(--w-strong); }
+.drivespeed { position: absolute; inset-inline: 0; top: 112px; text-align: center; font-size: 96px; line-height: 1; font-weight: 300;
+  letter-spacing: -3px; font-variant-numeric: tabular-nums; }
+.driveunit { position: absolute; inset-inline: 0; top: 212px; text-align: center; font-size: 14px; letter-spacing: 0.28em;
+  text-indent: 0.28em; color: var(--soft); }
+.driveside { position: absolute; top: 128px; inline-size: 62px; text-align: center; }
+.driveside span { display: block; font-size: 12px; letter-spacing: 0.14em; color: var(--soft); }
+.drivegear { left: 18px; }
+.drivegear b { display: block; font-size: 44px; line-height: 1.1; font-weight: 300; }
+.driveg { right: 16px; }
+.driveg svg { display: block; inline-size: 52px; block-size: 52px; margin: 0 auto 4px; fill: none; stroke: rgba(255, 255, 255, 0.32); stroke-width: 1.5; }
+.driveg .drivegdot { fill: var(--accent); stroke: none; }
+.driverun { display: block; text-align: center; }
 @keyframes routedraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }

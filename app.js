@@ -873,6 +873,61 @@ function placeRouteDot(s) {
   $('routeDot').setAttribute('transform', `translate(${s.x} ${s.y})`);
 }
 
+// ---- drive: a parked demo of the gauge. Sample numbers only; nothing here reads the car. ---------------------------
+
+const DRIVE_SWEEP = 270;       // degrees of the gauge
+const DRIVE_FULL = 240;        // km/h at the end of the sweep
+const DRIVE_GEARS = [30, 55, 85, 115, 150];
+const DRIVE_MS = 15000;
+
+// Pull away to 118 km/h, hold, then brake to a stop.
+function driveSpeedAt(ms) {
+  if (ms < 7000) { const t = ms / 7000; return 118 * (1 - (1 - t) * (1 - t)); }
+  if (ms < 10000) return 118;
+  if (ms < DRIVE_MS) { const t = (ms - 10000) / 5000; return 118 * (1 - t * t); }
+  return 0;
+}
+
+function showDrive(speed, sideG, brakeG) {
+  const kmh = Math.round(speed);
+  const swept = Math.min(1, speed / DRIVE_FULL) * DRIVE_SWEEP;
+  $('driveSpeed').textContent = kmh;
+  $('driveFill').setAttribute('stroke-dasharray', `${swept.toFixed(1)} 360`);
+  const a = (135 + swept) * Math.PI / 180;
+  $('driveTip').setAttribute('cx', (180 + 168 * Math.cos(a)).toFixed(1));
+  $('driveTip').setAttribute('cy', (180 + 168 * Math.sin(a)).toFixed(1));
+  $('driveGear').textContent = kmh === 0 ? 'P' : 1 + DRIVE_GEARS.filter((g) => speed >= g).length;
+  $('driveGDot').setAttribute('cx', (30 + sideG * 30).toFixed(1));
+  $('driveGDot').setAttribute('cy', (30 + brakeG * 30).toFixed(1));
+  $('driveGVal').textContent = `${Math.hypot(sideG, brakeG).toFixed(1)} G`;
+}
+
+function stopDriveDemo() {
+  if (!S.driveFrame) return;
+  cancelAnimationFrame(S.driveFrame);
+  S.driveFrame = 0;
+  showDrive(0, 0, 0);
+  $('driveRun').textContent = 'Run demo';
+}
+
+function runDriveDemo() {
+  if (S.driveFrame) { stopDriveDemo(); return; }
+  if (!MOTION) { showDrive(118, 0.2, 0); return; }
+  const start = performance.now();
+  $('driveRun').textContent = 'Stop demo';
+  let shown = 0;
+  const frame = (now) => {
+    const ms = now - start;
+    if (ms >= DRIVE_MS) { stopDriveDemo(); return; }
+    S.driveFrame = requestAnimationFrame(frame);
+    if (now - shown < 33) return;      // 30 updates a second is plenty, and costs less battery
+    shown = now;
+    const brakeG = Math.max(-0.9, Math.min(0.9, (driveSpeedAt(ms) - driveSpeedAt(ms + 100)) / 3.6 / 0.1 / 9.8));
+    showDrive(driveSpeedAt(ms), 0.25 * Math.sin(ms / 1600), brakeG);
+  };
+  S.driveFrame = requestAnimationFrame(frame);
+}
+
 function renderWatch() {
   const list = $('watchRows');
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.v : '';
@@ -1231,10 +1286,10 @@ function closePairing() {
 
 // ---- screens and history ---------------------------------------------------------------------------
 
-const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'route', 'play', 'apps', 'games', 'pair'];
+const PANES = ['now', 'work', 'detail', 'compose', 'watch', 'route', 'drive', 'play', 'apps', 'games', 'pair'];
 const MOTION = !window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const DEPTH = { now: 0, work: 0, watch: 0, route: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
-const TABS = ['now', 'work', 'watch', 'route', 'apps', 'games'];
+const DEPTH = { now: 0, work: 0, watch: 0, route: 0, drive: 0, apps: 0, games: 0, pair: 0, detail: 1, play: 1, compose: 2 };
+const TABS = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games'];
 // Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
 const NEEDS_PC = ['now', 'work'];
 
@@ -1242,9 +1297,10 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
+  if (id !== 'drive') stopDriveDemo();
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
-  const listView = ['now', 'work', 'watch', 'route', 'apps', 'games', 'pair'].includes(id);
+  const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
   for (const t of document.querySelectorAll('.tab')) {
     t.setAttribute('aria-selected', String(t.dataset.tab === S.tab));
     t.tabIndex = listView ? 0 : -1;
@@ -1523,12 +1579,13 @@ function rowsOfControls() {
   const groups = [];
   const add = (list) => { const g = [...list].filter(visible); if (g.length) groups.push(g); };
   const pane = PANES.find((p) => !$(p).hidden);
-  if (['now', 'work', 'watch', 'route', 'apps', 'games', 'pair'].includes(pane)) {
+  if (['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(pane)) {
     add([document.querySelector(`.tab[data-tab="${S.tab}"]`)]);
     if (pane === 'pair') add([$('pRetry')]);
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
+    else if (pane === 'drive') add([$('driveRun')]);
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'play') {
@@ -1681,6 +1738,9 @@ async function main() {
 }
 
 main();
+
+$('driveRun').addEventListener('click', runDriveDemo);
+showDrive(0, 0, 0);
 
 // Moving through the turns moves the dot along the route.
 $('routeRows').addEventListener('focusin', (e) => {

@@ -21,6 +21,7 @@
       <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
       <button class="tab" role="tab" id="tab-watch" data-tab="watch" aria-controls="watch">Watch</button>
       <button class="tab" role="tab" id="tab-route" data-tab="route" aria-controls="route">Route</button>
+      <button class="tab" role="tab" id="tab-drive" data-tab="drive" aria-controls="drive">Drive</button>
       <button class="tab" role="tab" id="tab-apps" data-tab="apps" aria-controls="apps">Apps</button>
       <button class="tab" role="tab" id="tab-games" data-tab="games" aria-controls="games">Games</button>
       <span id="tabline" class="tabline" aria-hidden="true"></span>
@@ -102,6 +103,26 @@
         <g id="routeDot" class="routedot"><circle r="30"/></g>
       </svg>
       <ol id="routeRows" class="rows"></ol>
+    </section>
+
+    <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
+      <div class="drivehud">
+        <svg class="drivearc" viewBox="0 0 360 360" aria-hidden="true">
+          <circle class="drivetrack" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="270 90" transform="rotate(135 180 180)"/>
+          <circle id="driveFill" class="drivefill" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="0 360" transform="rotate(135 180 180)"/>
+          <circle id="driveTip" class="drivetip" r="7"/>
+        </svg>
+        <p class="drivestate">PARKED DEMO</p>
+        <div class="driveside drivegear"><b id="driveGear">P</b><span>GEAR</span></div>
+        <p id="driveSpeed" class="drivespeed">0</p>
+        <p class="driveunit">KM/H</p>
+        <div class="driveside driveg">
+          <svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="27"/><path d="M30 6v48M6 30h48"/><circle id="driveGDot" class="drivegdot" cx="30" cy="30" r="5"/></svg>
+          <span id="driveGVal">0.0 G</span>
+        </div>
+      </div>
+      <button id="driveRun" class="row driverun">Run demo</button>
+      <p class="note">Sample numbers, not your car. The screen sleeps while driving.</p>
     </section>
 
     <section id="play" class="pane" hidden aria-label="Video">

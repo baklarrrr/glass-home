@@ -2,7 +2,7 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v15-render-status';
+const CACHE = 'glass-home-v16-drive';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg'];
 
 self.addEventListener('install', (event) => {
