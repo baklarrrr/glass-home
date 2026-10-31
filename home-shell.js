@@ -81,6 +81,7 @@ window.HomeShell=(()=>{
       depth=m.depth;
       if(depth===0&&pendingTab){const tab=pendingTab;pendingTab='';clearTimeout(returnTimer);selectTab(tab);}
     }
+    if(m.type==='studio-review-key'&&S.tab==='review'&&!StudioParked.isOpen())reviewKey(m.key);
   });
   function handleKey(event){
     if(S.tab!=='drive'||StudioParked.isOpen()||!event.isTrusted)return false;
