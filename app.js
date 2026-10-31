@@ -1777,6 +1777,18 @@ async function main() {
 
 main();
 
+// The gauge's scale: fine marks every 20 km/h, longer every 60.
+for (let kmh = 0; kmh <= DRIVE_FULL; kmh += 20) {
+  const a = (135 + kmh / DRIVE_FULL * DRIVE_SWEEP) * Math.PI / 180;
+  const major = kmh % 60 === 0;
+  const mark = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  mark.setAttribute('x1', (180 + (major ? 150 : 154) * Math.cos(a)).toFixed(1));
+  mark.setAttribute('y1', (180 + (major ? 150 : 154) * Math.sin(a)).toFixed(1));
+  mark.setAttribute('x2', (180 + 160 * Math.cos(a)).toFixed(1));
+  mark.setAttribute('y2', (180 + 160 * Math.sin(a)).toFixed(1));
+  if (major) mark.classList.add('major');
+  $('driveTicks').append(mark);
+}
 $('driveRun').addEventListener('click', runDriveDemo);
 $('driveLive').addEventListener('click', runDriveLive);
 showDrive(0, 0, 0);

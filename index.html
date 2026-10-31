@@ -108,10 +108,17 @@
     <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
       <div class="drivehud">
         <svg class="drivearc" viewBox="0 0 360 360" aria-hidden="true">
+          <defs>
+            <linearGradient id="driveGold" gradientUnits="userSpaceOnUse" x1="348" y1="180" x2="12" y2="180">
+              <stop offset="0" stop-color="#a97a3a"/><stop offset="0.55" stop-color="#ffd27a"/><stop offset="1" stop-color="#fff0cc"/>
+            </linearGradient>
+          </defs>
+          <g id="driveTicks" class="driveticks"></g>
           <circle class="drivetrack" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="270 90" transform="rotate(135 180 180)"/>
           <circle id="driveFill" class="drivefill" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="0 360" transform="rotate(135 180 180)"/>
           <circle id="driveTip" class="drivetip" r="7"/>
         </svg>
+        <p class="drivemark">BAKAR STUDIO</p>
         <p id="driveState" class="drivestate">PARKED DEMO</p>
         <div class="driveside drivegear"><b id="driveGear">P</b><span>GEAR</span></div>
         <p id="driveSpeed" class="drivespeed">0</p>
