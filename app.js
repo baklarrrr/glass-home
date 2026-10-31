@@ -912,6 +912,7 @@ function stopDriveDemo() {
 
 function runDriveDemo() {
   if (S.driveFrame) { stopDriveDemo(); return; }
+  stopDriveLive();
   if (!MOTION) { showDrive(118, 0.2, 0); return; }
   const start = performance.now();
   $('driveRun').textContent = 'Stop demo';
@@ -926,6 +927,43 @@ function runDriveDemo() {
     showDrive(driveSpeedAt(ms), 0.25 * Math.sin(ms / 1600), brakeG);
   };
   S.driveFrame = requestAnimationFrame(frame);
+}
+
+// Real motion from the glasses' own sensors, while parked: how hard the head is moving, side to side and front to back.
+function onDriveMotion(e) {
+  const a = e.acceleration;
+  if (!a || a.x == null || a.z == null) return;
+  const clamp = (g) => Math.max(-0.9, Math.min(0.9, g));
+  clearTimeout(S.driveQuiet);
+  $('driveNote').textContent = 'Your head, measured by the glasses. The dot moves as you do.';
+  showDrive(0, clamp(a.x / 9.81), clamp(a.z / 9.81));
+}
+
+function stopDriveLive() {
+  if (!S.driveLive) return;
+  S.driveLive = false;
+  clearTimeout(S.driveQuiet);
+  window.removeEventListener('devicemotion', onDriveMotion);
+  $('driveLive').textContent = 'Live head motion';
+  $('driveState').textContent = 'PARKED DEMO';
+  $('driveNote').textContent = 'Sample numbers, not your car. The screen sleeps while driving.';
+  showDrive(0, 0, 0);
+}
+
+async function runDriveLive() {
+  if (S.driveLive) { stopDriveLive(); return; }
+  stopDriveDemo();
+  const ask = window.DeviceMotionEvent && DeviceMotionEvent.requestPermission;
+  if (ask) {
+    const answer = await ask.call(DeviceMotionEvent).catch(() => 'denied');
+    if (answer !== 'granted') { $('driveNote').textContent = 'The glasses did not allow motion readings.'; return; }
+  }
+  S.driveLive = true;
+  $('driveLive').textContent = 'Stop live motion';
+  $('driveState').textContent = 'LIVE HEAD MOTION';
+  $('driveNote').textContent = 'Waiting for the glasses\' motion sensor…';
+  window.addEventListener('devicemotion', onDriveMotion);
+  S.driveQuiet = setTimeout(() => { $('driveNote').textContent = 'No motion readings from these glasses yet.'; }, 4000);
 }
 
 function renderWatch() {
@@ -1297,7 +1335,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
-  if (id !== 'drive') stopDriveDemo();
+  if (id !== 'drive') { stopDriveDemo(); stopDriveLive(); }
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
@@ -1585,7 +1623,7 @@ function rowsOfControls() {
     else if (pane === 'now') for (const b of $('nowRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
-    else if (pane === 'drive') add([$('driveRun')]);
+    else if (pane === 'drive') { add([$('driveRun')]); add([$('driveLive')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'play') {
@@ -1740,6 +1778,7 @@ async function main() {
 main();
 
 $('driveRun').addEventListener('click', runDriveDemo);
+$('driveLive').addEventListener('click', runDriveLive);
 showDrive(0, 0, 0);
 
 // Moving through the turns moves the dot along the route.

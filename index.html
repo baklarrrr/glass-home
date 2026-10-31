@@ -112,7 +112,7 @@
           <circle id="driveFill" class="drivefill" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="0 360" transform="rotate(135 180 180)"/>
           <circle id="driveTip" class="drivetip" r="7"/>
         </svg>
-        <p class="drivestate">PARKED DEMO</p>
+        <p id="driveState" class="drivestate">PARKED DEMO</p>
         <div class="driveside drivegear"><b id="driveGear">P</b><span>GEAR</span></div>
         <p id="driveSpeed" class="drivespeed">0</p>
         <p class="driveunit">KM/H</p>
@@ -122,7 +122,8 @@
         </div>
       </div>
       <button id="driveRun" class="row driverun">Run demo</button>
-      <p class="note">Sample numbers, not your car. The screen sleeps while driving.</p>
+      <button id="driveLive" class="row driverun">Live head motion</button>
+      <p id="driveNote" class="note">Sample numbers, not your car. The screen sleeps while driving.</p>
     </section>
 
     <section id="play" class="pane" hidden aria-label="Video">
