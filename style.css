@@ -333,6 +333,7 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
 .drivetrack, .drivefill { fill: none; }
 .drivetrack { stroke: rgba(255, 210, 122, 0.2); stroke-width: 1; }
 .drivefill { stroke: url(#driveGold); stroke-width: 3; stroke-linecap: round; }
+.drivetrail { fill: none; stroke: url(#driveGold); stroke-width: 7; stroke-opacity: 0.34; }
 .drivetip { fill: #fff0cc; }
 .driveticks line { stroke: rgba(255, 255, 255, 0.3); stroke-width: 1; }
 .driveticks line.major { stroke: rgba(255, 210, 122, 0.75); stroke-width: 1.5; }

@@ -882,17 +882,22 @@ const DRIVE_MS = 15000;
 
 // Pull away to 118 km/h, hold, then brake to a stop.
 function driveSpeedAt(ms) {
-  if (ms < 7000) { const t = ms / 7000; return 118 * (1 - (1 - t) * (1 - t)); }
+  const ease = (t) => t * t * (3 - 2 * t);    // starts and ends at rest, so the needle never snaps
+  if (ms < 7000) return 118 * ease(ms / 7000);
   if (ms < 10000) return 118;
-  if (ms < DRIVE_MS) { const t = (ms - 10000) / 5000; return 118 * (1 - t * t); }
+  if (ms < DRIVE_MS) return 118 * (1 - ease((ms - 10000) / 5000));
   return 0;
 }
 
-function showDrive(speed, sideG, brakeG) {
+function showDrive(speed, sideG, brakeG, rate = 0) {
   const kmh = Math.round(speed);
   const swept = Math.min(1, speed / DRIVE_FULL) * DRIVE_SWEEP;
   $('driveSpeed').textContent = kmh;
   $('driveFill').setAttribute('stroke-dasharray', `${swept.toFixed(1)} 360`);
+  // Motion blur, drawn rather than filtered: a trail on the side the needle came from, as long as it's moving fast.
+  const trail = Math.min(26, Math.abs(rate) * 0.6);
+  const from = rate >= 0 ? swept - trail : swept;
+  $('driveTrail').setAttribute('stroke-dasharray', trail < 0.5 ? '0 360' : `0 ${Math.max(0, from).toFixed(1)} ${trail.toFixed(1)} 360`);
   const a = (135 + swept) * Math.PI / 180;
   $('driveTip').setAttribute('cx', (180 + 168 * Math.cos(a)).toFixed(1));
   $('driveTip').setAttribute('cy', (180 + 168 * Math.sin(a)).toFixed(1));
@@ -916,15 +921,13 @@ function runDriveDemo() {
   if (!MOTION) { showDrive(118, 0.2, 0); return; }
   const start = performance.now();
   $('driveRun').textContent = 'Stop demo';
-  let shown = 0;
   const frame = (now) => {
     const ms = now - start;
     if (ms >= DRIVE_MS) { stopDriveDemo(); return; }
     S.driveFrame = requestAnimationFrame(frame);
-    if (now - shown < 33) return;      // 30 updates a second is plenty, and costs less battery
-    shown = now;
-    const brakeG = Math.max(-0.9, Math.min(0.9, (driveSpeedAt(ms) - driveSpeedAt(ms + 100)) / 3.6 / 0.1 / 9.8));
-    showDrive(driveSpeedAt(ms), 0.25 * Math.sin(ms / 1600), brakeG);
+    const rate = (driveSpeedAt(ms + 50) - driveSpeedAt(ms - 50)) / 0.1;     // km/h a second, read from the clock so a dropped frame can't jerk it
+    const brakeG = Math.max(-0.9, Math.min(0.9, -rate / 3.6 / 9.8));
+    showDrive(driveSpeedAt(ms), 0.25 * Math.sin(ms / 1600) * Math.sin(Math.PI * ms / DRIVE_MS), brakeG, rate);
   };
   S.driveFrame = requestAnimationFrame(frame);
 }
@@ -934,14 +937,18 @@ function onDriveMotion(e) {
   const a = e.acceleration;
   if (!a || a.x == null || a.z == null) return;
   const clamp = (g) => Math.max(-0.9, Math.min(0.9, g));
+  // A sensor shakes from reading to reading; a short average keeps the dot steady without feeling late.
+  S.driveSide = (S.driveSide || 0) * 0.7 + clamp(a.x / 9.81) * 0.3;
+  S.driveBrake = (S.driveBrake || 0) * 0.7 + clamp(a.z / 9.81) * 0.3;
   clearTimeout(S.driveQuiet);
   $('driveNote').textContent = 'Your head, measured by the glasses. The dot moves as you do.';
-  showDrive(0, clamp(a.x / 9.81), clamp(a.z / 9.81));
+  showDrive(0, S.driveSide, S.driveBrake);
 }
 
 function stopDriveLive() {
   if (!S.driveLive) return;
   S.driveLive = false;
+  S.driveSide = S.driveBrake = 0;
   clearTimeout(S.driveQuiet);
   window.removeEventListener('devicemotion', onDriveMotion);
   $('driveLive').textContent = 'Live head motion';
