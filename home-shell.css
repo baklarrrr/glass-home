@@ -12,22 +12,24 @@
 .drive-view *, .drive-view *::before, .drive-view *::after { animation:none !important; transition:none !important; }
 #drive[data-light] .driverun { opacity:1; color:#bcc8c1; }
 #drive[data-light] .note { opacity:1; color:#b6c2bb; font-size:16px; }
-#drive { --gauge-size:max(160px,min(340px,calc(100dvh - 320px))); }
-#drive .drivehud { flex:none; inline-size:var(--gauge-size); block-size:var(--gauge-size); }
-#drive .drivestate { top:calc(var(--gauge-size) * 70 / 340); }
-#drive .drivespeed { top:calc(var(--gauge-size) * 112 / 340); font-size:calc(var(--gauge-size) * 100 / 340); }
-#drive .driveunit { top:calc(var(--gauge-size) * 212 / 340); font-size:max(11px,calc(var(--gauge-size) * 14 / 340)); }
-#drive .driveside { top:calc(var(--gauge-size) * 128 / 340); inline-size:calc(var(--gauge-size) * 62 / 340); }
-#drive .drivegear { left:calc(var(--gauge-size) * 18 / 340); }
-#drive .drivegear b { font-size:calc(var(--gauge-size) * 42 / 340); }
-#drive .driveg { right:calc(var(--gauge-size) * 16 / 340); }
-#drive .driveg svg { inline-size:calc(var(--gauge-size) * 52 / 340); block-size:calc(var(--gauge-size) * 52 / 340); }
-.drive-quiet .sections, .drive-quiet .tabs, .drive-quiet .state:not(:has(.dot.warn)), .drive-quiet .gbat:not(.low), .drive-view #push { display:none !important; }
-#drive[data-controls=quiet] > :not(.quiet-reveal) { display:none !important; }
+#drive { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+.gps-hud { text-align:center; color:#fff; flex:1; display:flex; flex-direction:column; justify-content:center; }
+.gps-state { font-size:21px; line-height:1.35; font-weight:600; }
+.gps-speed { font-size:clamp(88px,23vmin,140px); font-weight:640; line-height:1.1; font-variant-numeric:tabular-nums; letter-spacing:-.035em; }
+.gps-unit { font-size:25px; color:#e5e9e6; }
+.gps-age { font-size:18px; min-height:24px; margin-top:8px; color:#cfd6d1; }
+.gps-hud[data-status=live] .gps-state { color:#dbe7df; }
+.gps-hud[data-light=night] { opacity:.7; }
+.drive-controls { align-self:stretch; display:flex; flex-direction:column; gap:8px; }
+.drive-controls .driverun { min-height:42px; font-size:20px; }
+.drive-controls .note { text-align:center; }
+.drive-quiet .sections, .drive-quiet .tabs, .drive-view .state, .drive-quiet .gbat:not(.low), .drive-view #push { display:none !important; }
+.drive-quiet .top { min-height:0; }
+#drive[data-controls=quiet] .drive-controls { display:none !important; }
 #drive[data-controls=parked] .quiet-reveal { display:none !important; }
-#drive[data-controls=quiet] { display:flex; justify-content:center; align-items:center; }
-.quiet-reveal { padding:12px 18px; text-align:center; }
-.quiet-reveal span { display:block; margin-top:8px; font-size:15px; color:var(--soft); }
+.quiet-reveal { padding:8px 18px; text-align:center; font-size:17px; flex:none; }
+.quiet-reveal span { display:block; margin-top:4px; font-size:16px; color:var(--soft); }
+@media (max-height:500px) { #drive {gap:6px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .drive-controls .driverun {min-height:34px;} }
 .parked-gate { position:fixed; inset:0; background:#000; z-index:20; display:flex; flex-direction:column; justify-content:center; gap:18px; padding:36px; }
 .parked-gate h1 { font-size:28px; }
 .parked-gate p { font-size:19px; line-height:1.4; }

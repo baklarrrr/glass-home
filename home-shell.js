@@ -3,7 +3,7 @@
 window.HomeShell=(()=>{
   const by=id=>document.getElementById(id);
   const groups={now:'work',work:'work',watch:'work',apps:'work',games:'work',review:'review',route:'drive',drive:'drive'};
-  let shown=false,wayOut=false,idle=0,lastDrive='driveRun',depth=0,frameReady=false,pendingTab='',returnTimer=0;
+  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0;
   const frame=()=>by('reviewFrame');
   function tell(message){if(frameReady)frame().contentWindow.postMessage(message,location.origin);}
   function activateReview(active){
@@ -17,8 +17,8 @@ window.HomeShell=(()=>{
   }
   function quiet(focus=true){
     clearTimeout(idle);idle=0;shown=false;wayOut=false;
-    if(['driveRun','driveLight','driveLive'].includes(document.activeElement?.id))lastDrive=document.activeElement.id;
-    stopDriveDemo();stopDriveLive();by('drive').dataset.controls='quiet';
+    if(['driveGps','driveLight'].includes(document.activeElement?.id))lastDrive=document.activeElement.id;
+    by('drive').dataset.controls='quiet';
     document.body.classList.toggle('drive-quiet',S.tab==='drive');StudioParked.revoke();
     if(focus&&S.tab==='drive'&&!document.hidden)by('driveReveal').focus({preventScroll:true});
   }
@@ -29,7 +29,7 @@ window.HomeShell=(()=>{
     if(S.tab!=='drive'||document.hidden||StudioParked.isOpen())return;
     StudioParked.request(()=>{
       shown=true;by('drive').dataset.controls='parked';document.body.classList.remove('drive-quiet');
-      (by(lastDrive)||by('driveRun')).focus({preventScroll:true});touch();
+      (by(lastDrive)||by('driveGps')).focus({preventScroll:true});touch();
     },()=>{quiet();showWayOut();});
   }
   function ensureReview(){

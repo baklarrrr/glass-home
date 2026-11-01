@@ -843,7 +843,7 @@ function renderRoute() {
     return;
   }
   const hours = Math.floor(r.min / 60);
-  line.textContent = `${r.ti}. ${r.km} km, ${hours ? `${hours} h ` : ''}${r.min % 60} min. Traffic not included.`;
+  line.textContent = `Saved preview: ${r.ti}. ${r.km} km, ${hours ? `${hours} h ` : ''}${r.min % 60} min. No live guidance or traffic.`;
   if (S.routeShown === r.id) return;
   S.routeShown = r.id;
   map.removeAttribute('hidden');
@@ -873,95 +873,35 @@ function placeRouteDot(s) {
   $('routeDot').setAttribute('transform', `translate(${s.x} ${s.y})`);
 }
 
-// ---- drive: a parked demo of the gauge. Sample numbers only; nothing here reads the car. ---------------------------
-
-const DRIVE_SWEEP = 270;       // degrees of the gauge
-const DRIVE_FULL = 240;        // km/h at the end of the sweep
-const DRIVE_GEARS = [30, 55, 85, 115, 150];
-const DRIVE_MS = 15000;
-
-// Pull away to 118 km/h, hold, then brake to a stop.
-function driveSpeedAt(ms) {
-  const ease = (t) => t * t * (3 - 2 * t);    // starts and ends at rest, so the needle never snaps
-  if (ms < 7000) return 118 * ease(ms / 7000);
-  if (ms < 10000) return 118;
-  if (ms < DRIVE_MS) return 118 * (1 - ease((ms - 10000) / 5000));
-  return 0;
+// ---- drive: reported phone GPS speed, never a vehicle instrument or a sample -------------------------
+const driveFeed = new StudioDriveLocation.Feed({
+  geo:navigator.geolocation, permissions:navigator.permissions,
+  change:paintDrive
+});
+function paintDrive(reading) {
+  const labels={
+    off:'Enable phone GPS while parked', unsupported:'Phone GPS unavailable',
+    waiting:'Waiting for phone GPS', unavailable:'GPS has no speed reading',
+    invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
+    stale:'GPS reading expired', denied:'Location permission not granted',
+    timeout:'Waiting for a fresh GPS fix', disconnected:'Phone GPS unavailable',
+    paused:'Phone GPS paused'
+  };
+  $('driveSpeed').textContent=reading.status==='live'?String(Math.round(reading.speed)):'—';
+  $('driveState').textContent=reading.status==='live'?'Phone GPS · estimated speed':(labels[reading.status]||'Speed unavailable');
+  $('driveAge').textContent=reading.status==='live'?(reading.ageMs<1000?'Just now':Math.floor(reading.ageMs/1000)+' s ago'):'';
+  $('driveHud').dataset.status=reading.status;
+  $('driveGps').textContent=driveFeed.enabled?'Stop phone GPS':'Enable phone GPS';
+  $('driveGps').disabled=reading.status==='unsupported';
 }
-
-function showDrive(speed, sideG, brakeG, rate = 0) {
-  const kmh = Math.round(speed);
-  $('driveEnergy').style.opacity = (0.34 + 0.66 * Math.min(1, speed / 130)).toFixed(3);
-  const swept = Math.min(1, speed / DRIVE_FULL) * DRIVE_SWEEP;
-  $('driveSpeed').textContent = kmh;
-  $('driveFill').setAttribute('stroke-dasharray', `${swept.toFixed(1)} 360`);
-  // Motion blur, drawn rather than filtered: a trail on the side the needle came from, as long as it's moving fast.
-  const trail = Math.min(26, Math.abs(rate) * 0.6);
-  const from = rate >= 0 ? swept - trail : swept;
-  $('driveTrail').setAttribute('stroke-dasharray', trail < 0.5 ? '0 360' : `0 ${Math.max(0, from).toFixed(1)} ${trail.toFixed(1)} 360`);
-  const a = (135 + swept) * Math.PI / 180;
-  $('driveTip').setAttribute('cx', (180 + 168 * Math.cos(a)).toFixed(1));
-  $('driveTip').setAttribute('cy', (180 + 168 * Math.sin(a)).toFixed(1));
-  $('driveGear').textContent = kmh === 0 ? 'P' : 1 + DRIVE_GEARS.filter((g) => speed >= g).length;
-  $('driveGDot').setAttribute('cx', (30 + sideG * 30).toFixed(1));
-  $('driveGDot').setAttribute('cy', (30 + brakeG * 30).toFixed(1));
-  $('driveGVal').textContent = `${Math.hypot(sideG, brakeG).toFixed(1)} G`;
+function toggleDriveGps() {
+  if(!StudioParked.confirmed()||HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
+  if(driveFeed.enabled)driveFeed.stop(); else driveFeed.enable();
 }
-
-function stopDriveDemo() {
-  if (S.driveFrame) cancelAnimationFrame(S.driveFrame);
-  S.driveFrame=0;S.driveSample=false;showDrive(0,0,0);$('driveRun').textContent='Show sample';
-}
-function runDriveDemo() {
-  if (!StudioParked.confirmed() || HomeShell.driveQuiet()) return;
-  stopDriveLive();S.driveSample=!S.driveSample;showDrive(S.driveSample?118:0,S.driveSample ? 0.2 : 0,0);
-  $('driveRun').textContent=S.driveSample?'Reset sample':'Show sample';
-  $('driveState').textContent='STATIC SAMPLE';$('driveNote').textContent='Simulated. Not vehicle data. Parked only.';
-}
-
-// Real motion from the glasses' own sensors, while parked: how hard the head is moving, side to side and front to back.
-function onDriveMotion(e) {
-  const a = e.acceleration;
-  if (!a || a.x == null || a.z == null) return;
-  const clamp = (g) => Math.max(-0.9, Math.min(0.9, g));
-  // A sensor shakes from reading to reading; a short average keeps the dot steady without feeling late.
-  S.driveSide = (S.driveSide || 0) * 0.7 + clamp(a.x / 9.81) * 0.3;
-  S.driveBrake = (S.driveBrake || 0) * 0.7 + clamp(a.z / 9.81) * 0.3;
-  clearTimeout(S.driveQuiet);
-  $('driveNote').textContent = 'Your head, measured by the glasses. The dot moves as you do.';
-  showDrive(0, S.driveSide, S.driveBrake);
-}
-
-function stopDriveLive() {
-  if (!S.driveLive) return;
-  S.driveLive = false;
-  S.driveSide = S.driveBrake = 0;
-  clearTimeout(S.driveQuiet);
-  window.removeEventListener('devicemotion', onDriveMotion);
-  $('driveLive').textContent = 'Check head sensor';
-  $('driveState').textContent = 'PARKED DEMO';
-  $('driveNote').textContent = 'No vehicle telemetry. Interact only while parked.';
-  showDrive(0, 0, 0);
-}
-
-async function runDriveLive() {
-  if (!StudioParked.confirmed() || HomeShell.driveQuiet()) return;
-  if (S.driveLive) { stopDriveLive(); return; }
-  stopDriveDemo();
-  const ask = window.DeviceMotionEvent && DeviceMotionEvent.requestPermission;
-  if (ask) {
-    const answer = await ask.call(DeviceMotionEvent).catch(() => 'denied');
-    if (answer !== 'granted') { $('driveNote').textContent = 'The glasses did not allow motion readings.'; return; }
-  }
-  if (!StudioParked.confirmed() || HomeShell.driveQuiet() || S.tab !== 'drive' || document.hidden) return;
-  S.driveLive = true;
-  $('driveLive').textContent = 'Stop live motion';
-  $('driveState').textContent = 'LIVE HEAD MOTION';
-  $('driveNote').textContent = 'Waiting for the glasses\' motion sensor…';
-  window.addEventListener('devicemotion', onDriveMotion);
-  S.driveQuiet = setTimeout(() => { $('driveNote').textContent = 'No motion readings from these glasses yet.'; }, 4000);
-}
-
+function syncDriveFeed() { driveFeed.setVisible(S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden); }
+document.addEventListener('visibilitychange',syncDriveFeed);
+window.addEventListener('pagehide',()=>driveFeed.setVisible(false));
+window.addEventListener('pageshow',syncDriveFeed);
 // Light: the display adds to whatever is behind it, so a bright sky needs solid, simple shapes and a dark road needs
 // far less light. Auto follows the sun at Toronto's latitude; pressing the button picks one by hand and it's remembered.
 const DRIVE_LIGHTS = ['auto', 'day', 'dusk', 'night'];
@@ -1364,7 +1304,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
-  if (id !== 'drive') { stopDriveDemo(); stopDriveLive(); } else applyDriveLight();
+  driveFeed.setVisible(id === 'drive' && !document.hidden); if (id === 'drive') applyDriveLight();
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
@@ -1652,7 +1592,7 @@ function rowsOfControls() {
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'drive' && HomeShell.driveQuiet()) add([$('driveReveal')]);
-    else if (pane === 'drive') { add([$('driveRun')]); add([$('driveLive')]); add([$('driveLight')]); }
+    else if (pane === 'drive') { add([$('driveGps')]); add([$('driveLight')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
   } else if (pane === 'play') {
@@ -1817,24 +1757,12 @@ async function main() {
 
 main();
 
-// The gauge's scale: fine marks every 20 km/h, longer every 60.
-for (let kmh = 0; kmh <= DRIVE_FULL; kmh += 20) {
-  const a = (135 + kmh / DRIVE_FULL * DRIVE_SWEEP) * Math.PI / 180;
-  const major = kmh % 60 === 0;
-  const mark = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  mark.setAttribute('x1', (180 + (major ? 150 : 154) * Math.cos(a)).toFixed(1));
-  mark.setAttribute('y1', (180 + (major ? 150 : 154) * Math.sin(a)).toFixed(1));
-  mark.setAttribute('x2', (180 + 160 * Math.cos(a)).toFixed(1));
-  mark.setAttribute('y2', (180 + 160 * Math.sin(a)).toFixed(1));
-  if (major) mark.classList.add('major');
-  $('driveTicks').append(mark);
-}
-$('driveRun').addEventListener('click', runDriveDemo);
+$('driveGps').addEventListener('click', toggleDriveGps);
 $('driveLight').addEventListener('click', nextDriveLight);
 applyDriveLight();
-$('driveLive').addEventListener('click', runDriveLive);
-showDrive(0, 0, 0);
+paintDrive(driveFeed.snapshot());
 
+// This is a saved route preview, not live navigation.
 // Moving through the turns moves the dot along the route.
 $('routeRows').addEventListener('focusin', (e) => {
   const b = e.target.closest('[data-s]');
