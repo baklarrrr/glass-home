@@ -69,6 +69,7 @@
     }
     async start(deliberate=false) {
       this.clear();
+      this.facts.permission='unknown';
       if(!this.visible||!this.enabled)return;
       if(!this.geo){this.publish({status:'unsupported',speed:null});return;}
       const epoch=this.epoch;
@@ -78,6 +79,7 @@
         let permission;
         try { permission=await this.permissions?.query({name:'geolocation'}); } catch(_) {}
         if(epoch!==this.epoch||!this.visible||!this.enabled)return;
+        this.facts.permission=['granted','denied','prompt'].includes(permission?.state)?permission.state:'unknown';
         if(permission?.state!=='granted'){this.enabled=false;this.publish({status:permission?.state==='denied'?'denied':'off',speed:null});return;}
       }
       this.publish({status:'waiting',speed:null});
@@ -119,8 +121,8 @@
         if(epoch!==this.epoch)return;
         this.permission=p;
         this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';
-        p.onchange=()=>{this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}};
-        if(p.state==='denied')p.onchange();
+        p.onchange=()=>{this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else this.change(this.snapshot());};
+        if(p.state==='denied')p.onchange();else this.change(this.snapshot());
       }).catch(()=>{});
     }
   }
