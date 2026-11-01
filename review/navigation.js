@@ -1,6 +1,6 @@
 'use strict';
 
-// The host owns glasses focus, activation and Back. This is the only history owner.
+// The host owns activation and Back, and the parent's moveFocus owns focus (embedded.js). This is the only history owner.
 // No pairing data, feedback text or picture bytes are written to browser history.
 const navigation = { route: null, epoch: 0, saved: new Map(), pendingPeer: '', revision: null, editing: false };
 

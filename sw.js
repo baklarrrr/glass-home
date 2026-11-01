@@ -2,20 +2,20 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v23-studio-preparation';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.js','home-shell.css','parked.js','review/index.html','review/app.js','review/style.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
+const CACHE = 'glass-home-v25-phone-gps';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.js','home-shell.css','parked.js','drive-location.js','review/index.html','review/app.js','review/style.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 
 self.addEventListener('install', (event) => {
-  // Review loads only on deliberate entry; do not download its second view at first launch.
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  // Normal activation waits for existing clients to close. Never force an open HUD to reload.
+  // Review loads only on deliberate entry.
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)));
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('glass-home-') && k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('glass-home-') && k !== CACHE).map((k) => caches.delete(k)))),
   );
 });
 

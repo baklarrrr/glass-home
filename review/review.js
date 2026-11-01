@@ -183,7 +183,13 @@ async function loadPicture(assetId, force = false) {
   } catch (error) {
     if (url) URL.revokeObjectURL(url);
     if (routeCurrent(key, epoch)) review.message = error.message;
-  } finally { if (routeCurrent(key, epoch)) { review.busy = false; renderReview(); } }
+  } finally {
+    if (routeCurrent(key, epoch)) {
+      review.busy = false; renderReview();
+      // The loading text could take focus, and the loaded picture can't. Move on so the next press isn't lost.
+      if (document.activeElement === $('reviewContent') && $('reviewContent').tabIndex < 0) restoreRoutePosition(navigation.route.isResult ? 'revisePicture' : 'giveFeedback');
+    }
+  }
 }
 function inspectPicture() {
   if (!review.loaded || navigation.route.kind !== 'picture') return;

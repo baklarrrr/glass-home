@@ -109,35 +109,18 @@
     </section>
 
     <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
-      <button id="driveReveal" class="btn quiet-reveal">Drive<span>No vehicle data - parked controls</span></button>
-      <div id="driveHud" class="drivehud">
-        <span id="driveEnergy" class="driveenergy" aria-hidden="true"></span>
-        <span class="drivesheen" aria-hidden="true"></span>
-        <svg class="drivearc" viewBox="0 0 360 360" aria-hidden="true">
-          <defs>
-            <linearGradient id="driveGold" gradientUnits="userSpaceOnUse" x1="348" y1="180" x2="12" y2="180">
-              <stop offset="0" stop-color="#a97a3a"/><stop offset="0.55" stop-color="#ffd27a"/><stop offset="1" stop-color="#fff0cc"/>
-            </linearGradient>
-          </defs>
-          <g id="driveTicks" class="driveticks"></g>
-          <circle class="drivetrack" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="270 90" transform="rotate(135 180 180)"/>
-          <circle id="driveFill" class="drivefill" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="0 360" transform="rotate(135 180 180)"/>
-          <circle id="driveTrail" class="drivetrail" cx="180" cy="180" r="168" pathLength="360" stroke-dasharray="0 360" transform="rotate(135 180 180)"/>
-          <circle id="driveTip" class="drivetip" r="7"/>
-        </svg>
-        <p id="driveState" class="drivestate">PARKED DEMO</p>
-        <div class="driveside drivegear"><b id="driveGear">P</b><span>GEAR</span></div>
-        <p id="driveSpeed" class="drivespeed">0</p>
-        <p class="driveunit">KM/H</p>
-        <div class="driveside driveg">
-          <svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="27"/><path d="M30 6v48M6 30h48"/><circle id="driveGDot" class="drivegdot" cx="30" cy="30" r="5"/></svg>
-          <span id="driveGVal">0.0 G</span>
-        </div>
+      <div id="driveHud" class="gps-hud" data-status="off" role="group" aria-label="Phone GPS speed">
+        <p id="driveState" class="gps-state">Enable phone GPS while parked</p>
+        <p id="driveSpeed" class="gps-speed" aria-label="Speed in kilometres per hour">—</p>
+        <p class="gps-unit">km/h</p>
+        <p id="driveAge" class="gps-age"></p>
       </div>
-      <button id="driveRun" class="row driverun">Show sample</button>
-      <button id="driveLive" class="row driverun">Check head sensor</button>
-      <button id="driveLight" class="row driverun">Light: Auto</button>
-      <p id="driveNote" class="note">No vehicle telemetry. Interact only while parked.</p>
+      <button id="driveReveal" class="btn quiet-reveal" aria-label="Drive controls, while parked">Controls <span>While parked · ↑ to leave</span></button>
+      <div class="drive-controls">
+        <button id="driveGps" class="row driverun">Enable phone GPS</button>
+        <button id="driveLight" class="row driverun">Light: Auto</button>
+        <p id="driveNote" class="note">Phone GPS estimate, not vehicle telemetry. Use your vehicle's instruments. Location stays on this device.</p>
+      </div>
     </section>
 
     <section id="review" class="pane" aria-labelledby="section-review" hidden><p id="reviewState" class="note">Connecting picture review.</p><button id="reviewEnter" class="btn" hidden>Enter pictures</button><iframe id="reviewFrame" title="Pictures and saved feedback" referrerpolicy="no-referrer" hidden></iframe></section>
@@ -178,6 +161,7 @@
   </div>
   <section id="parkedGate" class="parked-gate" role="dialog" aria-modal="true" aria-labelledby="parkedTitle" hidden><h1 id="parkedTitle">Controls while parked</h1><p>Vehicle motion is not checked. Use menus, messages and feedback only while parked.</p><button id="parkedConfirm" class="btn">I'm parked - show controls</button><button id="parkedCancel" class="btn">View only</button></section>
   <script src="parked.js"></script>
+  <script src="drive-location.js"></script>
   <script src="home-shell.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="app.js"></script>

@@ -1,0 +1,50 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {Feed,reading,MAX_AGE_MS}=require('../drive-location.js');
+const now=1700000000000;
+const fix=(speed=10,at=now,accuracy=5)=>({timestamp:at,coords:{speed,accuracy}});
+for(const [name,input,status,speed] of [
+  ['metres per second to km/h',fix(),'live',36],
+  ['actual zero remains zero',fix(0),'live',0],
+  ['null is unavailable',fix(null),'unavailable',null],
+  ['negative speed',fix(-1),'invalid',null],
+  ['infinite speed',fix(Infinity),'invalid',null],
+  ['NaN speed',fix(NaN),'invalid',null],
+  ['implausible road speed',fix(101),'invalid',null],
+  ['numeric string',fix('10'),'invalid',null],
+  ['old fix',fix(10,now-MAX_AGE_MS),'stale',null],
+  ['future fix',fix(10,now+1),'invalid',null],
+  ['zero timestamp',fix(10,0),'invalid',null],
+  ['bad timestamp',fix(10,NaN),'invalid',null],
+  ['weak location accuracy',fix(10,now,51),'inaccurate',null],
+  ['unknown accuracy',fix(10,now,null),'inaccurate',null],
+  ['negative accuracy',fix(10,now,-1),'inaccurate',null],
+  ['boundary valid accuracy',fix(10,now,50),'live',36],
+  ['missing position',null,'invalid',null]
+])test(name,()=>{const r=reading(input,now);assert.equal(r.status,status);assert.equal(r.speed,speed);assert.equal('coords' in r,false);});
+test('missing speed is never coerced to zero',()=>assert.equal(reading({timestamp:now,coords:{accuracy:3}},now).status,'unavailable'));
+function harness(permission='granted') {
+  let wall=now,mono=0,seq=0;const tasks=new Map(),watches=[],clears=[],states=[];
+  const p={state:permission,onchange:null};
+  const feed=new Feed({geo:{watchPosition(ok,fail,options){watches.push({ok,fail,options});return watches.length-1;},clearWatch(id){clears.push(id);}},
+    permissions:{query:async()=>p},now:()=>wall,mono:()=>mono,
+    schedule(fn,ms){tasks.set(++seq,{fn,at:mono+ms});return seq;},cancel:id=>tasks.delete(id),change:s=>states.push(s)});
+  return {feed,p,watches,clears,states,tasks,advance(ms,wallMs=ms){mono+=ms;wall+=wallMs;for(const [id,t] of [...tasks])if(t.at<=mono){tasks.delete(id);t.fn();}},get wall(){return wall;}};
+}
+test('entry does not request location or prompt',()=>{const h=harness();h.feed.setVisible(true);assert.equal(h.watches.length,0);});
+test('explicit enable creates one high accuracy watch with no cached fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();assert.equal(h.watches.length,1);assert.deepEqual(h.watches[0].options,{enableHighAccuracy:true,maximumAge:0,timeout:10000});});
+test('accepted fix expires at five seconds without incoming updates',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(4999);assert.equal(h.feed.snapshot().speed,36);h.advance(1);assert.equal(h.feed.snapshot().status,'stale');assert.equal(h.feed.snapshot().speed,null);});
+test('cached fix expires from acquisition rather than arrival',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(10,now-4000));h.advance(1000);assert.equal(h.feed.snapshot().status,'stale');});
+test('clock rollback cannot prolong a reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(5000,0);assert.equal(h.feed.snapshot().speed,null);});
+test('future wall clock invalidates a cached reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(0,-1);assert.equal(h.feed.snapshot().speed,null);});
+test('old callbacks do not overwrite newer fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(20));h.watches[0].ok(fix(30,now-1));assert.equal(h.feed.snapshot().speed,72);});
+test('null speed clears preceding valid speed immediately',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].ok(fix(null));assert.equal(h.feed.snapshot().speed,null);assert.equal(h.tasks.size,0);});
+for(const [code,status] of [[1,'denied'],[2,'disconnected'],[3,'timeout']])test('error clears current speed: '+status,()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code});assert.equal(h.feed.snapshot().status,status);assert.equal(h.feed.snapshot().speed,null);assert.equal(h.tasks.size,0);});
+test('hidden cleanup clears watch zero exactly once, no late update',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(false);h.watches[0].ok(fix());assert.deepEqual(h.clears,[0]);assert.equal(h.feed.snapshot().status,'paused');assert.equal(h.tasks.size,0);});
+test('resume uses existing grant and does not show cached speed',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,2);assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.feed.snapshot().speed,null);});
+for(const permission of ['prompt','denied'])test('resume never prompts after grant '+permission,async()=>{const h=harness(permission);h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.enabled,false);});
+test('permission query unavailable needs deliberate re-enable',async()=>{const h=harness();h.feed.permissions=null;h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.snapshot().status,'off');});
+test('permission revoked clears watch and prevents resume',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();h.p.state='denied';h.p.onchange();assert.deepEqual(h.clears,[0]);assert.equal(h.feed.enabled,false);assert.equal(h.feed.snapshot().status,'denied');});
+test('stop while resume query pending cannot restart watch',async()=>{const h=harness();h.feed.enabled=true;h.feed.setVisible(true);h.feed.stop();await Promise.resolve();assert.equal(h.watches.length,0);});
+test('missing API is explicit unsupported',()=>{const f=new Feed({geo:null});f.setVisible(true);f.enable();assert.equal(f.snapshot().status,'unsupported');});
+test('no coordinates or raw error text in projected state',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok({...fix(),coords:{speed:10,accuracy:5,latitude:42,longitude:-70}});assert.equal(JSON.stringify(h.states).includes('latitude'),false);h.watches[0].fail({code:2,message:'sensitive test detail'});assert.equal(JSON.stringify(h.states).includes('sensitive'),false);});
