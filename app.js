@@ -912,8 +912,10 @@ function retryDriveGps() {
 }
 function paintDriveDetails() {
   const f=driveFeed.details(),last=f.lastFix,error=f.lastError,status=f.status;
-  const age=last?.ageMs==null?'age unknown':Math.floor(last.ageMs/1000)+' s old';
-  const fix=last?age+' · accuracy '+(last.accuracy==null?'unknown':Math.round(last.accuracy)+' m')+' · speed '+(last.speedPresent?'reported':'absent'):'none';
+  // Details can stay open indefinitely: use acquisition time rather than an age
+  // that would freeze when the expired feed stops its refresh timer.
+  const fixTime=last?.at==null?'time unknown':new Date(last.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const fix=last?fixTime+' · accuracy '+(last.accuracy==null?'unknown':Math.round(last.accuracy)+' m')+' · speed '+(last.speedPresent?'reported':'absent'):'none';
   const errorName=error?({1:'Denied',2:'Unavailable',3:'Timeout'}[error.code]||'Unknown'):'none';
   const errorTime=error?' '+new Date(error.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}):'';
   let policy='unknown';
