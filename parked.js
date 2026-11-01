@@ -61,7 +61,7 @@
   document.addEventListener('click',event=>{
     if(parked()||!gate.hidden)return;
     const control=event.target.closest?.('button,textarea,input,select,iframe');
-    if(!control||['section-work','section-review','section-drive','tab-now','tab-work','tab-watch','tab-drive','tab-apps','tab-games','driveReveal','reviewEnter'].includes(control.id)||gate.contains(control))return;
+    if(!control||['section-work','section-review','section-drive','tab-now','tab-work','tab-watch','tab-drive','tab-apps','tab-games','driveReveal','driveGps','driveRetry','driveLight','driveInfoButton','driveInfoClose','reviewEnter'].includes(control.id)||gate.contains(control))return;
     event.preventDefault();event.stopImmediatePropagation();request();heldPress=control;
   },true);
   document.addEventListener('focusin',event=>{

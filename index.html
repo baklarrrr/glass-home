@@ -110,16 +110,22 @@
 
     <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
       <div id="driveHud" class="gps-hud" data-status="off" role="group" aria-label="Phone GPS speed">
-        <p id="driveState" class="gps-state">Enable phone GPS while parked</p>
+        <p id="driveState" class="gps-state">Phone GPS off</p>
         <p id="driveSpeed" class="gps-speed" aria-label="Speed in kilometres per hour">—</p>
         <p class="gps-unit">km/h</p>
         <p id="driveAge" class="gps-age"></p>
       </div>
-      <button id="driveReveal" class="btn quiet-reveal" aria-label="Drive controls, while parked">Controls <span>While parked · ↑ to leave</span></button>
+      <button id="driveReveal" class="btn quiet-reveal" aria-label="Drive controls">Controls <span>↑ to leave</span></button>
       <div class="drive-controls">
-        <button id="driveGps" class="row driverun">Enable phone GPS</button>
-        <button id="driveLight" class="row driverun">Light: Auto</button>
-        <p id="driveNote" class="note">Phone GPS estimate, not vehicle telemetry. Use your vehicle's instruments. Location stays on this device.</p>
+        <div class="drive-actions"><button id="driveGps" class="row driverun">Start GPS</button><button id="driveRetry" class="row driverun" hidden>Retry GPS</button></div>
+        <div class="drive-actions"><button id="driveLight" class="row driverun">Light: Auto</button><button id="driveInfoButton" class="row driverun">GPS details</button></div>
+      </div>
+      <div id="driveInfo" class="drive-info" role="region" aria-label="GPS connection details" hidden>
+        <h2>GPS connection</h2>
+        <p id="driveFacts" class="gps-facts"></p>
+        <p id="driveHelp" class="note"></p>
+        <p class="note">Phone estimate, not vehicle telemetry. Use your vehicle's instruments. Adjust settings when stopped. These details stay on this device.</p>
+        <button id="driveInfoClose" class="row driverun">Back to speed</button>
       </div>
     </section>
 

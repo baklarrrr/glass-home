@@ -23,10 +23,16 @@
 .drive-controls { align-self:stretch; display:flex; flex-direction:column; gap:8px; }
 .drive-controls .driverun { min-height:42px; font-size:20px; }
 .drive-controls .note { text-align:center; }
+.drive-actions { display:flex; gap:8px; }
+.drive-actions .driverun { flex:1; }
+.drive-info { align-self:stretch; display:flex; flex-direction:column; gap:12px; }
+.drive-info h2 { font-size:24px; }
+.gps-facts { white-space:pre-line; font-size:19px; line-height:1.4; color:#e5e9e6; }
+#drive[data-details=open] .gps-hud, #drive[data-details=open] .drive-controls { display:none; }
 .drive-quiet .sections, .drive-quiet .tabs, .drive-view .state, .drive-quiet .gbat:not(.low), .drive-view #push { display:none !important; }
 .drive-quiet .top { min-height:0; }
 #drive[data-controls=quiet] .drive-controls { display:none !important; }
-#drive[data-controls=parked] .quiet-reveal { display:none !important; }
+#drive[data-controls=open] .quiet-reveal { display:none !important; }
 .quiet-reveal { padding:8px 18px; text-align:center; font-size:17px; flex:none; }
 .quiet-reveal span { display:block; margin-top:4px; font-size:16px; color:var(--soft); }
 @media (max-height:500px) { #drive {gap:6px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .drive-controls .driverun {min-height:34px;} }

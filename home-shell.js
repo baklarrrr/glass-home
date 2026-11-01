@@ -17,7 +17,8 @@ window.HomeShell=(()=>{
   }
   function quiet(focus=true){
     clearTimeout(idle);idle=0;shown=false;wayOut=false;
-    if(['driveGps','driveLight'].includes(document.activeElement?.id))lastDrive=document.activeElement.id;
+    if(['driveGps','driveRetry','driveLight','driveInfoButton'].includes(document.activeElement?.id))lastDrive=document.activeElement.id;
+    closeDriveInfo(false);
     by('drive').dataset.controls='quiet';
     document.body.classList.toggle('drive-quiet',S.tab==='drive');StudioParked.revoke();
     if(focus&&S.tab==='drive'&&!document.hidden)by('driveReveal').focus({preventScroll:true});
@@ -27,10 +28,17 @@ window.HomeShell=(()=>{
   function showWayOut(){wayOut=true;document.body.classList.remove('drive-quiet');touch();}
   function reveal(){
     if(S.tab!=='drive'||document.hidden||StudioParked.isOpen())return;
-    StudioParked.request(()=>{
-      shown=true;by('drive').dataset.controls='parked';document.body.classList.remove('drive-quiet');
-      [by(lastDrive),by('driveGps'),by('driveLight')].find(button=>button&&!button.disabled)?.focus({preventScroll:true});touch();
-    },()=>{quiet();showWayOut();});
+    shown=true;by('drive').dataset.controls='open';document.body.classList.remove('drive-quiet');
+    [by(lastDrive),by('driveGps'),by('driveLight')].find(button=>button&&!button.disabled&&!button.hidden)?.focus({preventScroll:true});touch();
+  }
+  function openDriveInfo(){
+    if(S.tab!=='drive'||!shown||document.hidden)return;
+    by('drive').dataset.details='open';by('driveInfo').hidden=false;
+    paintDriveDetails();by('driveInfoClose').focus({preventScroll:true});touch();
+  }
+  function closeDriveInfo(focus=true){
+    by('drive').removeAttribute('data-details');by('driveInfo').hidden=true;
+    if(focus&&S.tab==='drive'&&shown)by('driveInfoButton').focus({preventScroll:true});
   }
   function ensureReview(){
     if(!StudioParked.confirmed()){activateReview(false);by('reviewState').hidden=false;by('reviewState').textContent='Open picture review only while parked.';return;}
@@ -51,7 +59,7 @@ window.HomeShell=(()=>{
   function onPane(id,before){
     paint();document.body.classList.toggle('drive-view',id==='drive');
     if(id==='drive'&&before!=='drive'){stopReading();by('push').hidden=true;quiet(false);}
-    else if(id!=='drive'){clearTimeout(idle);idle=0;shown=false;wayOut=false;document.body.classList.remove('drive-quiet');}
+    else if(id!=='drive'){clearTimeout(idle);idle=0;shown=false;wayOut=false;closeDriveInfo(false);document.body.classList.remove('drive-quiet');}
     if(id==='review')ensureReview();else activateReview(false);
   }
   // Route is parked-only. Every way to it comes through selectTab, so arrows ask the same question a press does.
@@ -87,24 +95,24 @@ window.HomeShell=(()=>{
     if(S.tab!=='drive'||StudioParked.isOpen()||!event.isTrusted)return false;
     if(!shown&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter',' '].includes(event.key)){
       // Up is always the way out, with no question asked. Once it's showing the app's own keys work too;
-      // only a deliberate press on the quiet face itself asks for the parked controls.
+      // only a deliberate press on the quiet face itself reveals the controls.
       const off=document.activeElement!==by('driveReveal')||event.key==='ArrowLeft'||event.key==='ArrowRight';
       if(event.key==='ArrowUp'&&!wayOut)showWayOut();
       else if(!wayOut||(!off&&event.key!=='ArrowUp')){event.preventDefault();event.stopImmediatePropagation();if(!event.repeat)reveal();return true;}
     }
-    if((shown||wayOut)&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();quiet();return true;}
+    if((shown||wayOut)&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(!by('driveInfo').hidden){closeDriveInfo();touch();}else quiet();return true;}
     if(shown||wayOut)touch();
     return false;
   }
   function init(){
     for(const button of document.querySelectorAll('[data-section]'))button.addEventListener('click',()=>selectTab({work:'now',review:'review',drive:'drive'}[button.dataset.section]));
     by('reviewEnter').addEventListener('click',focusReview);by('driveReveal').addEventListener('click',reveal);
+    by('driveInfoButton').addEventListener('click',openDriveInfo);by('driveInfoClose').addEventListener('click',()=>closeDriveInfo());
     document.addEventListener('studio-parked-change',()=>{
       activateReview(S.tab==='review');
       if(StudioParked.confirmed()||StudioParked.isOpen())return;
       // The answer is gone, however it went: nothing parked-only stays open behind it.
       if(S.tab==='route')selectTab('drive');
-      else if(S.tab==='drive'&&shown)quiet();
       if(S.view==='play'&&S.player?.pauseVideo)S.player.pauseVideo();
     });
     document.addEventListener('click',event=>{if(event.isTrusted)touch();},true);
