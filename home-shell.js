@@ -29,7 +29,7 @@ window.HomeShell=(()=>{
     if(S.tab!=='drive'||document.hidden||StudioParked.isOpen())return;
     StudioParked.request(()=>{
       shown=true;by('drive').dataset.controls='parked';document.body.classList.remove('drive-quiet');
-      (by(lastDrive)||by('driveGps')).focus({preventScroll:true});touch();
+      [by(lastDrive),by('driveGps'),by('driveLight')].find(button=>button&&!button.disabled)?.focus({preventScroll:true});touch();
     },()=>{quiet();showWayOut();});
   }
   function ensureReview(){
