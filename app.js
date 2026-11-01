@@ -878,17 +878,17 @@ const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
   change:paintDrive
 });
-function paintDrive(reading) {
-  const labels={
+const DRIVE_STATUS_LABELS=Object.freeze({
     off:'Phone GPS off', unsupported:'Phone GPS unavailable',
     waiting:'Waiting for phone GPS', unavailable:'GPS has no speed reading',
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
     timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'Location fix unavailable',
     paused:'Phone GPS paused'
-  };
+  });
+function paintDrive(reading) {
   $('driveSpeed').textContent=reading.status==='live'?String(Math.round(reading.speed)):'—';
-  $('driveState').textContent=reading.status==='live'?'Phone GPS · estimated speed':(labels[reading.status]||'Speed unavailable');
+  $('driveState').textContent=reading.status==='live'?'Phone GPS · estimated speed':(DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable');
   $('driveAge').textContent=reading.status==='live'?(reading.ageMs<1000?'Just now':Math.floor(reading.ageMs/1000)+' s ago'):'';
   $('driveHud').dataset.status=reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop GPS':'Start GPS';
@@ -898,6 +898,8 @@ function paintDrive(reading) {
   // Do not move focus or turn the next press into Stop when a fix arrives.
   // A focused Retry stays available until the wearer moves away from it.
   retry.hidden=!canRetry&&document.activeElement!==retry;
+  const permission=driveFeed.details().permission;
+  HomeShell.setLocationPending(driveFeed.enabled&&['waiting','no-response'].includes(reading.status)&&permission!=='granted');
   if(!$('driveInfo').hidden)paintDriveDetails();
 }
 function toggleDriveGps() {
@@ -909,24 +911,26 @@ function retryDriveGps() {
   driveFeed.enable(); // Replaces one watch, only on this deliberate press.
 }
 function paintDriveDetails() {
-  const f=driveFeed.details(),last=f.lastFix,error=f.lastError;
-  const age=last?.ageMs==null?'age unknown':Math.floor(last.ageMs/1000)+' s old';
-  const fix=last?age+' · accuracy '+(last.accuracy==null?'unknown':Math.round(last.accuracy)+' m')+' · speed '+(last.speedPresent?'reported':'absent'):'none';
-  const errorName=error?({1:'Permission denied',2:'Position unavailable',3:'Timeout'}[error.code]||'Unknown error'):'none';
-  const errorTime=error?' at '+new Date(error.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+  const f=driveFeed.details(),last=f.lastFix,error=f.lastError,status=f.status;
+  // Details can stay open indefinitely: use acquisition time rather than an age
+  // that would freeze when the expired feed stops its refresh timer.
+  const fixTime=last?.at==null?'time unknown':new Date(last.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const fix=last?fixTime+' · accuracy '+(last.accuracy==null?'unknown':Math.round(last.accuracy)+' m')+' · speed '+(last.speedPresent?'reported':'absent'):'none';
+  const errorName=error?({1:'Denied',2:'Unavailable',3:'Timeout'}[error.code]||'Unknown'):'none';
+  const errorTime=error?' '+new Date(error.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}):'';
   let policy='unknown';
   try {const p=document.permissionsPolicy||document.featurePolicy;if(p?.allowsFeature)policy=p.allowsFeature('geolocation')?'allowed':'blocked';}catch(_){}
   $('driveFacts').textContent=[
-    'GPS 26 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
+    'GPS 27 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
+    'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix,
-    'Last error: '+errorName+errorTime,
+    'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
-  const status=driveFeed.snapshot().status;
   const help={
-    denied:'The web app was denied access. Its Permissions control is in the glasses app menu; phone permission is separate.',
+    denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
     timeout:'No fix within 10 seconds. The watch is still listening. Retry starts a new request.',
     'no-response':'The location provider has not called back. Check for an outstanding app permission prompt. Retry replaces the request.',
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
@@ -935,7 +939,7 @@ function paintDriveDetails() {
     disconnected:'The location provider could not supply a fix. This does not establish that the phone is disconnected.',
     unsupported:'This runtime has not supplied the geolocation API.'
   };
-  $('driveHelp').textContent=help[status]||'This is the current page’s connection evidence. No coordinates, identifiers or error messages are saved or sent.';
+  $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';
 }
 function syncDriveFeed() { driveFeed.setVisible(S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden); }
 document.addEventListener('visibilitychange',syncDriveFeed);

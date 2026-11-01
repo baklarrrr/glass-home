@@ -40,7 +40,7 @@
     details() {
       const f=this.facts,last=f.lastFix;
       const age=last?.at===null?NaN:last?Math.max(this.now()-last.at,last.initialAge+this.mono()-last.receivedMono):NaN;
-      return {attempts:f.attempts,fixes:f.fixes,watchActive:this.watch!==null,
+      return {status:this.snapshot().status,attempts:f.attempts,fixes:f.fixes,watchActive:this.watch!==null,
         visible:this.visible,enabled:this.enabled,permission:f.permission,
         lastFix:last?{at:last.at,ageMs:Number.isFinite(age)&&age>=0&&this.now()>=last.at?age:null,
           accuracy:last.accuracy,speedPresent:last.speedPresent,status:last.status}:null,
@@ -82,8 +82,8 @@
         this.facts.permission=['granted','denied','prompt'].includes(permission?.state)?permission.state:'unknown';
         if(permission?.state!=='granted'){this.enabled=false;this.publish({status:permission?.state==='denied'?'denied':'off',speed:null});return;}
       }
-      this.publish({status:'waiting',speed:null});
       ++this.facts.attempts;
+      this.publish({status:'waiting',speed:null});
       // Some hosts return neither callback. This notice is NOT a synthetic API timeout.
       // Keep the watch alive for a later fix; never repeatedly request permission.
       this.timer=this.schedule(()=>{
@@ -110,7 +110,7 @@
           if(next.status==='live')this.timer=this.schedule(()=>this.tick(),Math.min(1000,MAX_AGE_MS-(now-next.at)));
         },error=>{
           if(epoch!==this.epoch)return;
-          this.facts.lastError={code:[1,2,3].includes(error?.code)?error.code:null,at:this.now()};
+          this.facts.lastError={code:[1,2,3].includes(error?.code)?error.code:null,at:this.now(),attempt:this.facts.attempts};
           if(this.timer!==null){this.cancel(this.timer);this.timer=null;}
           if(error?.code===1){this.enabled=false;this.clear();}
           this.publish({status:error?.code===1?'denied':error?.code===3?'timeout':'disconnected',speed:null});
@@ -121,7 +121,7 @@
         if(epoch!==this.epoch)return;
         this.permission=p;
         this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';
-        p.onchange=()=>{this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else this.change(this.snapshot());};
+        p.onchange=()=>{if(epoch!==this.epoch)return;this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else this.change(this.snapshot());};
         if(p.state==='denied')p.onchange();else this.change(this.snapshot());
       }).catch(()=>{});
     }

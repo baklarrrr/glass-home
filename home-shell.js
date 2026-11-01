@@ -3,7 +3,7 @@
 window.HomeShell=(()=>{
   const by=id=>document.getElementById(id);
   const groups={now:'work',work:'work',watch:'work',apps:'work',games:'work',review:'review',route:'drive',drive:'drive'};
-  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0;
+  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0,locationPending=false;
   const frame=()=>by('reviewFrame');
   function tell(message){if(frameReady)frame().contentWindow.postMessage(message,location.origin);}
   function activateReview(active){
@@ -23,7 +23,12 @@ window.HomeShell=(()=>{
     document.body.classList.toggle('drive-quiet',S.tab==='drive');StudioParked.revoke();
     if(focus&&S.tab==='drive'&&!document.hidden)by('driveReveal').focus({preventScroll:true});
   }
-  function touch(){if(S.tab!=='drive'||!(shown||wayOut))return;clearTimeout(idle);idle=setTimeout(()=>quiet(),8000);}
+  function touch(){
+    clearTimeout(idle);idle=0;
+    if(S.tab!=='drive'||!(shown||wayOut)||!by('driveInfo').hidden||locationPending)return;
+    idle=setTimeout(()=>quiet(),8000);
+  }
+  function setLocationPending(pending){if(locationPending===pending)return;locationPending=pending;touch();}
   // The sections come back so Drive can be left without saying anything about being parked. Controls stay hidden.
   function showWayOut(){wayOut=true;document.body.classList.remove('drive-quiet');touch();}
   function reveal(){
@@ -40,7 +45,7 @@ window.HomeShell=(()=>{
   function closeDriveInfo(focus=true){
     by('drive').removeAttribute('data-details');by('driveInfo').hidden=true;
     document.body.classList.remove('drive-details-open');
-    if(focus&&S.tab==='drive'&&shown)by('driveInfoButton').focus({preventScroll:true});
+    if(focus&&S.tab==='drive'&&shown){by('driveInfoButton').focus({preventScroll:true});touch();}
   }
   function ensureReview(){
     if(!StudioParked.confirmed()){activateReview(false);by('reviewState').hidden=false;by('reviewState').textContent='Open picture review only while parked.';return;}
@@ -119,12 +124,12 @@ window.HomeShell=(()=>{
     });
     document.addEventListener('click',event=>{if(event.isTrusted)touch();},true);
     document.addEventListener('visibilitychange',()=>{
-      if(document.hidden){if(S.tab==='drive')quiet(false);activateReview(false);}
+      if(document.hidden){if(S.tab==='drive'){clearTimeout(idle);idle=0;if(by('driveInfo').hidden)quiet(false);}activateReview(false);}
       else {activateReview(S.tab==='review');if(S.tab==='review'&&!StudioParked.confirmed())StudioParked.request();}
     });
-    window.addEventListener('pagehide',()=>{clearTimeout(idle);clearTimeout(returnTimer);activateReview(false);if(S.tab==='drive')quiet(false);});
+    window.addEventListener('pagehide',()=>{clearTimeout(idle);idle=0;clearTimeout(returnTimer);activateReview(false);if(S.tab==='drive'&&by('driveInfo').hidden)quiet(false);});
   }
-  return Object.freeze({init,onPane,canEnterRoute,canLeaveReview,focusReview,handleKey,driveQuiet:()=>S.tab==='drive'&&!shown,
+  return Object.freeze({init,onPane,canEnterRoute,canLeaveReview,focusReview,handleKey,setLocationPending,driveQuiet:()=>S.tab==='drive'&&!shown,
     tabsForInput(target){return target.closest('.sections')?['now','review','drive']:Object.keys(groups).filter(key=>groups[key]===groups[S.tab]);}
   });
 })();
