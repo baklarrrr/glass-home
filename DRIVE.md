@@ -12,7 +12,7 @@ The API timeout remains ten seconds. Error code 3 is labelled as a timeout, not 
 
 Ordinary controls reveal deliberately and hide after eight seconds without input. GPS details/help has no idle-dismissal timer; explicit Back or navigation leaves it. Suspending the page does not dismiss details. While a location request could be awaiting an unconfirmed permission, ordinary-control hiding pauses as well; a known grant or resolved callback releases that hold. Incoming data does not reveal controls or move focus. Real agent Send remains disabled. The worker update waits for normal client closure and never forces an open HUD to reload.
 
-Unit checks: `node --test tests/drive-location.test.cjs`. Browser fixtures must use synthetic geolocation callbacks, block external requests and avoid pairing. Browser checks do not establish physical-glasses acceptance or a real GPS stream. Parked wearer acceptance is tracked separately from web publication.
+Unit checks: `node --test tests/drive-location.test.cjs tests/drive-help.test.cjs`. The help tests run the actual shell/feed/render functions with in-memory clocks and a minimal DOM; they are not browser or optical checks. Browser fixtures must use synthetic geolocation callbacks, block external requests and avoid pairing. Browser checks do not establish physical-glasses acceptance or a real GPS stream. Parked wearer acceptance is tracked separately from web publication.
 
 Sources:
 - [Meta glasses device guidance](https://github.com/meta/meta-wearables-webapp/blob/main/plugins/meta-wearables-webapp/skills/ai-glasses-webapp-device/SKILL.md)
