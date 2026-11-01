@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "Bakar Drive",
+  "description": "The next turn from Bakar Drive on your phone, with phone GPS speed and heading.",
+  "appearance": {
+    "theme_color": "#8BC4AB",
+    "icon_background": {
+      "colors": ["#1F4A3D", "#0A1712"],
+      "stops": [0.0, 1.0],
+      "inner_glow_color": "#BFE8D5"
+    },
+    "icon": {
+      "src": "../icon-mono.svg",
+      "type": "monochrome"
+    }
+  }
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="Bakar Drive">
+  <meta name="description" content="Bakar Drive on the glasses: the next turn from Bakar Drive on the phone, phone GPS speed and heading.">
+  <meta name="mrbd-web-app-capable" content="yes">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#000000">
+  <title>Bakar Drive</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="hud" class="hud" data-light="dusk" data-mode="speed" data-link="none">
+    <header class="top">
+      <p class="status" role="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="status">Phone GPS off</span></p>
+      <p id="clock" class="clock" aria-label="Time"></p>
+    </header>
+
+    <section id="turn" class="turn" aria-label="Next turn" hidden>
+      <svg id="arrow" class="arrow" viewBox="0 0 100 100" aria-hidden="true"></svg>
+      <div class="turntext">
+        <p id="toTurn" class="toturn"></p>
+        <p id="next" class="next"></p>
+      </div>
+    </section>
+
+    <section id="pairBox" class="pairbox" aria-label="Pairing code" hidden>
+      <p class="plabel">Accept this code on your phone</p>
+      <p id="pairCode" class="paircode"></p>
+    </section>
+
+    <section id="speedBox" class="speedbox" aria-label="Phone GPS speed">
+      <p id="speed" class="speed">—</p>
+      <p class="unit"><span>km/h</span><span id="heading" class="heading"></span></p>
+    </section>
+
+    <footer class="bottom">
+      <p id="arrive" class="arrive"><span id="arriveTime"></span><span id="arriveLeft" class="left"></span></p>
+      <p id="trip" class="trip"></p>
+    </footer>
+
+    <nav id="controls" class="controls" aria-label="Drive controls" hidden>
+      <button id="gpsBtn" class="btn">Start GPS</button>
+      <button id="lightBtn" class="btn">Light: Auto</button>
+      <button id="linkBtn" class="btn">Directions</button>
+    </nav>
+
+    <section id="panel" class="panel" role="region" aria-labelledby="panelTitle" hidden>
+      <h1 id="panelTitle">Directions from your phone</h1>
+      <p id="panelState" class="pstate"></p>
+      <p id="panelCode" class="pcode" hidden><span class="plabel">Code of these glasses</span><span id="panelCodeNum"></span></p>
+      <p id="panelHelp" class="phelp"></p>
+      <p id="panelQuiet" class="phelp quiet">Glance only. Speed is a phone GPS estimate; your car's instruments come first. Nothing you see here is saved or sent.</p>
+      <div class="pbtns">
+        <button id="panelUse" class="btn" hidden>Use this phone</button>
+        <button id="panelBack" class="btn">Back</button>
+      </div>
+    </section>
+  </main>
+  <script src="../drive-location.js"></script>
+  <script src="link-core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

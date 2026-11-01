@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Monochrome mask for the glasses launcher: Bakar Drive's arrow. Only transparency matters; the device tints it. -->
+  <g id="glyph" fill="#fff">
+    <path d="M32 8 50 54 32 45 14 54Z" opacity=".55"/>
+    <path d="M32 8V45L14 54Z"/>
+  </g>
+</svg>
