@@ -25,9 +25,10 @@
 .drive-controls .note { text-align:center; }
 .drive-actions { display:flex; gap:8px; }
 .drive-actions .driverun { flex:1; }
-.drive-info { align-self:stretch; display:flex; flex-direction:column; gap:12px; }
-.drive-info h2 { font-size:24px; }
-.gps-facts { white-space:pre-line; font-size:19px; line-height:1.4; color:#e5e9e6; }
+.drive-info { align-self:stretch; display:flex; flex-direction:column; gap:10px; }
+.drive-info h2 { margin:0; font-size:24px; }
+.gps-facts { white-space:pre-line; font-size:19px; line-height:1.35; color:#e5e9e6; }
+.drive-details-open .top { display:none; }
 #drive[data-details=open] .gps-hud, #drive[data-details=open] .drive-controls { display:none; }
 .drive-quiet .sections, .drive-quiet .tabs, .drive-view .state, .drive-quiet .gbat:not(.low), .drive-view #push { display:none !important; }
 .drive-quiet .top { min-height:0; }

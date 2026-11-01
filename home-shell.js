@@ -34,10 +34,12 @@ window.HomeShell=(()=>{
   function openDriveInfo(){
     if(S.tab!=='drive'||!shown||document.hidden)return;
     by('drive').dataset.details='open';by('driveInfo').hidden=false;
+    document.body.classList.add('drive-details-open');
     paintDriveDetails();by('driveInfoClose').focus({preventScroll:true});touch();
   }
   function closeDriveInfo(focus=true){
     by('drive').removeAttribute('data-details');by('driveInfo').hidden=true;
+    document.body.classList.remove('drive-details-open');
     if(focus&&S.tab==='drive'&&shown)by('driveInfoButton').focus({preventScroll:true});
   }
   function ensureReview(){

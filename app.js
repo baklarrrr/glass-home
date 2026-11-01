@@ -927,7 +927,7 @@ function paintDriveDetails() {
   const status=driveFeed.snapshot().status;
   const help={
     denied:'The web app was denied access. Its Permissions control is in the glasses app menu; phone permission is separate.',
-    timeout:'The location provider timed out after 10 seconds. The watch remains active. Retry replaces it; it cannot guarantee a fix.',
+    timeout:'No fix within 10 seconds. The watch is still listening. Retry starts a new request.',
     'no-response':'The location provider has not called back. Check for an outstanding app permission prompt. Retry replaces the request.',
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
     inaccurate:'The returned position exceeds this app’s 50 m accuracy filter.',
@@ -1686,6 +1686,9 @@ function onKey(e) {
   if (e.target.closest('.sections') && (k === 'ArrowLeft' || k === 'ArrowRight')) {
     e.preventDefault();moveFocus(0,k === 'ArrowRight' ? 1 : -1);return;
   }
+  if (S.view === 'list' && S.tab === 'drive' && e.target.closest('.drive-actions, .drive-info') && (k === 'ArrowLeft' || k === 'ArrowRight')) {
+    e.preventDefault();moveFocus(0,k === 'ArrowRight' ? 1 : -1);return;
+  }
   if (S.view === 'list' && (k === 'ArrowLeft' || k === 'ArrowRight') && !e.target.closest('textarea')) {
     const tabs = HomeShell.tabsForInput(e.target);
     if (tabs.length < 2) { e.preventDefault(); moveFocus(0, k === 'ArrowRight' ? 1 : -1); return; } // Review has no tab to step to.
@@ -1792,7 +1795,8 @@ async function main() {
   renderState();
   registerServiceWorker();
   if (ready) wake();
-  if (S.tab !== 'drive') StudioParked.request();
+  // Read-only landing/navigation needs no declaration. The existing action gate
+  // still protects messages, picture review and detailed route planning.
 }
 
 main();
