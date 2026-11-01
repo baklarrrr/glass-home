@@ -1,0 +1,36 @@
+{
+  "about": "Test keys only, never a real link. JSON plaintexts are exactly JSON.stringify of the objects (key order as written).",
+  "t": "Mip_alHAr0fzId8c9Oa3Rg",
+  "phone": {
+    "pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgW0q0eCKyCePoAwA_KOBauEKOmHEd7PCkYZmOZ0moWqqhRANCAASmqYjDwIUqwz4vqdGZMJOdTM5rZnF0RuuIVQo0hehuIBNv__otwPrN_mWXoExWJ4ogC31Q_idxt8RA_Hnb3kBY",
+    "pub": "BKapiMPAhSrDPi-p0Zkwk51MzmtmcXRG64hVCjSF6G4gE2__-i3A-s3-ZZegTFYniiALfVD-J3G3xED8edveQFg"
+  },
+  "device": {
+    "pkcs8": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgdedfizTjYeZC7yipdXZit2kSUZYa9yeqSHKeKXSCbWGhRANCAATG5EPfp_OLXIB-2ru5b5i3RxdB-vzLB_C7xBNPYDTD480cKIajXLbClkKoI7pqaCJseJBmAinw9CXeuHKUkODE",
+    "pub": "BMbkQ9-n84tcgH7au7lvmLdHF0H6_MsH8LvEE09gNMPjzRwohqNctsKWQqgjumpoImx4kGYCKfD0Jd64cpSQ4MQ",
+    "id": "fBnswz04Ze7KQFii",
+    "code": "380890"
+  },
+  "sharedHex": "f8100c4016bf67b28c065f8ee940febe51d74ceded073d84b74bab967897b165",
+  "upKeyHex": "5ba8a28aa716608a5f9b7f0e33b5d410d00b676624fda75ae9096cc29b79793a",
+  "downKeyHex": "bc795cbb6ba40bcae6cdaf604f366691b43a1176d3b02749a8a1ce7acc285ae7",
+  "hello": {
+    "plain": "{\"c\":\"hello\",\"id\":\"AbCdEfGhIjKl\",\"ts\":1793580000000,\"v\":1}",
+    "ivHex": "0102030405060708090a0b0c",
+    "payload": "1.BMbkQ9-n84tcgH7au7lvmLdHF0H6_MsH8LvEE09gNMPjzRwohqNctsKWQqgjumpoImx4kGYCKfD0Jd64cpSQ4MQ.AQIDBAUGBwgJCgsM0_EphFY4sLYnXvsB6T9RJ7eFzqn-yQSjV4EJNy3vGCurrP19N-JcrcuMcYuyItagMLs21_0IiMa0PJePZLz1CXZwDqrTt718jqk",
+    "topic": "bkd/Mip_alHAr0fzId8c9Oa3Rg/u"
+  },
+  "nav": {
+    "plain": "{\"m\":\"nav\",\"sid\":\"Zx81kq2mP0aa\",\"seq\":42,\"at\":1793580000000,\"re\":\"AbCdEfGhIjKl\",\"nav\":{\"ss\":\"OnRoute\",\"turn\":\"TURN_RIGHT\",\"exit\":0,\"toTurn\":\"350 m\",\"next\":\"King St W\",\"street\":\"Bay St\",\"left\":\"12 km\",\"secs\":1380,\"pct\":41.5,\"sim\":false}}",
+    "ivHex": "a0a1a2a3a4a5a6a7a8a9aaab",
+    "payload": "1.oKGio6Slpqeoqaqr3rQ3Zvt2Z285QvkSxTN9dgPP2_ylCN-17kW9W71mbBPiGIu3eD-y_8aHnpvoj2Zg2_SnAaLhYRGEhGMP2ftnD7iPsQyUNUkNSWvS2Z7bkUdZYE5mOHLazRx5G_-5NAmimL5f65dhsHd3aF0pRw8iIW7rjy3bpuRZFlEBu2XKQW58oy6KA5ypM2GARFz7biHOKRCZC_MRNEA0do99y_X_9JqihGIYGj9B9ke899TMpSN1mdRj3UEOAIWGx7msi1UmShk9P0kG4ivw0-AethPF36wx2RBXf0HU90jVvUnvob7eQbyuOoOyb6-smPBOssqT_TJ_IGofRmWypCwD3Dg",
+    "topic": "bkd/Mip_alHAr0fzId8c9Oa3Rg/d/fBnswz04Ze7KQFii"
+  },
+  "pair": {
+    "plain": "{\"m\":\"pair\",\"ok\":false,\"code\":\"380890\",\"re\":\"AbCdEfGhIjKl\",\"at\":1793580000000}",
+    "ivHex": "505152535455565758595a5b",
+    "payload": "1.UFFSU1RVVldYWVpbMMRWyVJn-kIoBAaz8dVG7Do-IYJgFsCYjS5nrnaVKVUnVSATgNPBbf9n-lVzUdeYMItbzozGO6tzVXa6uBTF4Y8dEUYShVmc0ihB26lOpPv8dgEfC5-e8anrAVbcgw",
+    "topic": "bkd/Mip_alHAr0fzId8c9Oa3Rg/d/fBnswz04Ze7KQFii"
+  },
+  "address": "https://baklarrrr.github.io/glass-home/drive/?t=Mip_alHAr0fzId8c9Oa3Rg&p=BKapiMPAhSrDPi-p0Zkwk51MzmtmcXRG64hVCjSF6G4gE2__-i3A-s3-ZZegTFYniiALfVD-J3G3xED8edveQFg"
+}

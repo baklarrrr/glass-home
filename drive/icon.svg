@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <!-- Bakar Drive's mark, as on the phone. -->
+  <rect width="108" height="108" rx="24" fill="#16352C"/>
+  <path fill="#F7F6EC" d="M54 23 76 78 54 67 32 78Z"/>
+  <path fill="#8BC4AB" d="M54 23V67L32 78Z"/>
+  <path fill="#16352C" d="M52 43h4v14h-4z"/>
+</svg>
