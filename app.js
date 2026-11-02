@@ -228,7 +228,7 @@ function loadMqtt() {
 }
 
 function openLink() {
-  if (S.links.length || !S.kUp) return;
+  if (S.links.length || (!S.kUp && !S.tg)) return;
   if (typeof mqtt === 'undefined') { loadMqtt(); return; }
   S.linkId = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('');
   for (const b of BROKERS) addBroker(b);
@@ -266,8 +266,8 @@ function addBroker({ url, ...extra }) {
     client.fails = 0;
     clearTimeout(client.retryTimer);
     client.retryTimer = 0;
-    const topics = [`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`];
-    if (S.tg) topics.push(`bkr/${S.tg.t}/s`); // Tidal Glass's state, read only, for the glasses' battery
+    const topics = S.kUp ? [`bkr/${S.topic}/d/${S.devId}/s`, `bkr/${S.topic}/d/${S.devId}/m`] : [];
+    if (S.tg) topics.push(`bkr/${S.tg.t}/s`); // Existing phone state: battery and correlated Watch handoff receipts
     client.subscribe(topics, { qos: 1 });
     // What already went out on the other brokers in the last few seconds goes on this one too.
     const now = Date.now();
@@ -373,7 +373,7 @@ function hello() {
 }
 
 function wake() {
-  if (!S.kUp || document.visibilityState !== 'visible') return;
+  if ((!S.kUp && !S.tg) || document.visibilityState !== 'visible') return;
   const was = S.paused;
   S.paused = false;
   armIdle();
@@ -434,14 +434,14 @@ function passPairing(name) {
 
 // ---- glasses battery -------------------------------------------------------------------------------
 // The phone's Tidal Glass app reports the glasses' battery (5% steps) in Tidal Glass's retained state. With Tidal's
-// pairing (above), Bakar Home only listens on that topic and decrypts; it never publishes there. No Tidal pairing,
+// pairing (above), Bakar Home reads state. Explicit parked Watch actions can also use the existing command topic. No Tidal pairing,
 // or no battery in the state: no chip.
 
 async function setupBattery() {
   const pair = passPairing('tg');
   if (!pair || !window.crypto || !crypto.subtle) return;
   try {
-    const key = await crypto.subtle.importKey('raw', fromB64url(pair.k), 'AES-GCM', false, ['decrypt']);
+    const key = await crypto.subtle.importKey('raw', fromB64url(pair.k), 'AES-GCM', false, ['encrypt','decrypt']);
     S.tg = { t: pair.t, key };
   } catch (e) { S.tg = null; }
 }
@@ -456,6 +456,7 @@ async function handleTidal(text) {
     m = JSON.parse(new TextDecoder().decode(plain));
   } catch (e) { return; }
   if (!m || m.t !== 'state') return;
+  watchPhone.receive(m);
   if (S.battery && m.at && S.battery.at && m.at < S.battery.at) return;
   // gb/gc: the glasses (5% steps, charging); bb: the Neural Band, which the phone reads over Bluetooth.
   const gb = Number.isFinite(m.gb) ? m.gb : null;
@@ -519,6 +520,39 @@ function age(sec) {
   if (s < 3600) return `${Math.round(s / 60)}m`;
   if (s < 86400) return `${Math.round(s / 3600)}h`;
   return `${Math.round(s / 86400)}d`;
+}
+
+// Explicit provider handoff. Posted confirms a phone notification, never playback or search results.
+let watchViewEpoch=0;
+const watchPhone=new StudioWatchPhone.Handoff({
+  pair:()=>S.tg,
+  active:()=>!document.hidden&&StudioParked.confirmed()&&S.tab==='watch'&&(S.view==='list'||(S.view==='compose'&&S.compose?.mode==='yt')),
+  ensureConnected:async current=>{
+    wake();openLink();
+    const until=performance.now()+2500;
+    while(current()&&performance.now()<until){if(linkUp())return true;await new Promise(resolve=>setTimeout(resolve,20));}
+    return false;
+  },
+  publish:(topic,body)=>{
+    let sent=false;
+    for(const client of S.links){if(!client.connected)continue;try{client.publish(topic,body,{qos:1,retain:false});sent=true;}catch(_){}}
+    return sent;
+  }
+});
+function cancelWatch(){watchViewEpoch++;watchPhone.cancel();}
+async function handoffWatch(fields,note){
+  if(watchPhone.pending)return;
+  const epoch=++watchViewEpoch,compose=S.compose,view=S.view;
+  note.hidden=false;note.textContent='Sending to your phone…';
+  if(view==='compose')$('cSend').setAttribute('aria-disabled','true');
+  try{
+    const result=await watchPhone.request(fields);
+    if(epoch!==watchViewEpoch||S.view!==view||S.compose!==compose||S.tab!=='watch'||document.hidden)return;
+    note.textContent=result.code==='posted'?'Notification posted. Tap it on your phone to open '+(fields.kind==='search'?'YouTube search.':'the video. Playback has not started.'):
+      result.code==='notifications-disabled'?'Your phone could not show its notification. Its existing notification setting is off.':
+      result.code==='expired'?'The handoff expired before your phone accepted it. Try again.':'Your phone could not confirm this handoff. Check its notifications before trying again.';
+  }catch(error){if(epoch===watchViewEpoch&&S.view===view&&S.compose===compose&&S.tab==='watch'&&!document.hidden)note.textContent=error.message;}
+  finally{if(view==='compose'&&S.compose===compose)$('cSend').removeAttribute('aria-disabled');}
 }
 
 function el(tag, cls, text) {
@@ -1015,24 +1049,22 @@ function renderWatch() {
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.v : '';
   list.textContent = '';
   const found = S.ytFound;
-  const items = found || (S.snap && S.snap.yt) || [];
+  const shared = (S.snap && S.snap.yt) || [];
+  const items = found || [...STUDIO_WATCH_LIBRARY,...shared];
   const line = $('watchLine');
   line.hidden = false;
-  line.textContent = found ? `${found.length} results. Press Back for your list.`
-    : !S.snap ? 'Asking your PC for your videos…'
-    : items.length ? 'To add more, share a video from YouTube on your phone to Studio Desk.'
-    : 'Nothing to watch yet. On your phone, share a YouTube video to Studio Desk and it appears here.';
+  line.textContent = found ? found.length+' PC results. Back returns to the list.' : STUDIO_WATCH_LIBRARY.length+' studio lessons. Provider videos open on your phone.';
   items.forEach((v) => {
     const li = el('li');
     const started = v.pos > 5;
     const left = v.len ? Math.max(0, v.len - v.pos) : 0;
     const b = el('button', `row ${started ? 'work' : 'done'}`);
     b.dataset.v = v.id;
-    const status = started ? (left ? `${Math.max(1, Math.round(left / 60))} min left` : `at ${clockTime(v.pos)}`) : (v.src === 'feed' ? 'New' : 'Saved');
+    const status = v.curated ? (v.provider==='vimeo'?'Vimeo · Phone':'YouTube · Phone') : started ? (left ? `${Math.max(1, Math.round(left / 60))} min left` : `at ${clockTime(v.pos)}`) : (v.src === 'feed' ? 'New' : 'Saved');
     b.append(el('span', `mark ${started ? 'work' : 'done'}`), el('span', 'ti', v.ti || 'YouTube video'), el('span', 'tag', status),
-      el('span', 'why', v.ch || ''), el('span', 'age', ''));
+      el('span', 'why', [v.ch,v.curated&&v.why].filter(Boolean).join(' · ')), el('span', 'age', ''));
     b.setAttribute('aria-label', `${v.ti || 'YouTube video'}. ${v.ch || ''}. ${status}`);
-    b.addEventListener('click', () => { if (found) send('ytadd', { u: `https://youtu.be/${v.id}` }); openPlayer(v); });
+    b.addEventListener('click', () => { if(v.curated){handoffWatch({kind:'video',provider:v.provider,videoId:v.videoId},$('watchPhoneNote'));return;} if (found) send('ytadd', { u: `https://youtu.be/${v.id}` }); openPlayer(v); });
     li.append(b);
     list.append(li);
   });
@@ -1443,6 +1475,7 @@ function focusFirst(pane) {
 }
 
 function selectTab(tab, focusTab) {
+  if (S.tab==='watch' && tab !== 'watch') cancelWatch();
   if (S.view !== 'list') return; // Native Back preserves the current draft and bounds shared history.
   if (!HomeShell.canEnterRoute(tab, focusTab) || !HomeShell.canLeaveReview(tab)) return;
   S.tab = tab;
@@ -1472,6 +1505,7 @@ function openDetail(k) {
 }
 
 function apply(state) {
+  cancelWatch();
   closeConfirm();
   if (!state || state.v === 'list') {
     stopReading();
@@ -1541,9 +1575,9 @@ function startCompose(c) {
     pick.append(who, where);
     syncChoices();
   } else if (c.mode === 'yt') {
-    $('cTitle').textContent = 'Search YouTube';
+    $('cTitle').textContent = 'Search YouTube on phone';
     $('cLabel').textContent = 'Say what to find';
-    $('cSend').textContent = 'Search';
+    $('cSend').textContent = 'Send search to phone';
   } else if (c.mode === 'say') {
     $('cTitle').textContent = `Reply to ${d.ti || 'this task'}`;
     $('cLabel').textContent = 'Say your reply';
@@ -1611,22 +1645,9 @@ function review() {
 }
 
 async function findVideos() {
-  const q = $('cText').value.trim();
-  if (!q) { $('cNote').textContent = 'Nothing to search for yet. Focus the box and speak.'; $('cText').focus(); return; }
-  $('cNote').textContent = 'Searching…';
-  const id = await send('ytfind', { q });
-  if (!id) { $('cNote').textContent = 'Not sent. Check the connection and try again.'; return; }
-  const timer = setTimeout(() => { if (S.pending[id]) { delete S.pending[id]; $('cNote').textContent = 'Your PC hasn’t answered yet.'; } }, 20000);
-  S.pending[id] = (ack) => {
-    clearTimeout(timer);
-    if (!ack.ok) { $('cNote').textContent = ack.why || 'Search failed.'; return; }
-    S.ytFound = ack.items || [];
-    S.compose = null;
-    history.back();
-    selectTab('watch');
-    renderWatch();
-    focusFirst('watch');
-  };
+  if(watchPhone.pending)return;
+  const query=$('cText').value;
+  await handoffWatch({kind:'search',provider:'youtube',query},$('cNote'));
 }
 
 function closeConfirm() {
@@ -1719,7 +1740,7 @@ function onKey(e) {
   if (HomeShell.handleKey(e)) return;
   if (e.key !== 'Enter') S.lastKeyAt = Date.now();
   if (e.key === 'Enter' && !e.target.closest('textarea')) press(e.target);
-  if (S.paused && S.kUp) wake(); else if (S.kUp) armIdle();
+  if (S.paused && (S.kUp || S.tg)) wake(); else if (S.kUp || S.tg) armIdle();
   const k = e.key;
   if (e.target.closest('.sections') && (k === 'ArrowLeft' || k === 'ArrowRight')) {
     e.preventDefault();moveFocus(0,k === 'ArrowRight' ? 1 : -1);return;
@@ -1806,12 +1827,12 @@ async function main() {
   }
   window.addEventListener('popstate', (e) => apply(e.state));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { wakeUp(); wake(); if (!$('now').hidden) renderNow(); } else { stopReading(); if (S.view === 'play') closePlayer(); sleep('hidden'); }
+    if (document.visibilityState === 'visible') { wakeUp(); wake(); if (!$('now').hidden) renderNow(); } else { cancelWatch(); stopReading(); if (S.view === 'play') closePlayer(); sleep('hidden'); }
   });
-  window.addEventListener('pagehide', () => { stopReading(); sleep('hidden'); });
+  window.addEventListener('pagehide', () => { cancelWatch(); stopReading(); sleep('hidden'); });
   // The network is back (signal again after driving through a dead zone, say): fresh links, tried fast.
   window.addEventListener('online', () => {
-    if (!S.kUp || S.paused || document.visibilityState !== 'visible') return;
+    if ((!S.kUp && !S.tg) || S.paused || document.visibilityState !== 'visible') return;
     closeLink();
     openLink();
     hello();
@@ -1833,7 +1854,7 @@ async function main() {
   focusFirst(start);
   renderState();
   registerServiceWorker();
-  if (ready) wake();
+  if (ready || S.tg) wake();
   // Opening the passive Now/Drive view is not a declaration that the wearer is parked.
   // Interactive controls ask when deliberately activated; the route preview is parked-only.
   if (S.tab === 'route') StudioParked.request();
