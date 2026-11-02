@@ -1,11 +1,13 @@
 'use strict';
 // Bakar Drive on the glasses.
 //
-// Two sources, both optional:
+// Three sources, all optional:
 // - Phone GPS, through the glasses' web runtime (../drive-location.js, shared with Bakar Home's Drive tab): speed and
 //   heading. Nothing about the position is kept or sent.
 // - Bakar Drive on the phone: the next turn, the next street and the arrival time, sent encrypted by the phone's
 //   glasses link (LINK.md). It needs the address the phone app gives (?t=…&p=…). Without it the page runs on GPS alone.
+// - The same link also carries the phone's own GPS speed and heading (LINK.md, "Speed and heading"). While it is fresh
+//   it is the speed on screen, so the speedometer works even when the glasses' own location is not allowed.
 //
 // Battery: nothing runs while the page is hidden. On screen, one connection per broker, a hello every 20 s, and the
 // screen repaints only when something changes (and once a minute for the clock).
@@ -21,6 +23,7 @@ const FRAME_DROP_MS = 30000;      // a turn older than this is taken off the scr
 const PHONE_WAIT_MS = 8000;       // linked to a broker but nothing from the phone for this long
 const CONTROLS_MS = 8000;
 const HEADING_MIN_MPS = 2;        // GPS course is noise below about 7 km/h
+const PHONE_GPS_FRESH_MS = 3500;  // the phone sends its speed about once a second while it has a reading under 3 s old
 const LIGHTS = ['auto', 'day', 'dusk', 'night'];
 const L = DriveLinkCore;
 const $ = (id) => document.getElementById(id);
@@ -32,7 +35,7 @@ const S = {
   // net: the brokers (none = no phone link set up). phone: what the phone last said. Kept apart, so a dropped
   // connection never hides what the phone said a moment ago, and an old turn still goes stale on time.
   net: 'none', phone: 'unknown', heardAt: 0, last: null, frame: null, frameAt: 0, staleTimers: [],
-  heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' },
+  heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0,
   controlsTimer: 0, panel: false, openedAt: 0, offer: null,
 };
 
@@ -143,17 +146,27 @@ function compass(deg) {
 
 const feed = new StudioDriveLocation.Feed({ geo, permissions: navigator.permissions, change: onGps });
 
+// Trip: time and an estimated distance from reported speed (not from positions), while a speed is live. One source
+// at a time (the phone's while it is fresh, else the glasses'), so nothing counts twice.
+function addTrip(kmh) {
+  const now = performance.now();
+  if (S.trip.lastAt) {
+    const dt = now - S.trip.lastAt;
+    if (dt > 0 && dt <= 3000) { S.trip.ms += dt; S.trip.m += (kmh / 3.6) * (dt / 1000); }
+  }
+  S.trip.lastAt = now;
+}
+
+// The phone's own GPS speed and heading from the link, only while the phone is live and the reading is fresh.
+function phoneSpeed(now = performance.now()) {
+  const g = S.phoneGps;
+  return g && S.phone === 'live' && now - S.phoneGpsAt < PHONE_GPS_FRESH_MS ? g : null;
+}
+
 function onGps(reading) {
   S.gps = reading;
-  const now = performance.now();
-  // Trip: time and an estimated distance from reported speed (not from positions), while GPS is live.
-  if (reading.status === 'live') {
-    if (S.trip.lastAt) {
-      const dt = now - S.trip.lastAt;
-      if (dt > 0 && dt <= 3000) { S.trip.ms += dt; S.trip.m += (reading.speed / 3.6) * (dt / 1000); }
-    }
-    S.trip.lastAt = now;
-  } else S.trip.lastAt = 0;
+  if (phoneSpeed()) { render(); return; }          // the phone's speed is on screen and in the trip already
+  if (reading.status === 'live') addTrip(reading.speed); else S.trip.lastAt = 0;
   render();
 }
 
@@ -356,8 +369,11 @@ async function onDown(text) {
   S.phone = 'live';
   S.frame = r.frame.nav;
   S.frameAt = performance.now();
+  S.phoneGps = r.frame.gps;
+  S.phoneGpsAt = S.frameAt;
+  if (S.phoneGps) addTrip(S.phoneGps.kmh); else if (S.gps.status !== 'live') S.trip.lastAt = 0;
   for (const t of S.staleTimers) clearTimeout(t);
-  S.staleTimers = [setTimeout(render, FRAME_FRESH_MS + 50), setTimeout(render, FRAME_DROP_MS + 50)];
+  S.staleTimers = [setTimeout(render, PHONE_GPS_FRESH_MS + 50), setTimeout(render, FRAME_FRESH_MS + 50), setTimeout(render, FRAME_DROP_MS + 50)];
   render();
 }
 
@@ -414,12 +430,14 @@ function render() {
   hud.dataset.light = pick === 'auto' ? sunLight() : pick;
   $('lightBtn').textContent = `Light: ${pick[0].toUpperCase()}${pick.slice(1)}`;
 
-  // GPS
-  const live = S.gps.status === 'live';
+  // Speed: the phone's own GPS through the link while it is fresh, else the glasses' own location.
+  const pg = phoneSpeed();
+  const live = Boolean(pg) || S.gps.status === 'live';
   hud.dataset.gps = live ? 'live' : 'off';
-  $('speed').textContent = live ? String(Math.round(S.gps.speed)) : '—';
-  const headingFresh = S.heading !== null && Date.now() - S.headingAt < 5000 && live;
-  $('heading').textContent = headingFresh ? compass(S.heading) : '';
+  $('speed').textContent = pg ? String(pg.kmh) : S.gps.status === 'live' ? String(Math.round(S.gps.speed)) : '—';
+  const headingFresh = S.heading !== null && Date.now() - S.headingAt < 5000 && S.gps.status === 'live';
+  const course = pg ? pg.hdg : (headingFresh ? S.heading : null);   // the phone already leaves the heading out below 2 m/s
+  $('heading').textContent = course !== null ? compass(course) : '';
   $('gpsBtn').textContent = feed.enabled ? 'Stop GPS' : 'Start GPS';
   $('gpsBtn').disabled = S.gps.status === 'unsupported';
   const mins = Math.floor(S.trip.ms / 60000);
@@ -474,7 +492,7 @@ function renderPanel() {
     help = 'On your phone, open the glasses link and accept this code. Do it while parked.';
   } else if (S.phone === 'live' || S.phone === 'ready') {
     state = 'Linked to your phone.';
-    help = 'Start a route in Bakar Drive and the next turn shows here.';
+    help = 'Start a route in Bakar Drive and the next turn shows here. Your speed comes from the phone\'s GPS while it is driving.';
   } else if (S.net === 'down') {
     state = 'No signal right now.';
     help = 'Directions come back on their own when the phone has signal.';
