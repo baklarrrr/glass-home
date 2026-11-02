@@ -3,7 +3,7 @@
 window.HomeShell=(()=>{
   const by=id=>document.getElementById(id);
   const groups={now:'work',work:'work',watch:'work',apps:'work',games:'work',review:'review',route:'drive',drive:'drive'};
-  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0,locationPending=false;
+  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0,locationPending=false,pendingReview=false;
   const frame=()=>by('reviewFrame');
   function tell(message){if(frameReady)frame().contentWindow.postMessage(message,location.origin);}
   function activateReview(active){
@@ -82,6 +82,13 @@ window.HomeShell=(()=>{
     return false;
   }
   function focusReview(){
+    // The child can already occupy all five history entries. Return it to its existing
+    // root before adding the parked dialog entry; its saved drafts/receipts are retained.
+    if(!StudioParked.confirmed()&&depth>0){
+      pendingReview=true;tell({type:'studio-review-root'});clearTimeout(returnTimer);
+      returnTimer=setTimeout(()=>{pendingReview=false;by('reviewState').hidden=false;by('reviewState').textContent='Use Back to return to the picture list, then open pictures while parked.';},2500);
+      return;
+    }
     if(!StudioParked.confirmed()){StudioParked.request(()=>{ensureReview();focusReview();},()=>{activateReview(false);by('reviewEnter').focus({preventScroll:true});});return;}
     if(frameReady){frame().focus();tell({type:'studio-review-focus'});}
     else (by('reviewEnter').hidden?by('section-review'):by('reviewEnter')).focus();
@@ -94,6 +101,7 @@ window.HomeShell=(()=>{
     }
     if(m.type==='studio-review-depth'&&Number.isInteger(m.depth)&&m.depth>=0&&m.depth<=4){
       depth=m.depth;
+      if(depth===0&&pendingReview){pendingReview=false;clearTimeout(returnTimer);if(S.tab==='review'&&!document.hidden)focusReview();}
       if(depth===0&&pendingTab){const tab=pendingTab;pendingTab='';clearTimeout(returnTimer);selectTab(tab);}
     }
     if(m.type==='studio-review-key'&&S.tab==='review'&&!StudioParked.isOpen())reviewKey(m.key);
@@ -125,9 +133,9 @@ window.HomeShell=(()=>{
     document.addEventListener('click',event=>{if(event.isTrusted)touch();},true);
     document.addEventListener('visibilitychange',()=>{
       if(document.hidden){if(S.tab==='drive'){clearTimeout(idle);idle=0;if(by('driveInfo').hidden)quiet(false);}activateReview(false);}
-      else {activateReview(S.tab==='review');if(S.tab==='review'&&!StudioParked.confirmed())StudioParked.request();}
+      else {activateReview(S.tab==='review');} // Resume quietly; ask only on deliberate entry.
     });
-    window.addEventListener('pagehide',()=>{clearTimeout(idle);idle=0;clearTimeout(returnTimer);activateReview(false);if(S.tab==='drive'&&by('driveInfo').hidden)quiet(false);});
+    window.addEventListener('pagehide',()=>{pendingReview=false;pendingTab='';clearTimeout(idle);idle=0;clearTimeout(returnTimer);activateReview(false);if(S.tab==='drive'&&by('driveInfo').hidden)quiet(false);});
   }
   return Object.freeze({init,onPane,canEnterRoute,canLeaveReview,focusReview,handleKey,setLocationPending,driveQuiet:()=>S.tab==='drive'&&!shown,
     tabsForInput(target){return target.closest('.sections')?['now','review','drive']:Object.keys(groups).filter(key=>groups[key]===groups[S.tab]);}
