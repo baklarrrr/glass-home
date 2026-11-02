@@ -1799,8 +1799,9 @@ async function main() {
   renderState();
   registerServiceWorker();
   if (ready) wake();
-  // Read-only landing/navigation needs no declaration. The existing action gate
-  // still protects messages, picture review and detailed route planning.
+  // Opening the passive Now/Drive view is not a declaration that the wearer is parked.
+  // Interactive controls ask when deliberately activated; the route preview is parked-only.
+  if (S.tab === 'route') StudioParked.request();
 }
 
 main();
