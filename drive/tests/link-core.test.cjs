@@ -78,6 +78,31 @@ test('directions frames are checked field by field', () => {
   assert.equal(nav(frame({}, { sim: 'yes' })).frame.nav.sim, false);
 });
 
+test('the phone\'s speed and heading ride on a frame, checked on arrival', () => {
+  const g = (gps, over = {}) => nav(frame({ gps, ...over })).frame.gps;
+  assert.deepEqual(g({ kmh: 50, hdg: 90 }), { kmh: 50, hdg: 90 });
+  assert.deepEqual(g({ kmh: 0, hdg: null }), { kmh: 0, hdg: null });               // a measured zero stays zero
+  assert.deepEqual(g({ kmh: 360, hdg: 359 }), { kmh: 360, hdg: 359 });
+  assert.equal(nav(frame()).frame.gps, null);                                       // none sent: none shown
+  assert.equal(g(null), null);
+  assert.equal(g({ kmh: -1, hdg: 0 }), null);
+  assert.equal(g({ kmh: 361, hdg: 0 }), null);
+  assert.equal(g({ kmh: 50.5, hdg: 0 }), null);
+  assert.equal(g({ kmh: '50', hdg: 0 }), null);
+  assert.equal(g({ hdg: 90 }), null);
+  assert.equal(g([50, 90]), null);
+  assert.equal(g('fast'), null);
+  assert.deepEqual(g({ kmh: 50, hdg: 360 }), { kmh: 50, hdg: null });               // a bad heading costs only the heading
+  assert.deepEqual(g({ kmh: 50, hdg: -3 }), { kmh: 50, hdg: null });
+  assert.deepEqual(g({ kmh: 50, hdg: 12.5 }), { kmh: 50, hdg: null });
+  assert.deepEqual(g({ kmh: 50 }), { kmh: 50, hdg: null });
+  assert.deepEqual(g({ kmh: 50, hdg: 90, lat: 43.6, lon: -79.3 }), { kmh: 50, hdg: 90 });   // nothing else is ever passed on
+  // With no route the speed still arrives; a bad gps never costs the directions.
+  assert.deepEqual(nav(frame({ nav: null, gps: { kmh: 83, hdg: 270 } })).frame, { sid: 'Zx81kq2mP0aa', seq: 7, at: NOW, nav: null, gps: { kmh: 83, hdg: 270 } });
+  assert.equal(nav(frame({ gps: { kmh: 'x' } })).ok, true);
+  assert.equal(nav(frame({ nav: null, gps: 7 })).ok, true);
+});
+
 test('a frame must answer one of this page\'s own hellos', () => {
   assert.equal(nav(frame({ re: undefined })).why, 're');
   assert.equal(nav(frame({ re: 'SomeOtherId1' })).why, 're');                  // recorded before the page opened

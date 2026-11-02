@@ -30,14 +30,16 @@ const server = http.createServer((req, res) => {
 const FAKE_GEO = `(() => {
   const watchers = new Map(); let n = 0; window.__fix = null;
   const geo = {
-    watchPosition(ok, fail) { const id = ++n; watchers.set(id, ok); if (window.__fix) setTimeout(() => ok(window.__fix()), 10); return id; },
+    watchPosition(ok, fail) { const id = ++n; watchers.set(id, { ok, fail }); if (window.__fix) setTimeout(() => ok(window.__fix()), 10); return id; },
     clearWatch(id) { watchers.delete(id); }, getCurrentPosition() {},
   };
   Object.defineProperty(navigator, 'geolocation', { get: () => geo });
   window.__drive = (mps, heading) => {
     window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: 0, longitude: 0 } });
-    for (const ok of watchers.values()) ok(window.__fix());
+    for (const w of watchers.values()) w.ok(window.__fix());
   };
+  // The glasses' own location is refused (error code 1), as when the phone's Meta AI app has no location access.
+  window.__deny = () => { window.__fix = null; for (const w of watchers.values()) w.fail({ code: 1 }); };
   const perm = { state: 'granted', onchange: null };
   Object.defineProperty(navigator, 'permissions', { get: () => ({ query: async () => perm }) });
 })();`;
@@ -184,6 +186,37 @@ async function layoutOk(page, what) {
   await page.waitForTimeout(20);
   check(await page.isHidden('#turn'), 'no route: the turn goes away and speed is big again');
   check((await page.textContent('#status')) === 'Phone linked · no route', 'no route is said plainly');
+
+  // The phone's own GPS speed and heading ride on the frames: they are the speed on screen while fresh, they work
+  // when the glasses' own location is refused, and a missing, old or malformed reading never shows a made-up number.
+  const withGps = (gps, over = {}) => ({ ...nav(seq++, over), gps });
+  await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, withGps({ kmh: 83, hdg: 270 })));
+  await page.waitForTimeout(30);
+  check((await page.textContent('#speed')) === '83' && (await page.textContent('#heading')) === 'W', 'phone speed 83 km/h and heading W show, over the glasses\' own 50');
+  const tt1 = await page.textContent('#toTurn');
+  check(tt1 === '350\u00a0m', `directions still show beside the phone\'s speed (toTurn "${tt1}")`);
+  await shot('05b-phone-speed');
+  await layoutOk(page, 'phone speed with a turn');
+  await page.evaluate(() => window.__deny());
+  await page.waitForTimeout(30);
+  check((await page.textContent('#speed')) === '83', 'the glasses\' location refused: the phone\'s speed stays');
+  await page.waitForTimeout(3700);
+  check((await page.textContent('#speed')) === '—' && (await page.textContent('#heading')) === '', 'no reading from the phone for 3.5 s and no location of its own: a dash, never a stale number');
+  await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, withGps({ kmh: 0, hdg: null })));
+  await page.waitForTimeout(30);
+  check((await page.textContent('#speed')) === '0' && (await page.textContent('#heading')) === '', 'a measured zero shows as 0, with no heading');
+  await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, withGps(null)));
+  await page.waitForTimeout(30);
+  check((await page.textContent('#speed')) === '—', 'a frame without a reading shows a dash');
+  await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, withGps({ kmh: -5, hdg: 400 })));
+  await page.waitForTimeout(30);
+  const tt2 = await page.textContent('#toTurn');
+  check((await page.textContent('#speed')) === '—' && tt2 === '350\u00a0m', `a malformed reading is dropped and the directions still show (toTurn "${tt2}")`);
+  await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, { m: 'nav', sid, seq: seq++, at: Date.now(), re: hello, nav: null, gps: { kmh: 61, hdg: 12 } }));
+  await page.waitForTimeout(30);
+  check((await page.textContent('#speed')) === '61' && (await page.textContent('#heading')) === 'N' && (await page.textContent('#status')) === 'Phone linked · no route', 'with no route the phone\'s speed still shows');
+  await layoutOk(page, 'phone speed without a route');
+  await shot('05c-phone-speed-no-route');
 
   // The phone's sender restarts: the new session takes over and the old one can't come back.
   const oldSid = sid;

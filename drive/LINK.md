@@ -102,6 +102,28 @@ listening, and at once when the turn or the next street changes.
 A frame is shown for 4 s after it arrives; after that the turn dims and the page says directions are
 paused. Destination coordinates, the destination name and the phone's position are never sent.
 
+### Speed and heading (optional, same frame)
+
+```json
+{"m":"nav","sid":"Zx81kq2mP0aa","seq":43,"at":1793580001000,"re":"AbCdEfGhIjKl","nav":null,"gps":{"kmh":50,"hdg":90}}
+```
+
+When the phone has a fresh GPS reading it adds `gps` to the same sealed frame, with or without a route.
+`kmh` is the ground speed in whole km/h and `hdg` the direction of travel in whole degrees clockwise from
+north (0 to 359) or `null`. It exists so the speedometer works even when the glasses are not allowed
+location of their own.
+
+| Field | Rule on the phone | Rule on the glasses |
+|---|---|---|
+| `gps` | left out when there is no reading, the reading is older than 3 s, its speed is missing, negative, not trusted by the phone's own accuracy filter, or above 100 m/s | not an object with a valid `kmh`: the whole `gps` is dropped and the rest of the frame is used as usual |
+| `kmh` | `round(m/s × 3.6)`. A zero is sent only when the phone measured zero; nothing is derived or guessed | integer 0 to 360, else `gps` is dropped |
+| `hdg` | `null` below 2 m/s (about 7 km/h) or when the phone has no trustworthy course | integer 0 to 359, else `null` (the speed is kept) |
+
+The glasses show the phone's speed while its last `gps` arrived less than 3.5 s ago and the phone is live,
+use the glasses' own location otherwise, and show a dash when they have neither. Only speed and heading are
+sent; the phone's position never is. A frame without `gps` is byte for byte what it was before, and an older
+glasses page ignores the key.
+
 ## Brokers
 
 | Broker | Glasses (WebSocket) | Phone (TLS) |

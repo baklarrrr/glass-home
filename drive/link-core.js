@@ -11,6 +11,7 @@
     'LEAVE_ROUND_ABOUT', 'STAY_ON_ROUND_ABOUT', 'START_AT_THE_END_OF_STREET', 'REACHED_YOUR_DESTINATION',
     'EXIT_HIGHWAY_TO_LEFT', 'EXIT_HIGHWAY_TO_RIGHT']);
   const CLOCK_WINDOW_MS = 120000, MAX_TEXT = 60, MAX_DIST = 16, MAX_SECS = 360000;
+  const MAX_KMH = 360;              // 100 m/s, the same ceiling as the glasses' own GPS filter
   const MAX_DOWN = 5600;            // characters in one phone → glasses payload; a sealed body is at most 4096 bytes
   const SID_SLIP_MS = 5000;         // a new sender session may start this far behind the last frame (a clock step)
   const GONE_MAX = 8;               // ended sender sessions remembered, so their frames can't come back
@@ -97,6 +98,14 @@
       .replace(/[^\S ]+/g, ' ').trim().slice(0, max)
     : '';
 
+  // The phone's own GPS speed and heading (LINK.md, "Speed and heading"): whole km/h 0 to 360 and a heading 0 to
+  // 359 or null. Anything else is dropped as a whole, never repaired. It never holds a position.
+  function cleanGps(g) {
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return null;
+    if (!Number.isSafeInteger(g.kmh) || g.kmh < 0 || g.kmh > MAX_KMH) return null;
+    return { kmh: g.kmh, hdg: Number.isSafeInteger(g.hdg) && g.hdg >= 0 && g.hdg < 360 ? g.hdg : null };
+  }
+
   // A directions frame, checked field by field. Returns {ok:false, why} or {ok:true, frame, last}.
   // last: {sid, seq, at, gone} after the newest accepted frame, or null; keep r.last for the next call.
   // hellos: the ids of this page's recent hellos. A frame must name one (re), so frames recorded before
@@ -117,7 +126,8 @@
       }
     }
     const next = { sid: m.sid, seq: m.seq, at: m.at, gone };
-    if (m.nav === null) return { ok: true, frame: { sid: m.sid, seq: m.seq, at: m.at, nav: null }, last: next };
+    const gps = cleanGps(m.gps);   // a bad gps never costs the directions
+    if (m.nav === null) return { ok: true, frame: { sid: m.sid, seq: m.seq, at: m.at, nav: null, gps }, last: next };
     const n = m.nav;
     if (!n || typeof n !== 'object' || Array.isArray(n)) return { ok: false, why: 'nav' };
     if (!STATES.includes(n.ss)) return { ok: false, why: 'state' };
@@ -134,6 +144,7 @@
           next: clean(n.next, MAX_TEXT), street: clean(n.street, MAX_TEXT),
           secs, pct, sim: n.sim === true,
         },
+        gps,
       },
       last: next,
     };
@@ -159,7 +170,7 @@
   const api = Object.freeze({
     SALT, PAIR_LABEL, STATES, TURNS, CLOCK_WINDOW_MS, MAX_DOWN,
     fromB64url, toB64url, readAddress, deviceId, pairCode, deriveKeys, seal, open, openDown, sealUp, checkNav,
-    checkPair, phase, clean,
+    checkPair, phase, clean, cleanGps,
   });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveLinkCore = api;
 })(globalThis);
