@@ -874,29 +874,51 @@ function placeRouteDot(s) {
 }
 
 // ---- drive: reported phone GPS speed, never a vehicle instrument or a sample -------------------------
+const DRIVE_PHONE_LABELS=Object.freeze({
+  off:'Phone link stopped in this app', unpaired:'Phone link not set up', paused:'Phone link paused',
+  live:'Phone GPS through Journal', stale:'Phone speed expired', 'no-sample':'Phone linked · no fresh GPS speed',
+  pairing:'Compare the code on your phone', ready:'Phone linked · waiting for GPS',
+  waiting:'Waiting for your phone', connecting:'Connecting to your phone', offline:'Phone link unavailable',
+  unavailable:'Secure phone link unavailable'
+});
+const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Phone({change:()=>paintDrive(driveFeed.snapshot())}):{
+  enabled:false,snapshot:()=>({state:'unavailable',configured:false,gps:null,nav:null,offer:false,code:''}),
+  setup:async()=>false,setVisible(){},setEnabled(){},cancelChoice(){},acceptOffer:async()=>false,keepCurrent(){}
+};
 const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
   change:paintDrive
 });
 const DRIVE_STATUS_LABELS=Object.freeze({
-    off:'Phone GPS off', unsupported:'Phone GPS unavailable',
+    off:'GPS not started in this app', unsupported:'Location API unavailable',
     waiting:'Waiting for phone GPS', unavailable:'GPS has no speed reading',
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
     timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'Location fix unavailable',
-    paused:'Phone GPS paused'
+    paused:'App GPS paused'
   });
 function paintDrive(reading) {
-  $('driveSpeed').textContent=reading.status==='live'?String(Math.round(reading.speed)):'—';
-  $('driveState').textContent=reading.status==='live'?'Phone GPS · estimated speed':(DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable');
-  $('driveAge').textContent=reading.status==='live'?(reading.ageMs<1000?'Just now':Math.floor(reading.ageMs/1000)+' s ago'):'';
-  $('driveHud').dataset.status=reading.status;
-  $('driveGps').textContent=driveFeed.enabled?'Stop GPS':'Start GPS';
+  const phone=drivePhone.snapshot(),pg=phone.gps;
+  const course=pg?pg.hdg:reading.heading;
+  if($('driveHeading'))$('driveHeading').textContent=Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
+  const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
+  if($('driveTurn')){
+    const route=nav&&['OnRoute','OffRoute','RouteRebuilding','RouteNeedsRebuild','RouteNotStarted'].includes(nav.ss);
+    $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],words[nav.turn],nav.toTurn,nav.next||nav.street].filter(Boolean).join(' · '):'';
+    $('driveTurn').hidden=!$('driveTurn').textContent;
+  }
+  const live=Boolean(pg)||reading.status==='live';
+  $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
+  $('driveState').textContent=pg?'Phone link · GPS estimate':reading.status==='live'?'App location · GPS estimate':
+    phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
+    (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable');
+  const age=pg?phone.ageMs:reading.ageMs;
+  $('driveAge').textContent=live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'';
+  $('driveHud').dataset.status=live?'live':reading.status;
+  $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
   $('driveGps').disabled=reading.status==='unsupported';
   const retry=$('driveRetry');
   const canRetry=driveFeed.enabled&&['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
-  // Do not move focus or turn the next press into Stop when a fix arrives.
-  // A focused Retry stays available until the wearer moves away from it.
   retry.hidden=!canRetry&&document.activeElement!==retry;
   const permission=driveFeed.details().permission;
   HomeShell.setLocationPending(driveFeed.enabled&&['waiting','no-response'].includes(reading.status)&&permission!=='granted');
@@ -911,7 +933,14 @@ function retryDriveGps() {
   driveFeed.enable(); // Replaces one watch, only on this deliberate press.
 }
 function paintDriveDetails() {
-  const f=driveFeed.details(),last=f.lastFix,error=f.lastError,status=f.status;
+  const f=driveFeed.details(),last=f.lastFix,error=f.lastError,status=f.status,phone=drivePhone.snapshot();
+  if($('drivePhoneState')){
+  $('drivePhoneState').textContent=DRIVE_PHONE_LABELS[phone.state]||'Phone link unavailable';
+  $('drivePhoneCode').textContent=phone.configured&&['pairing','waiting','ready','connecting'].includes(phone.state)?'Pairing code: '+phone.code:'';
+  $('drivePhoneToggle').textContent=phone.enabled?'Stop phone link':'Resume phone link';
+  $('drivePhoneToggle').disabled=!phone.configured;
+  $('drivePhoneUse').hidden=$('drivePhoneKeep').hidden=!phone.offer;
+  }
   // Details can stay open indefinitely: use acquisition time rather than an age
   // that would freeze when the expired feed stops its refresh timer.
   const fixTime=last?.at==null?'time unknown':new Date(last.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
@@ -921,7 +950,7 @@ function paintDriveDetails() {
   let policy='unknown';
   try {const p=document.permissionsPolicy||document.featurePolicy;if(p?.allowsFeature)policy=p.allowsFeature('geolocation')?'allowed':'blocked';}catch(_){}
   $('driveFacts').textContent=[
-    'GPS 27 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
+    'Drive 29 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix,
@@ -930,6 +959,7 @@ function paintDriveDetails() {
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
   const help={
+    off:'This page has not started a location request. It does not read Android’s GPS switch. Start app GPS here, or use the paired Journal phone link.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
     timeout:'No fix within 10 seconds. The watch is still listening. Retry starts a new request.',
     'no-response':'The location provider has not called back. Check for an outstanding app permission prompt. Retry replaces the request.',
@@ -941,9 +971,12 @@ function paintDriveDetails() {
   };
   $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';
 }
-function syncDriveFeed() { driveFeed.setVisible(S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden); }
+function syncDriveFeed() {
+  const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
+  driveFeed.setVisible(visible);drivePhone.setVisible(visible);
+}
 document.addEventListener('visibilitychange',syncDriveFeed);
-window.addEventListener('pagehide',()=>driveFeed.setVisible(false));
+window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);
 // Light: the display adds to whatever is behind it, so a bright sky needs solid, simple shapes and a dark road needs
 // far less light. Auto follows the sun at Toronto's latitude; pressing the button picks one by hand and it's remembered.
@@ -1308,6 +1341,7 @@ async function keepIcons() {
 }
 
 function launch(app) {
+  if (/^https:\/\/baklarrrr\.github\.io\/glass-home\/(?:drive\/)?(?:[?#]|$)/.test(app.url)) { selectTab('drive'); return; }
   if (/studio-glass/.test(app.url)) { selectTab('review'); return; }
   let url = app.url;
   // The app opens inside Bakar Home's own storage, so it gets its pairing in its address, the way it was added.
@@ -1347,7 +1381,7 @@ function showPane(id) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
-  driveFeed.setVisible(id === 'drive' && !document.hidden); if (id === 'drive') applyDriveLight();
+  syncDriveFeed(); if (id === 'drive') applyDriveLight();
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
@@ -1635,7 +1669,7 @@ function rowsOfControls() {
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'drive' && HomeShell.driveQuiet()) add([$('driveReveal')]);
-    else if (pane === 'drive' && !$('driveInfo').hidden) add([$('driveInfoClose')]);
+    else if (pane === 'drive' && !$('driveInfo').hidden) add([$('drivePhoneToggle'),$('drivePhoneUse'),$('drivePhoneKeep'),$('driveInfoClose')]);
     else if (pane === 'drive') { add([$('driveGps'),$('driveRetry')]); add([$('driveLight'),$('driveInfoButton')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
@@ -1791,6 +1825,7 @@ async function main() {
   let ready = false;
   try { ready = await setupKeys(); } catch (e) { ready = false; }
   try { await setupBattery(); } catch (e) { S.tg = null; }
+  await drivePhone.setup(S.fragment);
   wakeUp();
   renderWork();
   showPane(start);
@@ -1807,6 +1842,9 @@ async function main() {
 main();
 
 $('driveGps').addEventListener('click', toggleDriveGps);
+$('drivePhoneToggle')?.addEventListener('click',()=>drivePhone.setEnabled(!drivePhone.enabled));
+$('drivePhoneUse')?.addEventListener('click',()=>drivePhone.acceptOffer());
+$('drivePhoneKeep')?.addEventListener('click',()=>drivePhone.keepCurrent());
 $('driveRetry').addEventListener('click', retryDriveGps);
 $('driveLight').addEventListener('click', nextDriveLight);
 applyDriveLight();

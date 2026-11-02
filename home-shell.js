@@ -43,6 +43,7 @@ window.HomeShell=(()=>{
     paintDriveDetails();by('driveInfoClose').focus({preventScroll:true});touch();
   }
   function closeDriveInfo(focus=true){
+    if(typeof drivePhone!=='undefined')drivePhone.cancelChoice();
     by('drive').removeAttribute('data-details');by('driveInfo').hidden=true;
     document.body.classList.remove('drive-details-open');
     if(focus&&S.tab==='drive'&&shown){by('driveInfoButton').focus({preventScroll:true});touch();}

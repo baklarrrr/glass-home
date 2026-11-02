@@ -110,9 +110,10 @@
 
     <section id="drive" class="pane" role="tabpanel" aria-labelledby="tab-drive" hidden>
       <div id="driveHud" class="gps-hud" data-status="off" role="group" aria-label="Phone GPS speed">
-        <p id="driveState" class="gps-state">Phone GPS off</p>
+        <p id="driveState" class="gps-state">GPS not started in this app</p>
         <p id="driveSpeed" class="gps-speed" aria-label="Speed in kilometres per hour">—</p>
-        <p class="gps-unit">km/h</p>
+        <p class="gps-unit">km/h <span id="driveHeading"></span></p>
+        <p id="driveTurn" class="gps-age" hidden></p>
         <p id="driveAge" class="gps-age"></p>
       </div>
       <button id="driveReveal" class="btn quiet-reveal" aria-label="Drive controls">Controls <span>↑ to leave</span></button>
@@ -121,7 +122,13 @@
         <div class="drive-actions"><button id="driveLight" class="row driverun">Light: Auto</button><button id="driveInfoButton" class="row driverun">GPS details</button></div>
       </div>
       <div id="driveInfo" class="drive-info" role="region" aria-label="GPS connection details" hidden>
-        <h2>GPS connection</h2>
+        <h2>Speed connection</h2>
+        <p id="drivePhoneState" class="note"></p>
+        <p id="drivePhoneCode" class="note"></p>
+        <p class="note">Journal → Review → ••• → Directions to glasses. Use the existing link; compare codes while parked. Speed is blank until a fresh reading arrives.</p>
+        <button id="drivePhoneToggle" class="row driverun">Stop phone link</button>
+        <button id="drivePhoneUse" class="row driverun" hidden>Use offered phone</button>
+        <button id="drivePhoneKeep" class="row driverun" hidden>Keep current phone</button>
         <p id="driveFacts" class="gps-facts"></p>
         <p id="driveHelp" class="note"></p>
         <p class="note">Phone GPS estimate. Use your vehicle's instruments. Adjust settings when stopped. Details stay on this device.</p>
@@ -168,6 +175,8 @@
   <section id="parkedGate" class="parked-gate" role="dialog" aria-modal="true" aria-labelledby="parkedTitle" hidden><h1 id="parkedTitle">Controls while parked</h1><p>Vehicle motion is not checked. Use menus, messages and feedback only while parked.</p><button id="parkedConfirm" class="btn">I'm parked - show controls</button><button id="parkedCancel" class="btn">View only</button></section>
   <script src="parked.js"></script>
   <script src="drive-location.js"></script>
+  <script src="drive/link-core.js"></script>
+  <script src="drive-phone.js"></script>
   <script src="home-shell.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="app.js"></script>

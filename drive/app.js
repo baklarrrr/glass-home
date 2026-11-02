@@ -35,7 +35,7 @@ const S = {
   // net: the brokers (none = no phone link set up). phone: what the phone last said. Kept apart, so a dropped
   // connection never hides what the phone said a moment ago, and an old turn still goes stale on time.
   net: 'none', phone: 'unknown', heardAt: 0, last: null, frame: null, frameAt: 0, staleTimers: [],
-  heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0,
+  heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0, phoneGpsSentAt: 0, phoneGpsAge: 0,
   controlsTimer: 0, panel: false, openedAt: 0, offer: null,
 };
 
@@ -160,7 +160,9 @@ function addTrip(kmh) {
 // The phone's own GPS speed and heading from the link, only while the phone is live and the reading is fresh.
 function phoneSpeed(now = performance.now()) {
   const g = S.phoneGps;
-  return g && S.phone === 'live' && now - S.phoneGpsAt < PHONE_GPS_FRESH_MS ? g : null;
+  const elapsed=now-S.phoneGpsAt;
+  const age=Math.max(Date.now()-S.phoneGpsSentAt,S.phoneGpsAge+elapsed);
+  return g && S.phone === 'live' && S.phoneGpsAge>=0 && elapsed>=0 && Date.now()>=S.phoneGpsSentAt && age < PHONE_GPS_FRESH_MS ? g : null;
 }
 
 function onGps(reading) {
@@ -371,9 +373,11 @@ async function onDown(text) {
   S.frameAt = performance.now();
   S.phoneGps = r.frame.gps;
   S.phoneGpsAt = S.frameAt;
+  S.phoneGpsSentAt = r.frame.at;
+  S.phoneGpsAge = Date.now()-r.frame.at;
   if (S.phoneGps) addTrip(S.phoneGps.kmh); else if (S.gps.status !== 'live') S.trip.lastAt = 0;
   for (const t of S.staleTimers) clearTimeout(t);
-  S.staleTimers = [setTimeout(render, PHONE_GPS_FRESH_MS + 50), setTimeout(render, FRAME_FRESH_MS + 50), setTimeout(render, FRAME_DROP_MS + 50)];
+  S.staleTimers = [setTimeout(render, Math.max(0,PHONE_GPS_FRESH_MS-Math.max(0,S.phoneGpsAge)) + 1), setTimeout(render, FRAME_FRESH_MS + 50), setTimeout(render, FRAME_DROP_MS + 50)];
   render();
 }
 
@@ -524,7 +528,7 @@ function hideControls() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 function panelButtons() {
-  return ['panelUse', 'panelBack'].map($).filter((b) => !b.hidden);
+  return ['panelUse', 'panelStudio', 'panelBack'].map($).filter((b) => !b.hidden);
 }
 function openPanel() {
   S.panel = true;
@@ -582,6 +586,13 @@ $('lightBtn').addEventListener('click', () => {
 $('linkBtn').addEventListener('click', openPanel);
 $('panelBack').addEventListener('click', closePanel);
 $('panelUse').addEventListener('click', useOffer);
+// A deliberate setup handoff carries only the existing phone's topic and public key.
+// Studio keeps its own keys; a separate storage context still needs the normal code comparison.
+$('panelStudio').addEventListener('click',()=>{
+  const next=new URL('../',location.href),q=new URLSearchParams({tab:'drive'});
+  if(S.addr){q.set('dt',S.addr.t);q.set('dp',S.addr.p);}
+  next.hash=q.toString();location.assign(next.href);
+});
 
 // ---- life cycle --------------------------------------------------------------------------------------
 
