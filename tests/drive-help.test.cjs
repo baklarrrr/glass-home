@@ -4,6 +4,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const {Feed}=require('../drive-location.js');
+const {Phone}=require('../drive-phone.js');
 function harness(permission='granted') {
   let clock=0,seq=0;const timers=new Map(),elements=new Map(),docEvents=new Map(),winEvents=new Map(),watches=[],clears=[];
   const document={hidden:false,activeElement:null,permissionsPolicy:{allowsFeature:()=>true}};
@@ -27,13 +28,13 @@ function harness(permission='granted') {
   const context={document,Date,URL,URLSearchParams,console,S:{tab:'drive',view:'list'},isSecureContext:true,
     setTimeout:schedule,clearTimeout:cancel,location:{origin:'https://fixture.invalid',href:'https://fixture.invalid/'},
     navigator:{geolocation:{watchPosition(ok,fail){watches.push({ok,fail});return watches.length-1;},clearWatch:id=>clears.push(id)},permissions:{query:async()=>p}},
-    StudioDriveLocation:{Feed:FixtureFeed},StudioParked:{confirmed:()=>false,isOpen:()=>false,request(){},revoke(){emit(docEvents,'studio-parked-change');}},
+    StudioDrivePhone:{Phone},StudioDriveLocation:{Feed:FixtureFeed},StudioParked:{confirmed:()=>false,isOpen:()=>false,request(){},revoke(){emit(docEvents,'studio-parked-change');}},
     stopReading(){},passPairing:()=>null,reviewKey(){},selectTab(){},$:element,
     addEventListener:(t,f)=>add(winEvents,t,f)};
   context.window=context;vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../home-shell.js'),'utf8'),context);
   const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
-  vm.runInContext(app.slice(app.indexOf('const driveFeed ='),app.indexOf('// Light: the display')),context);
+  vm.runInContext(app.slice(app.indexOf('const DRIVE_PHONE_LABELS='),app.indexOf('// Light: the display')),context);
   vm.runInContext("HomeShell.init();HomeShell.onPane('drive','now');driveFeed.setVisible(true);paintDrive(driveFeed.snapshot());",context);
   const feed=vm.runInContext('driveFeed',context);
   function advance(ms){const end=clock+ms;while(true){const due=[...timers].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;clock=due[1].at;timers.delete(due[0]);due[1].fn();}clock=end;}

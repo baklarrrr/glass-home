@@ -72,3 +72,21 @@ test('new request exposes current waiting separately from historical denial',()=
 test('Stop retains error history but current state is off',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].fail({code:3});h.feed.stop();assert.equal(h.feed.details().status,'off');assert.equal(h.feed.details().lastError.code,3);assert.equal(h.feed.details().watchActive,false);});
 test('old permission callback after retry cannot revoke the new watch',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();const old=h.p.onchange;h.feed.enable();await Promise.resolve();h.p.state='denied';old();assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.feed.enabled,true);assert.deepEqual(h.clears,[0]);});
 test('old permission callback after Stop cannot change current off state',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();const old=h.p.onchange;h.feed.stop();h.p.state='denied';old();assert.equal(h.feed.snapshot().status,'off');assert.equal(h.feed.details().watchActive,false);});
+
+test('return from Work/Watch resumes an already working watch when the host lacks Permissions.query',async()=>{
+ const h=harness();h.feed.permissions=null;h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());
+ h.feed.setVisible(false);assert.equal(h.feed.snapshot().speed,null);
+ h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,2);
+ assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.feed.details().permission,'unknown');
+ h.watches[0].ok(fix(30));assert.equal(h.feed.snapshot().speed,null);
+ h.watches[1].ok(fix(12));assert.equal(h.feed.snapshot().speed,43.2);
+});
+test('a real permission denial still prevents automatic re-entry after a working fix',async()=>{
+ const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code:1});
+ h.feed.permissions=null;h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();
+ assert.equal(h.watches.length,1);assert.equal(h.feed.enabled,false);assert.equal(h.feed.snapshot().speed,null);
+});
+test('a successful watch never overrides an explicit prompt state on resume',async()=>{
+ const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.feed.setVisible(false);h.p.state='prompt';
+ h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.enabled,false);
+});

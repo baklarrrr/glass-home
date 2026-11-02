@@ -14,13 +14,14 @@
       return {status:'invalid', speed:null, at};
     if (!Number.isFinite(c.accuracy) || c.accuracy < 0 || c.accuracy > MAX_ACCURACY_M)
       return {status:'inaccurate', speed:null, at};
-    return {status:'live', speed:c.speed * 3.6, at};
+    const heading=c.speed>=2&&Number.isFinite(c.heading)&&c.heading>=0&&c.heading<360?c.heading:null;
+    return {status:'live', speed:c.speed * 3.6, heading, at};
   }
   class Feed {
     constructor({geo, permissions, now=Date.now, mono=()=>performance.now(),
       schedule=(fn,ms)=>setTimeout(fn,ms), cancel=id=>clearTimeout(id), change=()=>{}}) {
       Object.assign(this,{geo,permissions,now,mono,schedule,cancel,change});
-      this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
+      this.receivedFix=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
       this.state={status:geo?'off':'unsupported',speed:null}; this.permission=null;
       // Page-local facts only: never copy the position object or its coordinates.
       this.facts={attempts:0,fixes:0,lastFix:null,lastError:null,permission:'unknown'};
@@ -60,7 +61,7 @@
     }
     // Only a deliberate Start or Retry calls enable. Re-entry may resume an existing grant.
     enable() { this.enabled=true; if(this.visible)this.start(true); }
-    stop() { this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
+    stop() { this.receivedFix=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
     setVisible(visible) {
       if(this.visible===visible)return;
       this.visible=visible;
@@ -80,7 +81,14 @@
         try { permission=await this.permissions?.query({name:'geolocation'}); } catch(_) {}
         if(epoch!==this.epoch||!this.visible||!this.enabled)return;
         this.facts.permission=['granted','denied','prompt'].includes(permission?.state)?permission.state:'unknown';
-        if(permission?.state!=='granted'){this.enabled=false;this.publish({status:permission?.state==='denied'?'denied':'off',speed:null});return;}
+        // A real callback proves this same page's earlier deliberate request was allowed.
+        // Some glasses runtimes implement geolocation but not Permissions.query. Resume
+        // that existing request after a temporary hide; an explicit prompt/denial still wins.
+        const known=['granted','denied','prompt'].includes(permission?.state);
+        if(permission?.state!=='granted'&&(known||!this.receivedFix)){
+          this.receivedFix=false;this.enabled=false;
+          this.publish({status:permission?.state==='denied'?'denied':'off',speed:null});return;
+        }
       }
       ++this.facts.attempts;
       this.publish({status:'waiting',speed:null});
@@ -96,6 +104,7 @@
       try {
         this.watch=this.geo.watchPosition(position=>{
           if(epoch!==this.epoch||!this.visible||!this.enabled)return;
+          this.receivedFix=true;
           const now=this.now(), next=reading(position,now);
           ++this.facts.fixes;
           const at=position?.timestamp,c=position?.coords;
@@ -112,7 +121,7 @@
           if(epoch!==this.epoch)return;
           this.facts.lastError={code:[1,2,3].includes(error?.code)?error.code:null,at:this.now(),attempt:this.facts.attempts};
           if(this.timer!==null){this.cancel(this.timer);this.timer=null;}
-          if(error?.code===1){this.enabled=false;this.clear();}
+          if(error?.code===1){this.receivedFix=false;this.enabled=false;this.clear();}
           this.publish({status:error?.code===1?'denied':error?.code===3?'timeout':'disconnected',speed:null});
         },{enableHighAccuracy:true,maximumAge:0,timeout:10000});
       } catch (_) { this.enabled=false;this.clear();this.publish({status:'unsupported',speed:null});return; }
@@ -121,7 +130,7 @@
         if(epoch!==this.epoch)return;
         this.permission=p;
         this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';
-        p.onchange=()=>{if(epoch!==this.epoch)return;this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else this.change(this.snapshot());};
+        p.onchange=()=>{if(epoch!==this.epoch)return;this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.receivedFix=false;this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else this.change(this.snapshot());};
         if(p.state==='denied')p.onchange();else this.change(this.snapshot());
       }).catch(()=>{});
     }
