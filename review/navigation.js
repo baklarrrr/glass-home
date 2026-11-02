@@ -2,7 +2,7 @@
 
 // The host owns activation and Back, and the parent's moveFocus owns focus (embedded.js). This is the only history owner.
 // No pairing data, feedback text or picture bytes are written to browser history.
-const navigation = { route: null, epoch: 0, saved: new Map(), pendingPeer: '', revision: null, editing: false };
+const navigation = { route: null, epoch: 0, saved: new Map(), pendingPeer: '', revision: null, editing: false, fitOverrides:new Map(), closing:false };
 
 function controlKey(el) {
   if (!el) return '';
@@ -24,10 +24,23 @@ function restoreRoutePosition(preferred) {
   for (const [id, top] of Object.entries(saved?.scroll || {})) $(id).scrollTop = top;
   const target = findControl(saved?.focus) || findControl(preferred) || visibleControls()[0];
   target?.focus({ preventScroll: true });
+  if(saved?.reveal&&target){
+    const frame=$('reviewContent').getBoundingClientRect(),box=target.getBoundingClientRect();
+    if(box.top<frame.top||box.bottom>frame.bottom)target.scrollIntoView({block:'nearest'});
+    navigation.saved.set(navigation.route.key,{...saved,reveal:false,scroll:{...(saved.scroll||{}),reviewContent:$('reviewContent').scrollTop}});
+  }
+}
+// Adjacent inspection replaces one entry. On Back, repair its existing fit parent
+// before painting; no extra push or queued traversal can fire after Close.
+function rememberFitPicture(route,move){
+  const fromAsset=route.fitAssetId||route.assetId;
+  const key=route.fitKey||('legacy:'+route.anchorKey+':'+fromAsset+':'+(route.depth-1));
+  navigation.fitOverrides.set(key,{key:route.fitKey,fromAsset,depth:route.depth-1,anchorKey:route.anchorKey,assetId:move.assetId,origin:move.origin});
+  if(navigation.fitOverrides.size>8)navigation.fitOverrides.delete(navigation.fitOverrides.keys().next().value);
 }
 function storeRoute() { history.replaceState({ studioNav: navigation.route }, ''); }
 function navigateTo(route, replace = false) {
-  navigation.revision = null;
+  navigation.revision = null;navigation.closing=false;
   saveRoutePosition();
   const depth = replace ? navigation.route.depth : navigation.route.depth + 1;
   if (depth > 4) return false;
@@ -38,7 +51,7 @@ function navigateTo(route, replace = false) {
   return true;
 }
 function choosePeer(peer) {
-  navigation.revision = null;
+  navigation.revision = null;navigation.closing=false;
   if (!['pictures', 'feedback'].includes(peer)) return;
   if (navigation.route.depth) {
     navigation.pendingPeer = peer;
@@ -125,11 +138,19 @@ function bindNavigation() {
   });
   window.addEventListener('popstate', (event) => {
     saveRoutePosition();
+    navigation.closing=false;
     if (!event.state?.studioNav) { navigation.revision = null; return; } // Back belongs to the native shell.
     navigation.route = event.state.studioNav;
     if (navigation.pendingPeer && navigation.route.depth === 0) {
       navigation.route = { kind: 'root', peer: navigation.pendingPeer, key: `root:${navigation.pendingPeer}`, depth: 0 };
       navigation.pendingPeer = ''; storeRoute();
+    }
+    if(navigation.route.kind==='picture'){
+      for(const [key,change]of navigation.fitOverrides){
+        const matches=change.key?change.key===navigation.route.key:
+          change.fromAsset===navigation.route.assetId&&change.depth===navigation.route.depth&&change.anchorKey===navigation.route.anchorKey;
+        if(matches){navigation.route={...navigation.route,assetId:change.assetId,visited:true,...change.origin};navigation.fitOverrides.delete(key);storeRoute();break;}
+      }
     }
     enterRoute();
     const transaction = navigation.revision;
@@ -147,7 +168,7 @@ function bindNavigation() {
   });
   if (window.STUDIO_LOCAL) document.addEventListener('keydown', desktopDirection);
   window.addEventListener('resize', () => { if (view.screen === 'dashboard') render(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') navigation.revision = null; });
-  window.addEventListener('pagehide', () => { navigation.revision = null; });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') navigation.revision = null;navigation.closing=false; });
+  window.addEventListener('pagehide', () => { navigation.revision = null;navigation.closing=false; });
   enterRoute();
 }

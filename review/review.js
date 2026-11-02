@@ -153,7 +153,8 @@ function collectionPage(delta) {
 function openPicture(assetId, result = false) {
   const route = navigation.route;
   if (!assetId || !((route.kind === 'root' && route.peer === 'pictures') || (result && route.kind === 'receipt'))) return;
-  navigateTo({ kind: 'picture', assetId, isResult: !!result, reviewId: result ? route.reviewId : undefined });
+  navigateTo({ kind: 'picture', assetId, isResult: !!result, reviewId: result ? route.reviewId : undefined,
+    returnDepth:route.depth,returnKey:route.key,fromGallery:!result });
 }
 async function loadPicture(assetId, force = false) {
   if (!reviewAvailable()) return;
@@ -193,7 +194,83 @@ async function loadPicture(assetId, force = false) {
 }
 function inspectPicture() {
   if (!review.loaded || navigation.route.kind !== 'picture') return;
-  navigateTo({ kind: 'inspect', assetId: review.asset.id });
+  navigateTo({ kind: 'inspect', assetId: review.asset.id, fitKey:navigation.route.key,fitAssetId:review.asset.id,...pictureOrigin(navigation.route) });
+}
+// Picture navigation uses the existing collection cursors and the single history owner.
+function pictureOrigin(route=navigation.route){
+  return {returnDepth:Number.isInteger(route.returnDepth)?route.returnDepth:Math.max(0,route.depth-(route.kind==='inspect'?2:1)),
+    returnKey:route.returnKey||route.anchorKey,fromGallery:route.fromGallery===undefined?!route.isResult&&route.anchorKey!=='root:feedback':route.fromGallery};
+}
+function picturePosition(){
+  const origin=pictureOrigin();if(!origin.fromGallery)return null;
+  const model=review.collections.pictures,items=model.batch?.items||[],at=items.findIndex(x=>x.id===navigation.route.assetId);
+  return at<0?null:{model,items,at};
+}
+function closePicture(){
+  const route=navigation.route;if(!['picture','inspect'].includes(route.kind)||navigation.closing)return;
+  navigation.revision=null;
+  const origin=pictureOrigin(route),steps=route.depth-origin.returnDepth;
+  if(steps<1)return;
+  navigation.closing=true;history.go(-steps);
+}
+function applyPictureMove(move){
+  const model=review.collections.pictures;
+  model.index=move.index;model.batch=move.batch;
+  if(move.cursor!==undefined&&model.trail[move.index]!==move.cursor){model.trail.splice(move.index);model.trail.push(move.cursor);}
+  const key=move.origin.returnKey||navigation.route.anchorKey;
+  const saved=navigation.saved.get(key)||{};
+  navigation.saved.set(key,{...saved,focus:'asset:'+move.assetId,reveal:true,
+    scroll:{...(saved.scroll||{}),reviewContent:move.changedPage?0:(saved.scroll?.reviewContent||0)}});
+}
+async function stepPicture(delta){
+  if(review.busy||navigation.closing||!['picture','inspect'].includes(navigation.route.kind))return;
+  const position=picturePosition();if(!position)return;
+  const key=navigation.route.key,epoch=navigation.epoch,route=navigation.route,origin=pictureOrigin(route);
+  const {model,items,at}=position;let index=model.index,batch=model.batch,target=at+delta,cursor;
+  if(target<0||target>=items.length){
+    if(delta<0){if(index===0)return;index--;cursor=model.trail[index];}
+    else {if(!batch?.nextCursor)return;index++;cursor=batch.nextCursor;}
+    batch=model.batches.get(cursor);
+    if(!batch){
+      review.busy=true;review.message='Opening the next picture page.';renderReview();
+      try {
+        const result=await reviewRequest('review-list',cursor?{cursor}:{});
+        if(!Array.isArray(result.items)||!result.items.length)throw new Error('No adjacent picture is available.');
+        model.batches.set(cursor,result);batch=result;
+      }catch(error){if(routeCurrent(key,epoch)){review.message=error.message;review.busy=false;renderReview();}return;}
+      if(!routeCurrent(key,epoch))return;
+      review.busy=false;review.message='';
+    }
+    target=delta>0?0:batch.items.length-1;
+  }
+  const assetId=batch?.items?.[target]?.id;if(!assetId||!routeCurrent(key,epoch))return;
+  const move={assetId,index,batch,cursor,origin,changedPage:index!==model.index,fromAsset:route.assetId,anchorKey:route.anchorKey};
+  applyPictureMove(move);
+  if(route.kind==='inspect'){
+    rememberFitPicture(route,move);
+    navigateTo({kind:'inspect',assetId,fitKey:route.fitKey,fitAssetId:route.fitAssetId||route.assetId,...origin},true);
+  }else navigateTo({kind:'picture',assetId,visited:true,...origin},true);
+}
+function renderPicturePager(){
+  const p=picturePosition();
+  $('reviewPager').hidden=!p;if(!p)return;
+  const previous=p.at>0||p.model.index>0,next=p.at+1<p.items.length||!!p.model.batch?.nextCursor;
+  for(const [id,can]of [['reviewPrevious',previous],['reviewNext',next]]){
+    $(id).disabled=false;$(id).setAttribute('aria-disabled',String(review.busy||!can));
+    $(id).setAttribute('aria-label',id==='reviewPrevious'?'Previous picture':'Next picture');
+  }
+  const offset=Number(p.model.batch?.offset)||0,total=Number(p.model.batch?.total)||p.items.length;
+  $('reviewPosition').textContent=(offset+p.at+1)+' / '+total;
+}
+function renderPictureCaption(){
+  const visible=['picture','inspect'].includes(review.mode)&&review.loaded;
+  $('pictureCaption').hidden=!visible;if(!visible)return;
+  const asset=review.asset,title=String(asset.title||'Picture').replace(/[\u0000-\u001f]/g,' ').replace(/\s+/g,' ').trim();
+  $('pictureCaptionTitle').textContent=title;
+  $('pictureCaptionTitle').title=title;
+  const size=asset.width&&asset.height?asset.width+' × '+asset.height:'';
+  const p=picturePosition(),position=p?((Number(p.model.batch?.offset)||0)+p.at+1)+' / '+(Number(p.model.batch?.total)||p.items.length):'';
+  $('pictureCaptionMeta').textContent=[position,'Version '+String(asset.version||'').slice(0,16),size].filter(Boolean).join(' · ');
 }
 function paintPicture() {
   $('renderPicture').style.transform = review.zoom ? `translate(${review.panX}%, ${review.panY}%) scale(2)` : 'none';
@@ -404,6 +481,7 @@ function renderCollection() {
     button.children[1].textContent = inbox ? `Version ${String(item.assetVersion || 'not supplied').slice(0, 16)} · ${receiptLabel(item)}` : `${item.width || '?'} × ${item.height || '?'} · Open picture`;
     if (inbox) button.children[2].textContent = item.feedbackExcerpt || (typeof item.feedback === 'string' ? item.feedback : '') || 'Feedback excerpt not supplied. Open to read the saved request.';
   }
+  for(const id of ['reviewPrevious','reviewNext']){$(id).removeAttribute('aria-disabled');$(id).removeAttribute('aria-label');}
   $('reviewPrevious').disabled = review.busy || model.index === 0;
   $('reviewNext').disabled = review.busy || !batch?.nextCursor;
   const offset = Number(batch?.offset) || 0, total = Number(batch?.total) || records.length;
@@ -417,6 +495,9 @@ function renderCollection() {
 function renderReviewControls() {
   const mode = review.mode, route = navigation.route, draft = review.draft;
   const show = (id, yes) => { $(id).hidden = !yes; };
+  show('reviewClose',['picture','inspect'].includes(mode));
+  show('reviewFit',mode==='inspect');
+  $('reviewClose').setAttribute('aria-label',pictureOrigin().fromGallery?'Close picture and return to list':'Close picture and return to feedback');
   show('zoomPicture', mode === 'picture' && review.loaded);
   show('giveFeedback', mode === 'picture' && review.loaded && !route.isResult);
   show('newFeedback', canStartFreshFeedback());
@@ -454,14 +535,16 @@ function renderReview() {
   const mode = review.mode, route = navigation.route, draft = review.draft;
   const show = (id, yes) => { $(id).hidden = !yes; };
   const heading = { gallery: 'Recent pictures', inbox: 'Saved feedback', compose: 'Give feedback', confirm: 'Review feedback', receipt: 'Feedback progress', inspect: 'Inspect picture' };
-  $('reviewHeading').textContent = mode === 'picture' ? review.asset?.title || 'Picture' : heading[mode] || 'Picture';
+  $('reviewHeading').textContent = mode === 'picture' ? 'Picture' : heading[mode] || 'Picture';
   $('reviewHeading').classList.toggle('picture-heading', mode === 'picture');
+  $('reviewHeading').hidden=['picture','inspect'].includes(mode)&&review.loaded;
+  $('reviewActions').classList.toggle('picture-tools',mode==='picture'&&review.loaded&&!!picturePosition());
   const version = mode === 'receipt' ? review.receipt?.assetVersion || route.assetVersion : ['compose', 'confirm'].includes(mode) ? draft?.assetVersion : review.asset?.version;
   const mismatch = review.asset && version && version !== review.asset.version;
   $('reviewMessage').textContent = [review.message, mismatch && ['compose', 'confirm'].includes(mode) ? 'This draft is for an earlier version. Choose Use this picture version before sending.' : ''].filter(Boolean).join(' ');
   show('reviewMessage', !!$('reviewMessage').textContent);
   const root = ['gallery', 'inbox'].includes(mode);
-  show('reviewIdentity', !root && !!version);
+  show('reviewIdentity', !root && !['picture','inspect'].includes(mode) && !!version);
   const title = review.asset?.title || review.receipt?.assetTitle || route.title || '';
   $('reviewIdentity').textContent = `${mode === 'picture' ? '' : title ? `${title} · ` : ''}${mode === 'picture' || mode === 'inspect' ? 'Version' : 'Feedback version'} ${String(version || '').slice(0, 16)}${mismatch ? ` · Picture shown: ${String(review.asset.version).slice(0, 16)}` : ''}`;
   show('pictureList', mode === 'gallery'); show('feedbackList', mode === 'inbox');
@@ -471,6 +554,8 @@ function renderReview() {
   $('reviewContent').classList.toggle('image-content', ['picture', 'inspect'].includes(mode) && review.loaded);
   $('reviewContent').tabIndex = root || ['confirm', 'receipt'].includes(mode) || (mode === 'picture' && !review.loaded) ? 0 : -1;
   if (root) renderCollection();
+  else if(['picture','inspect'].includes(mode))renderPicturePager();
+  renderPictureCaption();
   if (mode === 'compose' && $('feedbackText').value !== (draft?.text || '')) $('feedbackText').value = draft?.text || '';
   if (mode === 'confirm' || mode === 'receipt') {
     const text = mode === 'confirm' ? `${draft.provider === 'auto' ? 'Starts a new Studio task with this picture and context. Studio chooses Codex or Claude.' : `Starts a new ${draft.provider === 'codex' ? 'Codex' : 'Claude'} task with this picture and context.`}\n\n${draft.text}` : receiptText();
@@ -479,6 +564,9 @@ function renderReview() {
   renderReviewControls(); paintPicture();
 }
 function bindReview() {
+  document.addEventListener('click',event=>{
+    if(navigation.closing&&event.target.closest?.('#reviewScreen')){event.preventDefault();event.stopImmediatePropagation();}
+  },true);
   try { review.drafts = JSON.parse(localStorage.getItem(reviewStorageKey()) || '{}') || {}; } catch (_) { review.drafts = {}; }
   $('picturesButton').addEventListener('click', openPictures);
   $('jobPicturesButton').addEventListener('click', openPictures);
@@ -500,7 +588,10 @@ function bindReview() {
   $('checkReceipt').addEventListener('click', () => refreshReviewStatus());
   $('usePictureVersion').addEventListener('click', useCurrentPictureVersion);
   $('openReviewResult').addEventListener('click', () => { if (resultAssetId(review.receipt)) openPicture(resultAssetId(review.receipt), true); });
-  $('reviewPrevious').addEventListener('click', () => collectionPage(-1)); $('reviewNext').addEventListener('click', () => collectionPage(1));
+  $('reviewPrevious').addEventListener('click',()=>['picture','inspect'].includes(review.mode)?stepPicture(-1):collectionPage(-1));
+  $('reviewNext').addEventListener('click',()=>['picture','inspect'].includes(review.mode)?stepPicture(1):collectionPage(1));
+  $('reviewClose').addEventListener('click',closePicture);
+  $('reviewFit').addEventListener('click',()=>history.back());
   $('pictureFrame').addEventListener('click', () => { if (navigation.route.kind === 'inspect') history.back(); });
   $('pictureFrame').addEventListener('keydown', (event) => {
     // A held Select that opened Inspect must not immediately activate its exit. Ordinary
