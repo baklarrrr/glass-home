@@ -236,7 +236,7 @@ body.calm .headline:not(.attention), body.calm .value, body.calm .items .ti { op
 .review-actions button:focus { border-color: var(--mint) !important; }
 .review-screen button[aria-disabled="true"] { opacity: .6; }
 .review-heading { align-items: center; }
-.review-top-actions:has(button[hidden]) { display: none; }
+.review-top-actions:not(:has(button:not([hidden]))) { display: none; }
 .review-identity { max-block-size: 3.9em; overflow: auto; }
 .feedback-form textarea { flex: 1 1 auto; inline-size: 100%; }
 #finishEditing { align-self: flex-end; min-block-size: 30px; padding: 3px 9px; font-size: 14px; }

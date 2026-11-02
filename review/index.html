@@ -73,12 +73,12 @@
         <button id="jobPicturesButton" class="pictures-link" type="button">Browse render pictures</button>
       </section>
       <section id="reviewScreen" class="review-screen" aria-labelledby="reviewHeading" hidden>
-        <header class="review-heading"><h1 id="reviewHeading">Pictures</h1><div class="review-top-actions"><button id="reviewRefresh" type="button">Refresh</button></div></header>
+        <header class="review-heading"><div class="review-heading-copy"><h1 id="reviewHeading">Pictures</h1><div id="pictureCaption" class="picture-caption" hidden><h1 id="pictureCaptionTitle"></h1><p id="pictureCaptionMeta"></p></div></div><div class="review-top-actions"><button id="reviewFit" type="button" hidden aria-label="Back to fitted picture">Fit</button><button id="reviewClose" type="button" hidden>Close</button><button id="reviewRefresh" type="button">Refresh</button></div></header>
         <p id="reviewMessage" class="review-message" role="status" hidden></p>
         <p id="reviewIdentity" class="review-identity" hidden></p>
         <div id="reviewContent" class="review-content native-scroll" tabindex="0" aria-label="View content">
           <ol id="pictureList" class="picture-list" hidden></ol><ol id="feedbackList" class="picture-list" hidden></ol>
-          <button id="pictureFrame" type="button" class="picture-frame" tabindex="-1" aria-label="Render picture at fit." hidden><img id="renderPicture" alt=""></button>
+          <button id="pictureFrame" type="button" class="picture-frame" tabindex="-1" aria-label="Render picture at fit." aria-describedby="pictureCaptionTitle pictureCaptionMeta" hidden><img id="renderPicture" alt=""></button>
           <section id="feedbackForm" class="feedback-form" hidden>
             <label for="feedbackText">What should change?</label><textarea id="feedbackText" maxlength="2000" placeholder="Select this field to write or dictate feedback." spellcheck="true"></textarea>
             <div class="feedback-edit-meta"><p id="feedbackCount" class="review-small"></p><button id="finishEditing" class="desktop-only" type="button">Finish editing</button></div>
@@ -90,8 +90,8 @@
         <p id="inboxCoverage" class="review-small" hidden></p>
         <p id="inspectHint" class="review-small" hidden>Directions move the picture. Select or Back returns to fit.</p>
         <p id="revisionHint" class="review-small" hidden>Starts a new revision. Earlier feedback stays in Feedback.</p>
-        <nav id="reviewPager" class="review-pager" aria-label="Picture or text pages"><button id="reviewPrevious" type="button">Previous</button><span id="reviewPosition" aria-live="polite"></span><button id="reviewNext" type="button">Next</button></nav>
         <div id="reviewActions" class="review-actions">
+          <nav id="reviewPager" class="review-pager" aria-label="Picture or text pages"><button id="reviewPrevious" type="button">Previous</button><span id="reviewPosition" aria-live="polite"></span><button id="reviewNext" type="button">Next</button></nav>
           <button id="zoomPicture" type="button" hidden>Inspect</button><button id="giveFeedback" type="button" hidden>Give feedback</button><button id="newFeedback" type="button" hidden>New feedback</button>
           <button id="editFeedback" type="button" hidden>Edit feedback</button><button id="revisePicture" type="button" hidden>Revise this picture</button><button id="reviewFeedback" type="button" hidden>Review feedback</button><button id="sendFeedback" type="button" hidden>Send feedback</button>
           <button id="retryFeedback" type="button" hidden>Retry same feedback</button><button id="checkReceipt" type="button" hidden>Check progress</button>

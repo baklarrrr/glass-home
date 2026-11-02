@@ -25,7 +25,8 @@ window.reviewRows=()=>{
     const scroller=el.classList.contains('native-scroll');
     if(scroller&&el!==document.activeElement&&controls.some(c=>c!==el&&el.contains(c)))continue;
     const box=el.getBoundingClientRect(),mid=(box.top+box.bottom)/2,last=rows[rows.length-1];
-    if(last&&last[0].parentElement===el.parentElement&&!scroller&&mid>last.top&&mid<last.bottom)last.push(el);
+    const toolbar=el.closest('.picture-tools'),sameRowParent=last&&(last[0].parentElement===el.parentElement||(toolbar&&last[0].closest('.picture-tools')===toolbar));
+    if(sameRowParent&&!scroller&&mid>last.top&&mid<last.bottom)last.push(el);
     else rows.push(Object.assign([el],{top:box.top,bottom:box.bottom}));
   }
   return rows;
