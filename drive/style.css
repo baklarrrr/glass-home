@@ -67,7 +67,13 @@ button { font: inherit; color: inherit; }
 .hud[data-gps="live"] .speed { color: var(--ink); }
 .hud:not([data-gps="live"]) .speed { color: var(--dim); }
 
-.hud[data-mode="guide"] .speedbox, .hud[data-mode="pair"] .speedbox { grid-area: left; align-self: end; justify-self: start; text-align: start; display: flex; align-items: baseline; gap: 2vmin; }
+/* The self-check line: why there is no speed, in plain words. It only ever shows for a definite fault with nothing healthy behind it. */
+.speedwarn { max-inline-size: 90vmin; margin: 2vmin auto 0; font-size: clamp(16px, 4.6vmin, 28px); line-height: 1.25;
+  font-weight: var(--w-strong); color: var(--warn); white-space: pre-line; }   /* two lines: what is wrong, then what to do */
+.hud[data-mode="pair"] .speedwarn { display: none; }                              /* the code to accept is the one thing to read while pairing */
+
+.hud[data-mode="guide"] .speedbox, .hud[data-mode="pair"] .speedbox { grid-area: left; align-self: end; justify-self: start; text-align: start; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2vmin; }
+.hud[data-mode="guide"] .speedwarn, .hud[data-mode="pair"] .speedwarn { flex-basis: 100%; margin: 0; font-size: clamp(13px, 3.6vmin, 20px); }
 .hud[data-mode="guide"] .speed, .hud[data-mode="pair"] .speed { font-size: clamp(32px, 11vmin, 70px); letter-spacing: -0.02em; }
 .hud[data-mode="guide"] .unit, .hud[data-mode="pair"] .unit { justify-content: flex-start; font-size: clamp(14px, 4vmin, 24px); margin: 0; gap: 2vmin; }
 
@@ -99,7 +105,7 @@ button { font: inherit; color: inherit; }
 .hud[data-link="pairing"] .pcode { color: var(--warn); }
 .phelp { font-size: clamp(15px, 4.4vmin, 26px); line-height: 1.35; color: var(--soft); }
 .phelp.quiet { color: var(--dim); font-size: clamp(14px, 3.8vmin, 22px); }
-.pbtns { margin-block-start: auto; display: flex; gap: 2vmin; }
+.pbtns { margin-block-start: auto; display: flex; flex-wrap: wrap; gap: 2vmin; }   /* three buttons do not fit one row at 600 px */
 
 /* ---- light: Day is solid and bold against a bright sky, Night gives off far less light ---- */
 .hud[data-light="day"] { --soft: #ffffff; --dim: #e8eee9; --mint: #b8f0d6; }

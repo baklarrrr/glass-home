@@ -26,6 +26,7 @@ const HEADING_MIN_MPS = 2;        // GPS course is noise below about 7 km/h
 const PHONE_GPS_FRESH_MS = 3500;  // the phone sends its speed about once a second while it has a reading under 3 s old
 const LIGHTS = ['auto', 'day', 'dusk', 'night'];
 const L = DriveLinkCore;
+const SC = typeof SpeedCheck !== 'undefined' ? SpeedCheck : null;   // the speed self-check; the page still runs without it
 const $ = (id) => document.getElementById(id);
 const subtle = window.crypto && crypto.subtle;
 
@@ -36,7 +37,7 @@ const S = {
   // connection never hides what the phone said a moment ago, and an old turn still goes stale on time.
   net: 'none', phone: 'unknown', heardAt: 0, last: null, frame: null, frameAt: 0, staleTimers: [],
   heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0, phoneGpsSentAt: 0, phoneGpsAge: 0,
-  controlsTimer: 0, panel: false, openedAt: 0, offer: null,
+  controlsTimer: 0, panel: false, openedAt: 0, offer: null, shown: null,   // shown: what the speed self-check said last
 };
 
 // ---- small things ----------------------------------------------------------------------------------
@@ -424,7 +425,7 @@ function topLine(view) {
       if (n.ss === 'OffRoute') return 'Off route';
       if (n.ss === 'RouteRebuilding' || n.ss === 'RouteNeedsRebuild') return 'Rerouting…';
       return 'Bakar Drive';
-    default: return GPS_WORDS[S.gps.status] || 'Phone GPS';
+    default: return S.shown && S.shown.text ? 'No speed' : (GPS_WORDS[S.gps.status] || 'Phone GPS');   // the amber line under the dash says why
   }
 }
 
@@ -454,6 +455,12 @@ function render() {
   const phase = n ? L.phase(n.ss) : 'none';
   const guide = Boolean(n) && ['guide', 'arrived', 'ready', 'building'].includes(phase);
   const pairing = view === 'pairing';
+  // Speed self-check: with no speed on screen, a definite fault and nothing healthy behind it gets a plain amber line.
+  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: view }) : { source: live ? 'ok' : 'none', level: 'wait', text: '' };
+  S.shown = health;
+  $('speedWarn').textContent = health.text;
+  $('speedWarn').hidden = !health.text;
+  hud.dataset.speedLevel = health.level;
   hud.dataset.mode = guide ? 'guide' : pairing ? 'pair' : 'speed';
   $('pairBox').hidden = !pairing || guide;
   $('pairCode').textContent = pairing ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
@@ -506,6 +513,9 @@ function renderPanel() {
   }
   $('panelState').textContent = state;
   $('panelHelp').textContent = help;
+  const h = S.shown;
+  $('panelSpeed').textContent = !h ? '' : h.source === 'phone' ? 'Speed: from your phone\'s GPS.'
+    : h.source === 'glasses' ? 'Speed: from the glasses\' own GPS.' : `Speed: none. ${h.text ? h.text.replace('\n', '. ') : 'Waiting for GPS.'}`;
   $('panelCode').hidden = !S.code || Boolean(S.offer);
   $('panelQuiet').hidden = Boolean(S.offer);
   $('panelCodeNum').textContent = S.code ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';

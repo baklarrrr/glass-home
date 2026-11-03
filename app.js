@@ -934,6 +934,7 @@ const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
   change:paintDrive
 });
+const driveCheck = typeof SpeedCheck!=='undefined'?SpeedCheck:null;
 const DRIVE_STATUS_LABELS=Object.freeze({
     off:'GPS not started in this app', unsupported:'Location API unavailable',
     waiting:'Waiting for phone GPS', unavailable:'GPS has no speed reading',
@@ -954,9 +955,14 @@ function paintDrive(reading) {
   }
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
+  // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
+  // in plain words and shown amber. Calm states keep the words below; a missing module leaves the old wording alone.
+  const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
+  const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
   $('driveState').textContent=pg?'Phone link · GPS estimate':reading.status==='live'?'App location · GPS estimate':
-    phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
-    (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable');
+    check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
+    (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
+  $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   const age=pg?phone.ageMs:reading.ageMs;
   $('driveAge').textContent=live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'';
   $('driveHud').dataset.status=live?'live':reading.status;

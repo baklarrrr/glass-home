@@ -36,6 +36,7 @@
     <section id="speedBox" class="speedbox" aria-label="Phone GPS speed">
       <p id="speed" class="speed">—</p>
       <p class="unit"><span>km/h</span><span id="heading" class="heading"></span></p>
+      <p id="speedWarn" class="speedwarn" role="status" aria-live="polite" hidden></p>
     </section>
 
     <footer class="bottom">
@@ -54,6 +55,7 @@
       <p id="panelState" class="pstate"></p>
       <p id="panelCode" class="pcode" hidden><span class="plabel">Code of these glasses</span><span id="panelCodeNum"></span></p>
       <p id="panelHelp" class="phelp"></p>
+      <p id="panelSpeed" class="phelp"></p>
       <p id="panelQuiet" class="phelp quiet">Glance only. Speed is a phone GPS estimate; your car's instruments come first. Nothing you see here is saved or sent.</p>
       <div class="pbtns">
         <button id="panelUse" class="btn" hidden>Use this phone</button>
@@ -64,6 +66,7 @@
   </main>
   <script src="../drive-location.js"></script>
   <script src="link-core.js"></script>
+  <script src="speed-check.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
