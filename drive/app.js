@@ -26,6 +26,7 @@ const HEADING_MIN_MPS = 2;        // GPS course is noise below about 7 km/h
 const PHONE_GPS_FRESH_MS = 3500;  // the phone sends its speed about once a second while it has a reading under 3 s old
 const LIGHTS = ['auto', 'day', 'dusk', 'night'];
 const L = DriveLinkCore;
+const SC = typeof SpeedCheck !== 'undefined' ? SpeedCheck : null;   // the speed self-check; the page still runs without it
 const $ = (id) => document.getElementById(id);
 const subtle = window.crypto && crypto.subtle;
 
@@ -36,7 +37,8 @@ const S = {
   // connection never hides what the phone said a moment ago, and an old turn still goes stale on time.
   net: 'none', phone: 'unknown', heardAt: 0, last: null, frame: null, frameAt: 0, staleTimers: [],
   heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0, phoneGpsSentAt: 0, phoneGpsAge: 0,
-  controlsTimer: 0, panel: false, openedAt: 0, offer: null,
+  controlsTimer: 0, panel: false, openedAt: 0, upAt: 0, offer: null, shown: null,   // upAt: when the brokers last came up; shown: what the speed self-check said last
+  setup: false,   // the saved phone link has been read (found or not): until then nothing is known about the phone
 };
 
 // ---- small things ----------------------------------------------------------------------------------
@@ -263,6 +265,23 @@ function linkView(now = performance.now()) {
   return 'waiting';
 }
 
+// What the speed self-check is told about the phone. It must never blame the phone for something that is only "not yet":
+// until the saved link has been read, and while the page is opening its brokers again (after the display slept or the
+// signal came back), the phone is being found. And when the glasses cannot reach the brokers at all, that is the story.
+function checkLink(view) {
+  if (!S.setup) return 'connecting';
+  if (view === 'offline') return 'nosignal';
+  if (view === 'paused') {
+    if (S.net === 'connecting') return 'connecting';
+    if (S.net === 'down') return 'nosignal';
+    // The last turn is from before the brokers came back up (the display woke, or the signal returned), so it says nothing
+    // about the phone now. The phone has just been asked again: it gets the same wait as when the page first opens before it
+    // counts as silent. The render timer in linkChanged fires when this wait is over.
+    return S.frameAt < S.upAt && performance.now() - S.upAt < PHONE_WAIT_MS ? 'connecting' : 'paused';
+  }
+  return view;
+}
+
 function loadMqtt() {
   if (S.mqttLoading || S.mqttTries >= 10) return;
   S.mqttLoading = true;
@@ -334,9 +353,10 @@ function linkChanged() {
   if (!up) { if (S.links.length && S.net === 'up') setNet('down'); return; }
   if (!S.helloTimer) S.helloTimer = setInterval(() => hello(), HELLO_MS);
   if (S.net !== 'up') {
+    S.upAt = performance.now();
     setNet('up');
     clearTimeout(S.waitTimer);
-    S.waitTimer = setTimeout(render, PHONE_WAIT_MS);
+    S.waitTimer = setTimeout(render, PHONE_WAIT_MS + 100);   // a moment after the wait is over, so the screen sees that it is
   }
 }
 
@@ -424,7 +444,7 @@ function topLine(view) {
       if (n.ss === 'OffRoute') return 'Off route';
       if (n.ss === 'RouteRebuilding' || n.ss === 'RouteNeedsRebuild') return 'Rerouting…';
       return 'Bakar Drive';
-    default: return GPS_WORDS[S.gps.status] || 'Phone GPS';
+    default: return S.shown && S.shown.text ? 'No speed' : (GPS_WORDS[S.gps.status] || 'Phone GPS');   // the amber line under the dash says why
   }
 }
 
@@ -454,6 +474,13 @@ function render() {
   const phase = n ? L.phase(n.ss) : 'none';
   const guide = Boolean(n) && ['guide', 'arrived', 'ready', 'building'].includes(phase);
   const pairing = view === 'pairing';
+  // Speed self-check: with no speed on screen, a definite fault and nothing healthy behind it gets a plain amber line.
+  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: checkLink(view) }) : { source: live ? 'ok' : 'none', level: 'wait', text: '', short: '' };
+  S.shown = health;
+  const warnText = guide ? health.short : health.text;   // beside the directions the corner is narrow: the same two lines, shorter
+  $('speedWarn').textContent = warnText;
+  $('speedWarn').hidden = !warnText;
+  hud.dataset.speedLevel = health.level;
   hud.dataset.mode = guide ? 'guide' : pairing ? 'pair' : 'speed';
   $('pairBox').hidden = !pairing || guide;
   $('pairCode').textContent = pairing ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
@@ -482,7 +509,15 @@ function render() {
   if (S.panel) renderPanel();
 }
 
+// Why there is no speed when nothing is wrong yet: GPS not started, still asking, or a reading that is not usable. One short
+// line: the panel has no room for more.
+function quietWhy() {
+  return { off: 'GPS is not started.', waiting: 'Waiting for GPS.', 'no-response': 'Waiting for GPS.', paused: 'GPS is paused.' }[S.gps.status]
+    || `${GPS_WORDS[S.gps.status] || 'No GPS speed'}.`;
+}
+
 function renderPanel() {
+  const view = linkView();
   let state, help;
   $('panelUse').hidden = !S.offer;
   if (S.offer) {
@@ -494,18 +529,24 @@ function renderPanel() {
   } else if (S.phone === 'pairing') {
     state = 'Your phone hasn\'t accepted these glasses yet.';
     help = 'On your phone, open the glasses link and accept this code. Do it while parked.';
-  } else if (S.phone === 'live' || S.phone === 'ready') {
-    state = 'Linked to your phone.';
-    help = 'Start a route in Bakar Drive and the next turn shows here. Your speed comes from the phone\'s GPS while it is driving.';
   } else if (S.net === 'down') {
     state = 'No signal right now.';
     help = 'Directions come back on their own when the phone has signal.';
+  } else if (checkLink(view) === 'paused') {   // the same silence the screen goes by, not the first moments after the link came back
+    state = 'Your phone is not answering.';
+    help = 'Directions come back on their own when the phone answers. Keep Bakar Drive and the phone\'s glasses link running.';
+  } else if (S.phone === 'live' || S.phone === 'ready') {
+    state = 'Linked to your phone.';
+    help = 'Start a route in Bakar Drive and the next turn shows here. Your speed comes from the phone\'s GPS while it is driving.';
   } else {
     state = 'Looking for your phone.';
     help = 'Keep Bakar Drive and the phone\'s glasses link running. The phone sends turns only while this screen is open.';
   }
   $('panelState').textContent = state;
   $('panelHelp').textContent = help;
+  const h = S.shown;
+  $('panelSpeed').textContent = !h ? '' : h.source === 'phone' ? 'Speed: from your phone\'s GPS.'
+    : h.source === 'glasses' ? 'Speed: from the glasses\' own GPS.' : `Speed: none. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`;   // one line: the panel has no room for more, and the screen has the rest
   $('panelCode').hidden = !S.code || Boolean(S.offer);
   $('panelQuiet').hidden = Boolean(S.offer);
   $('panelCodeNum').textContent = S.code ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
@@ -618,11 +659,14 @@ function tickClock() {
   window.addEventListener('online', () => { for (const l of S.links) if (!l.connected) { clearTimeout(l.retryTimer); l.retryTimer = 0; l.fails = 0; scheduleRetry(l); } });
   tickClock();
   visible();
-  if (await setupLink()) openLink();
+  let linked = false;
+  try { linked = await setupLink(); } catch (e) { /* no phone link this visit */ }
+  S.setup = true;
+  if (linked) openLink();
   render();
   if (S.offer) openPanel();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 
 // For tests in a desktop browser: the same entry the brokers use.
-window.__bakarDrive = { onDown, state: S };
+window.__bakarDrive = { onDown, state: S, render, linkChanged };

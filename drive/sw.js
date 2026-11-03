@@ -1,8 +1,8 @@
 'use strict';
 // Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Network first, so an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
-const CACHE = 'bakar-drive-studio-handoff-v2';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'link-core.js', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
+const CACHE = 'bakar-drive-self-check-v3';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'link-core.js', 'speed-check.js', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
 const LATER = ['../vendor/mqtt.min.js'];   // kept once it has been fetched, only when the phone link is set up
 
 self.addEventListener('install', (event) => {

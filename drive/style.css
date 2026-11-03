@@ -7,6 +7,7 @@
   --mint: #8bc4ab;
   --mint-rgb: 139, 196, 171;
   --warn: #f4ce90;
+  --alert: #ffc15e;        /* the speed self-check: a clearer amber than the pairing sand, so it still reads dimmed at night and washed out by sun */
   --rim: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.1) 46%, rgba(255, 255, 255, 0.04));
   --rim-focus: linear-gradient(180deg, rgba(var(--mint-rgb), 1), rgba(var(--mint-rgb), 0.45) 50%, rgba(var(--mint-rgb), 0.18));
   --w-regular: 440;
@@ -59,7 +60,7 @@ button { font: inherit; color: inherit; }
 .paircode { font-size: clamp(56px, 19vmin, 120px); font-weight: var(--w-strong); letter-spacing: 0.04em; color: var(--warn); line-height: 1.1; }
 
 /* ---- speed ---- */
-.speedbox { grid-area: main; align-self: center; justify-self: center; text-align: center; }
+.speedbox { grid-area: main; align-self: center; justify-self: center; text-align: center; position: relative; }
 .speed { font-size: clamp(88px, 30vmin, 200px); line-height: 1; font-weight: 600; letter-spacing: -0.04em; }
 .hud:not([data-gps="live"]) .speed { font-weight: 300; }
 .unit { display: flex; justify-content: center; gap: 3vmin; font-size: clamp(18px, 5vmin, 30px); color: var(--soft); margin-block-start: 1vmin; }
@@ -67,7 +68,16 @@ button { font: inherit; color: inherit; }
 .hud[data-gps="live"] .speed { color: var(--ink); }
 .hud:not([data-gps="live"]) .speed { color: var(--dim); }
 
-.hud[data-mode="guide"] .speedbox, .hud[data-mode="pair"] .speedbox { grid-area: left; align-self: end; justify-self: start; text-align: start; display: flex; align-items: baseline; gap: 2vmin; }
+/* The self-check line: why there is no speed, in plain words. It only ever shows for a definite fault with nothing healthy behind it. */
+.speedwarn { max-inline-size: 90vmin; margin: 2vmin auto 0; font-size: clamp(16px, 4.6vmin, 28px); line-height: 1.25;
+  font-weight: 700; color: var(--alert); white-space: pre-line; }   /* two lines: what is wrong, then what to do */
+/* On the speed screen the line sits above the dash (as on Studio Drive), out of the way of the controls that come up from the bottom,
+   and it is taken out of the flow so the dash stays exactly where it is with or without it. */
+.hud[data-mode="speed"] .speedwarn { position: absolute; inset-block-end: 100%; inset-inline-start: 50%; transform: translateX(-50%); inline-size: max-content; margin: 0 0 2vmin; }
+.hud[data-mode="pair"] .speedwarn { display: none; }                              /* the code to accept is the one thing to read while pairing */
+
+.hud[data-mode="guide"] .speedbox, .hud[data-mode="pair"] .speedbox { grid-area: left; align-self: end; justify-self: start; text-align: start; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2vmin; }
+.hud[data-mode="guide"] .speedwarn, .hud[data-mode="pair"] .speedwarn { flex-basis: 100%; margin: 0; font-size: clamp(13px, 3.6vmin, 20px); }
 .hud[data-mode="guide"] .speed, .hud[data-mode="pair"] .speed { font-size: clamp(32px, 11vmin, 70px); letter-spacing: -0.02em; }
 .hud[data-mode="guide"] .unit, .hud[data-mode="pair"] .unit { justify-content: flex-start; font-size: clamp(14px, 4vmin, 24px); margin: 0; gap: 2vmin; }
 
@@ -99,11 +109,11 @@ button { font: inherit; color: inherit; }
 .hud[data-link="pairing"] .pcode { color: var(--warn); }
 .phelp { font-size: clamp(15px, 4.4vmin, 26px); line-height: 1.35; color: var(--soft); }
 .phelp.quiet { color: var(--dim); font-size: clamp(14px, 3.8vmin, 22px); }
-.pbtns { margin-block-start: auto; display: flex; gap: 2vmin; }
+.pbtns { margin-block-start: auto; display: flex; flex-wrap: wrap; gap: 2vmin; }   /* three buttons do not fit one row at 600 px */
 
 /* ---- light: Day is solid and bold against a bright sky, Night gives off far less light ---- */
 .hud[data-light="day"] { --soft: #ffffff; --dim: #e8eee9; --mint: #b8f0d6; }
-.hud[data-light="day"] .status, .hud[data-light="day"] .clock, .hud[data-light="day"] .arrive { font-weight: 750; }
+.hud[data-light="day"] .status, .hud[data-light="day"] .clock, .hud[data-light="day"] .arrive, .hud[data-light="day"] .speedwarn { font-weight: 750; }
 .hud[data-light="day"] .arrow .way { stroke-width: 11; }
 .hud[data-light="day"] .arrow .road { stroke: rgba(255, 255, 255, 0.55); }
 .hud[data-light="night"] { opacity: 0.62; }

@@ -23,9 +23,10 @@ played back to the page, because every frame has to answer one of the page's own
 |---|---|
 | `index.html`, `style.css`, `app.js` | The screen, controls, GPS and the link to the phone |
 | `link-core.js` | Keys, sealing and the checks on every message from the phone (no DOM, no network) |
+| `speed-check.js` | The speed self-check: with no speed on screen, a plain two-line warning for a hard fault of the glasses' own location with nothing healthy behind it (no DOM, no timers; also loaded by Studio Drive) |
 | `sw.js` | Keeps this app's own files for a weak signal; handles nothing else |
 | `.well-known/meta-wearables-manifest.json`, `icon*.svg` | Name and icon in the glasses launcher |
 | `LINK.md` | The phone-to-glasses protocol, for the phone side |
-| `tests/` | `node --test tests/link-core.test.cjs`, and `node tests/browser.cjs [outDir]` (Playwright, 600×600) |
+| `tests/` | `node --test tests/link-core.test.cjs tests/speed-check.test.cjs`, `node tests/browser.cjs [outDir]` (this page) and `node tests/studio-browser.cjs [outDir]` (Studio Drive); Playwright, 600×600 |
 
 `tests/vectors.json` holds throwaway test keys and exact expected bytes, so the phone sender can prove it matches.
