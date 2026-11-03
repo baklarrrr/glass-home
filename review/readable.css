@@ -1,0 +1,11 @@
+/* Readable feedback and image context inside the existing Studio Home review frame. */
+body { font-size:22px; line-height:1.35; }
+.review-heading h1, .job-heading-row h1 { font-size:28px; line-height:1.25; }
+#feedbackText { font-size:28px; line-height:1.4; min-height:140px; padding:12px; }
+#reviewText, .detail-text { font-size:26px; line-height:1.4; }
+.review-message, .review-small, .review-identity, .feedback-form label, .provider-row, .picture-caption p { font-size:20px; line-height:1.35; color:#e5e9e6; }
+.picture-caption h1, .picture-row strong { font-size:24px; line-height:1.3; }
+.review-actions button, .review-top-actions button, .provider-row button, .root-navigation button { font-size:22px; line-height:1.25; min-height:52px; padding:8px 12px; }
+.review-actions { flex:none; }
+.review-content { min-height:0; }
+#reviewPosition { font-size:20px; }

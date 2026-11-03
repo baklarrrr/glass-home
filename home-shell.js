@@ -7,11 +7,11 @@ window.HomeShell=(()=>{
   const frame=()=>by('reviewFrame');
   function tell(message){if(frameReady)frame().contentWindow.postMessage(message,location.origin);}
   function activateReview(active){
-    const allowed=!!active&&!document.hidden&&StudioParked.confirmed(),inside=document.activeElement===frame();
+    const allowed=!!active&&!document.hidden,inside=document.activeElement===frame();
     frame().hidden=!allowed||!frameReady;
     frame().inert=!allowed;
     by('reviewEnter').hidden=false;
-    by('reviewEnter').textContent=allowed?'Focus review':'Open pictures while parked';
+    by('reviewEnter').textContent=allowed?'Focus review':'Open pictures';
     tell({type:'studio-review-visible',active:allowed});
     if(inside&&!allowed&&!StudioParked.isOpen())by('reviewEnter').focus({preventScroll:true}); // A closing frame must not take focus with it.
   }
@@ -33,6 +33,7 @@ window.HomeShell=(()=>{
   function showWayOut(){wayOut=true;document.body.classList.remove('drive-quiet');touch();}
   function reveal(){
     if(S.tab!=='drive'||document.hidden||StudioParked.isOpen())return;
+    if(!StudioParked.confirmed()){StudioParked.request(reveal);return;}
     shown=true;by('drive').dataset.controls='open';document.body.classList.remove('drive-quiet');
     [by(lastDrive),by('driveGps'),by('driveLight')].find(button=>button&&!button.disabled&&!button.hidden)?.focus({preventScroll:true});touch();
   }
@@ -49,7 +50,6 @@ window.HomeShell=(()=>{
     if(focus&&S.tab==='drive'&&shown){by('driveInfoButton').focus({preventScroll:true});touch();}
   }
   function ensureReview(){
-    if(!StudioParked.confirmed()){activateReview(false);by('reviewState').hidden=false;by('reviewState').textContent='Open picture review only while parked.';return;}
     if(frame().getAttribute('src')){activateReview(true);return;}
     const pair=passPairing('sg');
     if(!pair){by('reviewState').textContent='This app has no existing picture-review connection. Keep the current Studio app until its connection can be brought across.';return;}
@@ -60,6 +60,7 @@ window.HomeShell=(()=>{
   }
   function paint(){
     const group=groups[S.tab]||'work';
+    by('appContext').textContent=S.view==='compose'?'Message':S.view==='detail'?'Chat':group==='review'?'Pictures':S.tab==='watch'?'Watch':group==='drive'?'Drive':'Work';
     for(const button of document.querySelectorAll('[data-section]')){button.setAttribute('aria-current',button.dataset.section===group?'page':'false');button.disabled=S.view!=='list';button.title=button.disabled?'Use Back to return before changing sections.':'';}
     for(const button of document.querySelectorAll('.tab')){button.hidden=groups[button.dataset.tab]!==group;button.disabled=S.view!=='list';}
     document.querySelector('.tabs').hidden=group==='review';
@@ -83,14 +84,7 @@ window.HomeShell=(()=>{
     return false;
   }
   function focusReview(){
-    // The child can already occupy all five history entries. Return it to its existing
-    // root before adding the parked dialog entry; its saved drafts/receipts are retained.
-    if(!StudioParked.confirmed()&&depth>0){
-      pendingReview=true;tell({type:'studio-review-root'});clearTimeout(returnTimer);
-      returnTimer=setTimeout(()=>{pendingReview=false;by('reviewState').hidden=false;by('reviewState').textContent='Use Back to return to the picture list, then open pictures while parked.';},2500);
-      return;
-    }
-    if(!StudioParked.confirmed()){StudioParked.request(()=>{ensureReview();focusReview();},()=>{activateReview(false);by('reviewEnter').focus({preventScroll:true});});return;}
+    ensureReview();
     if(frameReady){frame().focus();tell({type:'studio-review-focus'});}
     else (by('reviewEnter').hidden?by('section-review'):by('reviewEnter')).focus();
   }
@@ -126,9 +120,10 @@ window.HomeShell=(()=>{
     by('driveInfoButton').addEventListener('click',openDriveInfo);by('driveInfoClose').addEventListener('click',()=>closeDriveInfo());
     document.addEventListener('studio-parked-change',()=>{
       activateReview(S.tab==='review');
-      if(StudioParked.confirmed()||StudioParked.isOpen())return;
+      if(StudioParked.controlsAllowed()||StudioParked.isOpen())return;
       // The answer is gone, however it went: nothing parked-only stays open behind it.
       if(S.tab==='route')selectTab('drive');
+      if(S.tab==='drive'&&(shown||wayOut))quiet();
       if(S.view==='play'&&S.player?.pauseVideo)S.player.pauseVideo();
     });
     document.addEventListener('click',event=>{if(event.isTrusted)touch();},true);

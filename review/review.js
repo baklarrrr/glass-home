@@ -355,8 +355,6 @@ function reconcileReceipts(receipts, draft) {
   }
 }
 async function submitFeedback(retry = false) {
-  review.message='Feedback sending is disabled in this preparation build.';renderReview();return;
-
   const draft = review.draft;
   if (review.busy || !draft || (!retry && (review.mode !== 'confirm' || !canReview())) || (retry && !draft.pending)) return;
   if (!window.STUDIO_LOCAL && (!linkUp() || !stateInfo().live)) {
@@ -516,8 +514,8 @@ function renderReviewControls() {
   $('reviewRefresh').disabled = false; $('reviewRefresh').setAttribute('aria-disabled', String(review.busy));
   $('giveFeedback').textContent = draft?.pending ? 'View pending feedback' : draft?.receipt ? 'View feedback' : 'Give feedback';
   $('reviewFeedback').disabled = !canReview() || review.busy;
-  $('sendFeedback').disabled = true;
-  $('sendFeedback').textContent='Send unavailable in preview';
+  $('sendFeedback').disabled = review.busy || !canReview() || !!draft?.pending;
+  $('sendFeedback').textContent='Send feedback';
   for (const id of ['retryFeedback', 'checkReceipt', 'usePictureVersion']) {
     $(id).disabled = false; $(id).setAttribute('aria-disabled', String(review.busy));
   }

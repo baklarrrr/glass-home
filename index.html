@@ -14,10 +14,12 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="home-shell.css">
+  <link rel="stylesheet" href="readable.css">
 </head>
 <body>
   <div id="glance" class="glance">
   <header class="top">
+    <p id="appIdentity" class="app-identity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h3v3H3zm6 0h12v3H9zM3 11h3v3H3zm6 0h12v3H9zM3 17h3v3H3zm6 0h12v3H9z"/></svg>Studio Home <span id="appContext">Work</span></p>
     <nav class="sections" aria-label="Studio sections"><button id="section-work" data-section="work">Work</button><button id="section-review" data-section="review">Review</button><button id="section-drive" data-section="drive">Drive</button></nav>
     <nav class="tabs" role="tablist" aria-label="Section views">
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
@@ -85,7 +87,7 @@
       <div class="actions"><button id="cSend" class="btn primary">Review</button></div>
       <div id="cConfirm" class="confirm" hidden>
         <p id="cSummary" class="csummary"></p>
-        <p id="cQuote" class="cquote"></p>
+        <p id="cQuote" class="cquote" tabindex="0" aria-label="Reviewed message"></p>
         <div class="actions"><button id="cGo" class="btn primary">Send</button><button id="cEdit" class="btn">Edit</button></div>
       </div>
       <p id="cNote" class="note"></p>

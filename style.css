@@ -39,7 +39,7 @@ html, body {
   margin: 0; inline-size: 100%; block-size: 100%; overflow: hidden;
   background: #000; color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-weight: var(--w-regular); font-size: 17px; line-height: 1.32;
+  font-weight: var(--w-regular); font-size: 22px; line-height: 1.35;
   -webkit-font-smoothing: antialiased;
 }
 body { display: flex; flex-direction: column; padding: 16px 24px 14px; }
