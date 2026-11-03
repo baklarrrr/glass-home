@@ -101,7 +101,7 @@ async function run(browser, height, tag) {
     const m = await measure(page);
     const b = await bands(page, Math.ceil(m.headerBottom) + 1, Math.floor(m.unitTop));
     m.ink = { dash: b[b.length - 1], above: b.length > 1 ? b[b.length - 2] : null, count: b.length };
-    if (height === 600) await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+    await page.screenshot({ path: path.join(OUT, `${name}${height === 600 ? '' : '-' + height}.png`) });
     check(m.text === want.text && m.level === want.level && m.speed === want.speed, `${tag} ${name}: says ${JSON.stringify(want.text)} (${want.level}), the dash shows ${want.speed} (${JSON.stringify(m.text)}, ${m.level}, ${m.speed})`);
     return m;
   };
