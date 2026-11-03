@@ -196,7 +196,7 @@ async function send(c, extra = {}, options = {}) {
     let queued=false;
     for(const client of live){try{options.onPublish?.();client.publish(`bkr/${S.topic}/u`,payload,{qos:1});queued=true;}catch(_){}}
     if(!queued)throw new Error('The connection did not confirm publication. Check the saved receipt before trying anything else.');
-    remember(payload);return id;
+    return id; // Explicit requests never enter the automatic reconnect/replay buffer.
   }
   if (!live.length) {
     // Not connected this instant (just opened, or the glasses' network is waking): it goes out the moment a
@@ -1562,14 +1562,19 @@ function apply(state) {
 // ---- writing: new task, reply, answer, stop --------------------------------------------------------
 
 function composeKey(c) { return `${c.mode}:${c.k || 'new'}`; }
-function saveCompose(c = S.compose) {
-  if (!c || !['new','say','answertext'].includes(c.mode)) return;
-  if(c.request?.status==='accepted')return;
+function saveCompose(c = S.compose, durable = false) {
+  if (!c || !['new','say','answertext','answer','stop'].includes(c.mode)) return false;
+  if(c.request?.status==='accepted')return true;
   const drafts = local('gh.composeDrafts') || {};
   if(S.compose===c)c.text=$('cText').value;
   drafts[composeKey(c)] = {mode:c.mode,k:c.k||'',text:c.text||c.final||'',provider:c.provider,project:c.project,
-    final:c.final||'',request:c.request||null,at:Date.now()};
-  local('gh.composeDrafts',drafts);
+    final:c.final||'',question:c.question||'',request:c.request||null,at:Date.now()};
+  if(!durable){local('gh.composeDrafts',drafts);return true;}
+  try{
+    localStorage.setItem('gh.composeDrafts',JSON.stringify(drafts));
+    const saved=JSON.parse(localStorage.getItem('gh.composeDrafts')||'null')?.[composeKey(c)];
+    return !!saved&&saved.request?.id===c.request?.id&&JSON.stringify(saved.request?.payload)===JSON.stringify(c.request?.payload)&&saved.question===(c.question||'')&&saved.final===(c.final||'');
+  }catch(_){return false;}
 }
 function clearComposeDraft(c) {
   const drafts=local('gh.composeDrafts')||{},key=composeKey(c),saved=drafts[key],sent=c.request?.payload?.text??c.final;
@@ -1579,7 +1584,8 @@ function clearComposeDraft(c) {
 function startCompose(c, record = true) {
   const saved=(local('gh.composeDrafts')||{})[composeKey(c)];
   if(saved?.request?.status==='sending')saved.request={...saved.request,status:'uncertain'};
-  if(saved && ['new','say','answertext'].includes(c.mode))c={...saved,...c,text:c.text??saved.text};
+  if(saved?.request&&['sending','uncertain'].includes(saved.request.status))c={...c,...saved};
+  else if(saved && ['new','say','answertext'].includes(c.mode))c={...saved,...c,text:c.text??saved.text};
   S.compose = Object.assign({ provider: '', project: '' }, c);
   S.view = 'compose';
   if(record)history.pushState({ v: 'compose', draft:composeKey(c) }, '');
@@ -1654,6 +1660,7 @@ function review() {
   const c = S.compose;
   if (!c) return;
   if(c.request?.status==='accepted'){openAcceptedTask(c);return;}
+  if(c.request&&['sending','uncertain'].includes(c.request.status)){paintConfirmation(c);return;}
   if (c.mode === 'yt') { findVideos(); return; }
   const text = c.mode === 'answer' ? c.text : $('cText').value;
   if (['new','say','answertext'].includes(c.mode) && !text.trim()) {
@@ -1696,6 +1703,7 @@ function taskSendProblem(c) {
     if(['answer','answertext'].includes(c.mode)&&(!d.q?.safe||JSON.stringify(d.q||null)!==c.question))return 'The question changed or requires approval in its original app. Your draft is kept.';
   }
   if(c.mode!=='stop'&&(!String(c.final||'').trim()||String(c.final).length>2000))return 'Use a message of 1–2000 characters.';
+  if(['new','say','answertext'].includes(c.mode)&&$('cText').value!==c.final)return 'Your words changed. Review them again before sending.';
   return '';
 }
 
@@ -1776,7 +1784,9 @@ async function go() {
   const command=c.mode==='new'?'new':c.mode==='stop'?'stop':'say';
   const payload=c.mode==='new'?{p:c.provider,w:c.project,text:c.final}:c.mode==='stop'?{k:c.k}:{k:c.k,text:c.final,answer:['answer','answertext'].includes(c.mode)};
   const request={id:toB64url(crypto.getRandomValues(new Uint8Array(9))),command,payload,status:'sending',at:Date.now()};
-  c.request=request;saveCompose(c);$('cText').readOnly=true;$('cGo').disabled=true;$('cNote').textContent='Sending. Waiting for the PC’s saved acknowledgement.';
+  c.request=request;
+  if(!saveCompose(c,true)){c.request=null;$('cGo').disabled=true;$('cNote').textContent='This device could not save the request safely. Nothing was sent; your draft stays open.';return;}
+  $('cText').readOnly=true;$('cGo').disabled=true;$('cNote').textContent='Sending. Waiting for the PC’s saved acknowledgement.';
   const active=()=>S.compose===c&&S.view==='compose'&&!document.hidden&&!$('cConfirm').hidden&&history.state?.v==='confirm'&&c.request===request;
   let published=false;
   const timer=setTimeout(()=>{if(c.request===request&&request.status==='sending'){request.status='uncertain';saveCompose(c);if(active())paintConfirmation(c,false);}},20000);
