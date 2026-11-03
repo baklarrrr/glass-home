@@ -22,7 +22,7 @@
 .gps-unit { font-size:25px; color:#e5e9e6; }
 .gps-age { font-size:18px; min-height:24px; margin-top:8px; color:#cfd6d1; }
 .gps-hud[data-status=live] .gps-state { color:#dbe7df; }
-.gps-hud[data-level=warn] .gps-state { color:#ffc15e; font-size:26px; font-weight:700; line-height:1.3; white-space:pre-line; }   /* two lines: what is wrong, then what to do; amber, heavy and large enough to read in a glance */
+.gps-hud[data-level=warn] .gps-state { color:#ffc15e; font-size:26px; font-weight:700; line-height:1.3; white-space:pre-line; height:28.35px; display:flex; flex-direction:column; justify-content:center; }   /* two lines: what is wrong, then what to do; amber, heavy and large enough to read in a glance. The box stays one line high (21px x 1.35) and the two lines spill evenly above and below, so the dash never moves */
 .gps-hud[data-light=night] { opacity:.7; }
 .drive-controls { align-self:stretch; display:flex; flex-direction:column; gap:8px; }
 .drive-controls .driverun { min-height:42px; font-size:20px; }
@@ -42,7 +42,7 @@
 .quiet-reveal span { display:block; margin-top:4px; font-size:16px; color:var(--soft); }
 .drive-quiet .app-identity { font-size:20px; color:var(--soft); }
 .drive-quiet .app-identity svg { width:18px; height:18px; }
-@media (max-height:500px) { #drive {gap:6px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .gps-hud[data-level=warn] .gps-state {font-size:22px;} .drive-controls .driverun {min-height:34px;} }
+@media (max-height:500px) { #drive {gap:6px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .gps-hud[data-level=warn] .gps-state {font-size:22px; height:24.3px;} .drive-controls .driverun {min-height:34px;} }
 .parked-gate { position:fixed; inset:0; background:#000; z-index:20; display:flex; flex-direction:column; justify-content:center; gap:18px; padding:36px; }
 .parked-gate h1 { font-size:28px; }
 .parked-gate p { font-size:19px; line-height:1.4; }

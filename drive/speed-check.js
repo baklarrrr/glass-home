@@ -42,7 +42,7 @@
   // The corner beside turn-by-turn directions is about 250 px wide, so its first line stays at 20 characters or fewer; the
   // second line there is always "Phone not answering" or "No signal to phone" (directions are on screen only while the link is live or paused).
   const FAULTS = Object.freeze({
-    denied: ['Glasses location not allowed', 'Glasses GPS blocked'],
+    denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
     timeout: ['GPS timed out'],

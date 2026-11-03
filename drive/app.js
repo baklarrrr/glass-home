@@ -37,7 +37,7 @@ const S = {
   // connection never hides what the phone said a moment ago, and an old turn still goes stale on time.
   net: 'none', phone: 'unknown', heardAt: 0, last: null, frame: null, frameAt: 0, staleTimers: [],
   heading: null, headingAt: 0, trip: { ms: 0, m: 0, lastAt: 0 }, gps: { status: 'off' }, phoneGps: null, phoneGpsAt: 0, phoneGpsSentAt: 0, phoneGpsAge: 0,
-  controlsTimer: 0, panel: false, openedAt: 0, offer: null, shown: null,   // shown: what the speed self-check said last
+  controlsTimer: 0, panel: false, openedAt: 0, upAt: 0, offer: null, shown: null,   // upAt: when the brokers last came up; shown: what the speed self-check said last
   setup: false,   // the saved phone link has been read (found or not): until then nothing is known about the phone
 };
 
@@ -271,7 +271,14 @@ function linkView(now = performance.now()) {
 function checkLink(view) {
   if (!S.setup) return 'connecting';
   if (view === 'offline') return 'nosignal';
-  if (view === 'paused') return S.net === 'connecting' ? 'connecting' : S.net === 'down' ? 'nosignal' : 'paused';
+  if (view === 'paused') {
+    if (S.net === 'connecting') return 'connecting';
+    if (S.net === 'down') return 'nosignal';
+    // The last turn is from before the brokers came back up (the display woke, or the signal returned), so it says nothing
+    // about the phone now. The phone has just been asked again: it gets the same wait as when the page first opens before it
+    // counts as silent. The render timer in linkChanged fires when this wait is over.
+    return S.frameAt < S.upAt && performance.now() - S.upAt < PHONE_WAIT_MS ? 'connecting' : 'paused';
+  }
   return view;
 }
 
@@ -346,9 +353,10 @@ function linkChanged() {
   if (!up) { if (S.links.length && S.net === 'up') setNet('down'); return; }
   if (!S.helloTimer) S.helloTimer = setInterval(() => hello(), HELLO_MS);
   if (S.net !== 'up') {
+    S.upAt = performance.now();
     setNet('up');
     clearTimeout(S.waitTimer);
-    S.waitTimer = setTimeout(render, PHONE_WAIT_MS);
+    S.waitTimer = setTimeout(render, PHONE_WAIT_MS + 100);   // a moment after the wait is over, so the screen sees that it is
   }
 }
 
@@ -524,7 +532,7 @@ function renderPanel() {
   } else if (S.net === 'down') {
     state = 'No signal right now.';
     help = 'Directions come back on their own when the phone has signal.';
-  } else if (S.phone === 'live' && S.net === 'up' && view === 'paused') {
+  } else if (checkLink(view) === 'paused') {   // the same silence the screen goes by, not the first moments after the link came back
     state = 'Your phone is not answering.';
     help = 'Directions come back on their own when the phone answers. Keep Bakar Drive and the phone\'s glasses link running.';
   } else if (S.phone === 'live' || S.phone === 'ready') {
@@ -661,4 +669,4 @@ function tickClock() {
 })();
 
 // For tests in a desktop browser: the same entry the brokers use.
-window.__bakarDrive = { onDown, state: S, render };
+window.__bakarDrive = { onDown, state: S, render, linkChanged };

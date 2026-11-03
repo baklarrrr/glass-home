@@ -84,7 +84,7 @@ test('every warning fits two lines of the 600 px screen at its largest size', ()
 });
 
 test('the corner beside directions says the same thing in lines short enough for its 250 px', () => {
-  const compact = { denied: 'Glasses GPS blocked', unsupported: 'No GPS in this app' };
+  const compact = { denied: 'Glasses GPS refused', unsupported: 'No GPS in this app' };
   for (const gpsStatus of HARD) {
     // Directions are on screen only while the phone link is live or paused (no signal is the same silence), so the second line there is one of two.
     for (const [link, second] of [['paused', 'Phone not answering'], ['nosignal', 'No signal to phone']]) {
@@ -98,7 +98,7 @@ test('the corner beside directions says the same thing in lines short enough for
       assert.equal(first, compact[gpsStatus] || r.text.split('\n')[0], `${gpsStatus}: ${r.text} / ${r.short}`);
     }
   }
-  assert.equal(at({ gpsStatus: 'denied', link: 'paused' }).short, 'Glasses GPS blocked\nPhone not answering');
+  assert.equal(at({ gpsStatus: 'denied', link: 'paused' }).short, 'Glasses GPS refused\nPhone not answering');
   assert.equal(at({ gpsStatus: 'unsupported', link: 'nosignal' }).short, 'No GPS in this app\nNo signal to phone');
   // quiet states have no corner line either
   for (const link of SC.HEALTHY) assert.equal(at({ gpsStatus: 'denied', link }).short, '');
