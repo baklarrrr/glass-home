@@ -33,6 +33,8 @@
   function withdraw(){approved=false;clearTimeout(expiry);}
   // The clock is also read here, because a sleeping page can run its timer late.
   function parked(){if(approved&&Date.now()>=until)revoke();return approved;}
+  function drivingContext(){return !!($('drive')&&!$('drive').hidden)||!!($('route')&&!$('route').hidden);}
+  function controlsAllowed(){return !drivingContext()||parked();}
   function finish(kind){
     if(gate.hidden||decision)return;
     consumeEnter=enterDown;decision=kind;history.back();
@@ -64,14 +66,14 @@
   },true);
   document.addEventListener('click',event=>{
     if(decision){event.preventDefault();event.stopImmediatePropagation();return;}
-    if(parked()||!gate.hidden)return;
+    if(!drivingContext()||parked()||!gate.hidden)return;
     const control=event.target.closest?.('button,textarea,input,select,iframe');
     if(!control||['section-work','section-review','section-drive','tab-now','tab-work','tab-watch','tab-drive','tab-apps','tab-games','driveReveal','driveGps','driveRetry','driveLight','driveInfoButton','driveInfoClose','reviewEnter'].includes(control.id)||gate.contains(control))return;
     event.preventDefault();event.stopImmediatePropagation();request();heldPress=control;
   },true);
   document.addEventListener('focusin',event=>{
     if(!gate.hidden&&!gate.contains(event.target)){$('parkedConfirm').focus();return;}
-    if(!parked()&&gate.hidden&&event.target.matches?.('textarea,input,select,iframe'))request();
+    if(drivingContext()&&!parked()&&gate.hidden&&event.target.matches?.('textarea,input,select,iframe'))request();
   });
   function revoke(){withdraw();if(!gate.hidden)finish('revoke');changed();}
   document.addEventListener('visibilitychange',()=>{if(document.hidden)revoke();});
@@ -98,7 +100,7 @@
       event.stopImmediatePropagation();history.back();
     }
   });
-  window.StudioParked=Object.freeze({request,revoke,confirmed:parked,isOpen:()=>!gate.hidden,
+  window.StudioParked=Object.freeze({request,revoke,confirmed:parked,controlsAllowed,drivingContext,isOpen:()=>!gate.hidden,
     start(){} // Passive startup never opens a dialog.
   });
 })();

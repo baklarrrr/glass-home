@@ -1,4 +1,7 @@
 .glance { display:contents; }
+.app-identity { display:flex; align-items:center; gap:9px; flex-basis:100%; font-size:24px; line-height:1.3; font-weight:640; color:var(--ink); }
+.app-identity svg { width:22px; height:22px; color:var(--accent); flex:none; }
+#appContext { margin-left:auto; color:var(--soft); font-size:20px; font-weight:420; }
 .top { flex-wrap:wrap; height:auto; min-height:76px; gap:6px; }
 .sections { display:flex; flex:1; gap:8px; }
 .sections button { border:1px solid #3c4842; border-radius:12px; padding:8px 16px; font-size:20px; }
@@ -36,6 +39,8 @@
 #drive[data-controls=open] .quiet-reveal { display:none !important; }
 .quiet-reveal { padding:8px 18px; text-align:center; font-size:17px; flex:none; }
 .quiet-reveal span { display:block; margin-top:4px; font-size:16px; color:var(--soft); }
+.drive-quiet .app-identity { font-size:20px; color:var(--soft); }
+.drive-quiet .app-identity svg { width:18px; height:18px; }
 @media (max-height:500px) { #drive {gap:6px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .drive-controls .driverun {min-height:34px;} }
 .parked-gate { position:fixed; inset:0; background:#000; z-index:20; display:flex; flex-direction:column; justify-content:center; gap:18px; padding:36px; }
 .parked-gate h1 { font-size:28px; }

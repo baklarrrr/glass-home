@@ -170,23 +170,34 @@ async function openDown(text) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-async function send(c, extra = {}) {
+async function send(c, extra = {}, options = {}) {
   if (!S.kUp) return '';
+  const pairedKey=S.kUp,pairedTopic=S.topic,pairedPublic=S.devPubB64;
+  if (options.guard && !options.guard()) throw new Error('Cancelled before sending. Your draft is kept.');
   const today = new Date().toDateString();
   const b = local('gh.sends') || {};
   const n = b.d === today ? (b.n || 0) : 0;
   if (n >= DAILY_SENDS) { flash('Too many messages today; check the PC'); return ''; }
   local('gh.sends', { d: today, n: n + 1 });
-  const id = toB64url(crypto.getRandomValues(new Uint8Array(9)));
+  const id = options.id || toB64url(crypto.getRandomValues(new Uint8Array(9)));
   if (c === 'hello') S.hellos = S.hellos.slice(-4).concat(id);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const body = enc(JSON.stringify({ c, id, ts: Date.now(), z: S.z, ...extra }));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, S.kUp, body));
+  if(options.noQueue&&(S.kUp!==pairedKey||S.topic!==pairedTopic||S.devPubB64!==pairedPublic))throw new Error('The paired connection changed before sending. Your draft is kept.');
+  if (options.guard && !options.guard()) throw new Error('Cancelled before sending. Your draft is kept.');
   const sealed = new Uint8Array(12 + ct.length);
   sealed.set(iv, 0);
   sealed.set(ct, 12);
   const payload = `1.${S.devPubB64}.${toB64url(sealed)}`;
   const live = S.links.filter((l) => l.connected);
+  if (!live.length && options.noQueue) throw new Error('Connection unavailable. Nothing was sent; your draft is kept.');
+  if(options.noQueue){
+    let queued=false;
+    for(const client of live){try{options.onPublish?.();client.publish(`bkr/${S.topic}/u`,payload,{qos:1});queued=true;}catch(_){}}
+    if(!queued)throw new Error('The connection did not confirm publication. Check the saved receipt before trying anything else.');
+    return id; // Explicit requests never enter the automatic reconnect/replay buffer.
+  }
   if (!live.length) {
     // Not connected this instant (just opened, or the glasses' network is waking): it goes out the moment a
     // broker connects. The PC drops a command it has already seen.
@@ -526,7 +537,7 @@ function age(sec) {
 let watchViewEpoch=0;
 const watchPhone=new StudioWatchPhone.Handoff({
   pair:()=>S.tg,
-  active:()=>!document.hidden&&StudioParked.confirmed()&&S.tab==='watch'&&(S.view==='list'||(S.view==='compose'&&S.compose?.mode==='yt')),
+  active:()=>!document.hidden&&StudioParked.controlsAllowed()&&S.tab==='watch'&&(S.view==='list'||(S.view==='compose'&&S.compose?.mode==='yt')),
   ensureConnected:async current=>{
     wake();openLink();
     const until=performance.now()+2500;
@@ -1203,6 +1214,8 @@ function renderDetail() {
         b.addEventListener('click', () => startCompose({ mode: 'answer', k, text: label }));
         opts.append(b);
       });
+      const written=el('button','btn primary','Write an answer');written.dataset.f='write-answer';
+      written.addEventListener('click',()=>startCompose({mode:'answertext',k}));opts.append(written);
     } else {
       // Its choices are shown so he can decide now, then answer where the session lives.
       const choices = (q.opts || []).length ? `Choices: ${q.opts.join(' · ')}. ` : '';
@@ -1505,6 +1518,7 @@ function openDetail(k) {
 }
 
 function apply(state) {
+  if(S.view==='compose')saveCompose();
   cancelWatch();
   closeConfirm();
   if (!state || state.v === 'list') {
@@ -1537,16 +1551,44 @@ function apply(state) {
     // Back from a video is the list; Forward never reopens the player.
     history.back();
   } else if (state.v === 'compose') {
-    history.back();
+    if(!S.compose){const saved=(local('gh.composeDrafts')||{})[state.draft];if(saved)startCompose(saved,false);else {history.back();return;}}
+    S.view='compose';showPane('compose');closeConfirm();$('cText').readOnly=!!S.compose?.request&&['sending','uncertain'].includes(S.compose.request.status);$('cSend').focus();
+  } else if(state.v==='confirm') {
+    if(!S.compose){const saved=(local('gh.composeDrafts')||{})[state.draft];if(saved)startCompose(saved,false);else {history.back();return;}}
+    S.view='compose';showPane('compose');paintConfirmation(S.compose,false);
   }
 }
 
 // ---- writing: new task, reply, answer, stop --------------------------------------------------------
 
-function startCompose(c) {
+function composeKey(c) { return `${c.mode}:${c.k || 'new'}`; }
+function saveCompose(c = S.compose, durable = false) {
+  if (!c || !['new','say','answertext','answer','stop'].includes(c.mode)) return false;
+  if(c.request?.status==='accepted')return true;
+  const drafts = local('gh.composeDrafts') || {};
+  if(S.compose===c)c.text=$('cText').value;
+  drafts[composeKey(c)] = {mode:c.mode,k:c.k||'',text:c.text||c.final||'',provider:c.provider,project:c.project,
+    final:c.final||'',question:c.question||'',request:c.request||null,at:Date.now()};
+  if(!durable){local('gh.composeDrafts',drafts);return true;}
+  try{
+    localStorage.setItem('gh.composeDrafts',JSON.stringify(drafts));
+    const saved=JSON.parse(localStorage.getItem('gh.composeDrafts')||'null')?.[composeKey(c)];
+    return !!saved&&saved.request?.id===c.request?.id&&JSON.stringify(saved.request?.payload)===JSON.stringify(c.request?.payload)&&saved.request?.summary===c.request?.summary&&saved.question===(c.question||'')&&saved.final===(c.final||'');
+  }catch(_){return false;}
+}
+function clearComposeDraft(c) {
+  const drafts=local('gh.composeDrafts')||{},key=composeKey(c),saved=drafts[key],sent=c.request?.payload?.text??c.final;
+  if(saved&&saved.text!==sent){saved.request=null;saved.final='';}else delete drafts[key];
+  local('gh.composeDrafts',drafts);
+}
+function startCompose(c, record = true) {
+  const saved=(local('gh.composeDrafts')||{})[composeKey(c)];
+  if(saved?.request?.status==='sending')saved.request={...saved.request,status:'uncertain'};
+  if(saved?.request&&['sending','uncertain'].includes(saved.request.status))c={...c,...saved};
+  else if(saved && ['new','say','answertext'].includes(c.mode))c={...saved,...c,text:c.text??saved.text};
   S.compose = Object.assign({ provider: '', project: '' }, c);
   S.view = 'compose';
-  history.pushState({ v: 'compose' }, '');
+  if(record)history.pushState({ v: 'compose', draft:composeKey(c) }, '');
   showPane('compose');
   closeConfirm();
   $('cNote').textContent = '';
@@ -1555,20 +1597,25 @@ function startCompose(c) {
   pick.textContent = '';
   const text = $('cText');
   text.value = c.text || '';
+  text.readOnly=!!S.compose.request&&['sending','uncertain'].includes(S.compose.request.status);
   const field = text.closest('.field');
   field.hidden = c.mode === 'stop' || c.mode === 'answer';
   $('cSend').textContent = 'Review';
   const d = S.details[c.k] || rowFor(c.k) || {};
+  if(S.compose.request&&['sending','uncertain','accepted'].includes(S.compose.request.status)){
+    $('cTitle').textContent=c.mode==='new'?'New task':c.mode==='stop'?'Stop this task?':c.mode==='say'?'Reply':'Answer';
+    S.compose.final=c.final||c.text||'';paintConfirmation(S.compose,false);return;
+  }
   if (c.mode === 'new') {
     $('cTitle').textContent = 'New task';
     $('cLabel').textContent = 'Say what you want done';
     const providers = can.new || [];
-    S.compose.provider = ''; // The wearer chooses a provider explicitly.
+    S.compose.provider = providers.includes(c.provider) ? c.provider : providers.length === 1 ? providers[0] : '';
     const who = el('div', 'pickgroup');
     who.append(el('span', 'label', 'AI'));
     for (const p of providers) who.append(choice(PROVIDER[p], 'provider', p));
     const projects = can.projects || [];
-    S.compose.project = '';
+    S.compose.project = projects.some(p=>p.k===c.project) ? c.project : projects.some(p=>p.k==='desk') ? 'desk' : '';
     const where = el('div', 'pickgroup');
     where.append(el('span', 'label', 'Folder'));
     for (const p of projects) where.append(choice(p.n, 'project', p.k));
@@ -1581,6 +1628,9 @@ function startCompose(c) {
   } else if (c.mode === 'say') {
     $('cTitle').textContent = `Reply to ${d.ti || 'this task'}`;
     $('cLabel').textContent = 'Say your reply';
+  } else if(c.mode === 'answertext') {
+    $('cTitle').textContent='Answer this question';
+    $('cLabel').textContent=d.q?.text||'Say your answer';
   } else if (c.mode === 'answer') {
     $('cTitle').textContent = 'Answer';
     review();
@@ -1590,6 +1640,7 @@ function startCompose(c) {
     review();
     return;
   }
+  saveCompose();
   (pick.querySelector('button') || text).focus();
   if (!pick.querySelector('button')) text.focus();
 }
@@ -1598,7 +1649,7 @@ function choice(label, kind, value) {
   const b = el('button', 'btn', label);
   b.dataset.kind = kind;
   b.dataset.value = value;
-  b.addEventListener('click', () => { S.compose[kind] = value; syncChoices(); });
+  b.addEventListener('click', () => { S.compose[kind] = value; syncChoices(); saveCompose(); });
   return b;
 }
 
@@ -1611,9 +1662,12 @@ function syncChoices() {
 function review() {
   const c = S.compose;
   if (!c) return;
+  if(c.request?.status==='accepted'){openAcceptedTask(c);return;}
+  if(c.request&&['sending','uncertain'].includes(c.request.status)){paintConfirmation(c);return;}
+  if(c.request?.status==='rejected'){c.request=null;$('cText').readOnly=false;saveCompose(c);}
   if (c.mode === 'yt') { findVideos(); return; }
   const text = c.mode === 'answer' ? c.text : $('cText').value;
-  if ((c.mode === 'new' || c.mode === 'say') && !text.trim()) {
+  if (['new','say','answertext'].includes(c.mode) && !text.trim()) {
     $('cNote').textContent = 'Nothing to send yet. Focus the box and speak.';
     $('cText').focus();
     return;
@@ -1628,20 +1682,51 @@ function review() {
     const project = (can.projects || []).find((p) => p.k === c.project);
     const place = !project ? 'the chosen folder' : project.k === 'desk' ? 'a fresh folder' : project.n;
     summary = `Send to ${PROVIDER[c.provider] || 'the AI'}, working in ${place}:`;
-  } else if (c.mode === 'say') summary = `Send to ${PROVIDER[d.p] || 'Unknown agent'} - ${d.ti}:`;
-  else if (c.mode === 'answer') summary = `Answer ${d.ti} with:`;
+  } else if (c.mode === 'say') summary = `Send to ${PROVIDER[d.p] || 'the selected agent'} - ${d.ti || 'this task'}:`;
+  else if (c.mode === 'answer' || c.mode === 'answertext') summary = `Answer ${d.ti || 'this task'} with:`;
   else summary = `Stop ${d.ti}? Its work so far is kept.`;
   c.final = text;
+  c.question=JSON.stringify(d.q||null);
   $('cSummary').textContent = summary;
   $('cQuote').textContent = c.mode === 'stop' ? '' : `“${text}”`;
-  $('cConfirm').hidden = false;
-  $('cGo').textContent = c.mode === 'stop' ? 'Stop task' : 'Send';
+  paintConfirmation(c);
+}
+
+function taskSendProblem(c) {
+  if(!c || document.hidden || S.view!=='compose' || S.compose!==c)return 'Return to this draft before sending.';
+  if(!S.kUp||!S.topic||S.pairing)return 'The Studio connection is not paired. Your draft is kept.';
+  if(!linkUp()||S.quiet||!S.pcAt)return 'The PC has not confirmed a live connection. Your draft is kept.';
+  if(!StudioParked.controlsAllowed())return 'Drive controls require a parked declaration.';
+  const can=S.snap?.can||{},d=S.details[c.k]||rowFor(c.k)||{};
+  if(c.mode==='new'){
+    if(!(can.new||[]).includes(c.provider))return 'That agent is not currently available. Choose an available agent.';
+    if(!(can.projects||[]).some(p=>p.k===c.project))return 'Choose an available folder.';
+  }else{
+    const action=c.mode==='stop'?'stop':c.mode==='answer'||c.mode==='answertext'?'answer':'say';
+    if(!/^g[0-9a-f]{8}$/.test(c.k||'') || !(d.acts||[]).includes(action))return 'This session does not provide that action from the glasses.';
+    if(['answer','answertext'].includes(c.mode)&&(!d.q?.safe||JSON.stringify(d.q||null)!==c.question))return 'The question changed or requires approval in its original app. Your draft is kept.';
+  }
+  if(c.mode!=='stop'&&(!String(c.final||'').trim()||String(c.final).length>2000))return 'Use a message of 1–2000 characters.';
+  if(['new','say','answertext'].includes(c.mode)&&$('cText').value!==c.final)return 'Your words changed. Review them again before sending.';
+  return '';
+}
+
+function paintConfirmation(c, record = true, focus = true) {
+  if(record && history.state?.v!=='confirm')history.pushState({v:'confirm',draft:composeKey(c)},'');
+  $('compose').classList.add('compose-review');$('cConfirm').hidden=false;
+  if(c.request&&['sending','uncertain','accepted'].includes(c.request.status)){
+    const original=c.request.summary||(c.request.command==='new'?`Send to ${PROVIDER[c.request.payload.p]||'the selected agent'}, folder ${c.request.payload.w}:`:`Request for task ${c.k}:`);
+    $('cSummary').textContent=`Original request. ${original}`;
+  }
+  $('cQuote').textContent=c.mode==='stop'?'':c.final||'';
+  const pending=c.request && ['sending','uncertain'].includes(c.request.status),accepted=c.request?.status==='accepted';
+  const problem=pending||accepted?'':taskSendProblem(c);
+  $('cGo').disabled=!!problem || c.request?.status==='sending';
+  $('cGo').textContent=accepted?'Open task':pending?'Check saved receipt':c.mode==='stop'?'Stop task':'Send';
   // An answer or a stop has no text to edit, so its second button goes back instead.
-  $('cEdit').textContent = c.mode === 'answer' || c.mode === 'stop' ? 'Cancel' : 'Edit';
-  $('cGo').disabled = true;
-  $('cGo').textContent='Send unavailable';
-  $('cNote').textContent='Real task sending is disabled in this preparation build.';
-  $('cEdit').focus();
+  $('cEdit').textContent=pending||accepted||['answer','stop'].includes(c.mode)?'Back':'Edit';
+  $('cNote').textContent=problem||(accepted?'This request was accepted. Open its task.':pending?'This request is unconfirmed. Check its saved receipt; it will not be sent again.':'Review the agent, folder and text. Send is the only action that submits.');
+  saveCompose(c);if(focus)($('cGo').disabled?$('cEdit'):$('cGo')).focus();
 }
 
 async function findVideos() {
@@ -1652,10 +1737,73 @@ async function findVideos() {
 
 function closeConfirm() {
   $('cConfirm').hidden = true;
+  $('compose').classList.remove('compose-review');
+}
+
+function openAcceptedTask(c) {
+  const k=c.request?.k;if(!/^g[0-9a-f]{8}$/.test(k||''))return;
+  S.compose=null;S.open=k;S.view='detail';history.replaceState({v:'detail',k},'');showPane('detail');renderDetail();
+  ($('dActions').querySelector('button')||$('dResult')).focus();armIdle();
+}
+
+function completeTaskReply(c, request, ack) {
+  if(c.request!==request || typeof ack.ok!=='boolean')return false;
+  if(S.compose&&S.compose!==c&&S.compose.request?.id===request.id&&JSON.stringify(S.compose.request.payload)===JSON.stringify(request.payload)){
+    const current=S.compose;c.request=current.request;return completeTaskReply(current,current.request,ack);
+  }
+  const active=S.compose===c&&S.view==='compose'&&!document.hidden&&!$('cConfirm').hidden;
+  if(!ack.ok){request.status='rejected';saveCompose(c);if(active){$('cNote').textContent=ack.why||'The PC refused this request. Your draft is kept.';$('cGo').disabled=true;$('cEdit').textContent='Edit';}return true;}
+  const k=ack.k||c.k;
+  if(!/^g[0-9a-f]{8}$/.test(k||'') || (ack.det&&ack.det.k!==k))return false;
+  if(request.command!=='new'&&k!==c.k)return false;
+  request.status='accepted';request.k=k;clearComposeDraft(c);
+  if(ack.det)S.details[k]=ack.det;
+  if(!active){if(S.compose===c){$('cSend').textContent='Open accepted task';$('cNote').textContent='Request accepted. Open its task when ready.';}return true;}
+  openAcceptedTask(c);
+  return true;
+}
+
+async function checkTaskReceipt(c) {
+  const request=c.request;if(!request)return;
+  if(S.snap?.can?.receipts!==1){$('cNote').textContent='This relay cannot check a saved task receipt yet. The request remains unconfirmed; no duplicate was sent.';return;}
+  const query=toB64url(crypto.getRandomValues(new Uint8Array(9)));
+  const active=()=>S.compose===c&&S.view==='compose'&&!document.hidden;
+  $('cGo').disabled=true;$('cNote').textContent='Checking the original request. Nothing is being sent again.';
+  const timer=setTimeout(()=>{delete S.pending[query];if(active()){$('cGo').disabled=false;$('cNote').textContent='No receipt answer arrived. The original request is still unconfirmed.';}},15000);
+  S.pending[query]=ack=>{
+    clearTimeout(timer);
+    const kind=request.command==='say'&&request.payload.answer?'answer':request.command;
+    if(ack.mutationId!==request.id||ack.status!=='accepted'||ack.kind!==kind){if(active()){$('cGo').disabled=false;$('cNote').textContent='No saved receipt was confirmed. Your original request and draft are kept.';}return;}
+    completeTaskReply(c,request,ack);
+  };
+  try{const id=await send('taskreceipt',{mutationId:request.id},{id:query,noQueue:true,guard:active});if(id!==query)throw new Error('The receipt check was not sent. Your original request remains unconfirmed.');}
+  catch(error){clearTimeout(timer);delete S.pending[query];if(active()){$('cGo').disabled=false;$('cNote').textContent=error.message;}}
 }
 
 async function go() {
-  $('cNote').textContent='Task sending is disabled in this preparation build.';
+  const c=S.compose;if(!c||$('cGo').disabled||$('cConfirm').hidden)return;
+  if(c.request?.status==='accepted'){openAcceptedTask(c);return;}
+  if(c.request&&['sending','uncertain'].includes(c.request.status)){await checkTaskReceipt(c);return;}
+  const problem=taskSendProblem(c);if(problem){$('cNote').textContent=problem;return;}
+  const command=c.mode==='new'?'new':c.mode==='stop'?'stop':'say';
+  const payload=c.mode==='new'?{p:c.provider,w:c.project,text:c.final}:c.mode==='stop'?{k:c.k}:{k:c.k,text:c.final,answer:['answer','answertext'].includes(c.mode)};
+  const request={id:toB64url(crypto.getRandomValues(new Uint8Array(9))),command,payload,summary:$('cSummary').textContent,status:'sending',at:Date.now()};
+  c.request=request;
+  if(!saveCompose(c,true)){c.request=null;$('cGo').disabled=true;$('cNote').textContent='This device could not save the request safely. Nothing was sent; your draft stays open.';return;}
+  $('cText').readOnly=true;$('cGo').disabled=true;$('cNote').textContent='Sending. Waiting for the PC’s saved acknowledgement.';
+  const active=()=>S.compose===c&&S.view==='compose'&&!document.hidden&&!$('cConfirm').hidden&&history.state?.v==='confirm'&&c.request===request;
+  let published=false;
+  const timer=setTimeout(()=>{if(c.request===request&&request.status==='sending'){request.status='uncertain';saveCompose(c);if(active())paintConfirmation(c,false);}},20000);
+  S.pending[request.id]=ack=>{if(completeTaskReply(c,request,ack))clearTimeout(timer);};
+  try{
+    const sent=await send(command,payload,{id:request.id,noQueue:true,guard:()=>active()&&!taskSendProblem(c),onPublish:()=>{published=true;}});
+    if(sent!==request.id)throw new Error('Nothing was sent. Check the connection or message limit; your draft is kept.');
+  }catch(error){
+    clearTimeout(timer);
+    if(['accepted','rejected'].includes(request.status))return;
+    if(published){request.status='uncertain';saveCompose(c);if(active())paintConfirmation(c,false);}
+    else{delete S.pending[request.id];c.request=null;saveCompose(c);if(S.compose===c&&S.view==='compose'){$('cText').readOnly=false;$('cNote').textContent=error.message;$('cGo').disabled=true;}}
+  }
 }
 
 // ---- keys ------------------------------------------------------------------------------------------
@@ -1704,6 +1852,7 @@ function rowsOfControls() {
     for (const g of $('cPick').querySelectorAll('.pickgroup')) add(g.querySelectorAll('button'));
     add([$('cText')]);
     add([$('cSend')]);
+    if(!$('cConfirm').hidden&&$('cQuote').textContent)add([$('cQuote')]);
     add([$('cGo'), $('cEdit')]);
   }
   return groups;
@@ -1758,8 +1907,8 @@ function onKey(e) {
     selectTab(next, Boolean(e.target.closest('.tabs')));
     return;
   }
-  if (e.target === $('dResult') && (k === 'ArrowDown' || k === 'ArrowUp')) {
-    const r = $('dResult');
+  if ((e.target === $('dResult') || e.target === $('cQuote')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
+    const r = e.target;
     const down = k === 'ArrowDown';
     const room = down ? r.scrollHeight - r.clientHeight - r.scrollTop : r.scrollTop;
     e.preventDefault();
@@ -1793,11 +1942,17 @@ async function main() {
   $('newTask').addEventListener('click', () => startCompose({ mode: 'new' }));
   $('cSend').addEventListener('click', review);
   $('cGo').addEventListener('click', go);
+  $('cText').addEventListener('input',()=>{saveCompose();if(!$('cConfirm').hidden)closeConfirm();});
   $('cEdit').addEventListener('click', () => {
     const mode = S.compose && S.compose.mode;
+    if(S.compose?.request&&['sending','uncertain'].includes(S.compose.request.status)){history.go(-2);return;}
+    if(S.compose?.request?.status==='rejected'){
+      const c=S.compose;c.request=null;$('cText').readOnly=false;saveCompose(c);
+      if(['new','say','answertext'].includes(mode)){if(history.state?.v==='confirm')history.back();startCompose(c,false);return;}
+    }
+    if(history.state?.v==='confirm'){history.back();return;}
     if (mode === 'answer' || mode === 'stop') { history.back(); return; }
-    closeConfirm();
-    $('cText').focus();
+    closeConfirm();$('cText').focus();
   });
   $('pRetry').addEventListener('click', () => { if (S.paused) wake(); else hello(); });
   // The video controls: the player's own controls are hidden so the arrows and pinch drive these.

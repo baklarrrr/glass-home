@@ -28,9 +28,16 @@ function resumeEmbeddedReview() {
 }
 
 function reviewStorageKey() { return `sg.review.v1.${window.STUDIO_LOCAL ? 'local' : topic}`; }
-function saveReviewDrafts() {
-  try { localStorage.setItem(reviewStorageKey(), JSON.stringify(review.drafts)); }
-  catch (_) { review.message = 'This device could not save the draft. Keep this page open until a receipt arrives.'; }
+function saveReviewDrafts(durable = false) {
+  try {
+    localStorage.setItem(reviewStorageKey(), JSON.stringify(review.drafts));
+    if(durable){
+      const pending=review.draft?.pending,saved=JSON.parse(localStorage.getItem(reviewStorageKey())||'null')?.[review.draft?.assetId]?.pending;
+      return !!pending&&JSON.stringify(saved)===JSON.stringify(pending);
+    }
+    return true;
+  }
+  catch (_) { review.message = 'This device could not save the draft. Keep this page open until a receipt arrives.'; return false; }
 }
 
 function reviewRequest(c, args = {}) {
@@ -355,8 +362,6 @@ function reconcileReceipts(receipts, draft) {
   }
 }
 async function submitFeedback(retry = false) {
-  review.message='Feedback sending is disabled in this preparation build.';renderReview();return;
-
   const draft = review.draft;
   if (review.busy || !draft || (!retry && (review.mode !== 'confirm' || !canReview())) || (retry && !draft.pending)) return;
   if (!window.STUDIO_LOCAL && (!linkUp() || !stateInfo().live)) {
@@ -365,6 +370,10 @@ async function submitFeedback(retry = false) {
   if (!retry) draft.pending = { reviewId: crypto.randomUUID(), assetId: review.asset.id, assetVersion: draft.assetVersion, text: draft.text, provider: draft.provider };
   const pending = { ...draft.pending };
   if (review.sending.has(pending.reviewId)) return;
+  if(!saveReviewDrafts(true)){
+    if(!retry)draft.pending=null;
+    review.message='This device could not save the request safely. Nothing was sent; your draft stays open.';renderReview();return;
+  }
   review.sending.add(pending.reviewId); draft.receipt = null; saveReviewDrafts();
   if (!retry) navigateTo({ kind: 'receipt', assetId: pending.assetId, assetVersion: pending.assetVersion, reviewId: pending.reviewId, title: draft.title }, true);
   const key = navigation.route.key, epoch = navigation.epoch;
@@ -516,8 +525,8 @@ function renderReviewControls() {
   $('reviewRefresh').disabled = false; $('reviewRefresh').setAttribute('aria-disabled', String(review.busy));
   $('giveFeedback').textContent = draft?.pending ? 'View pending feedback' : draft?.receipt ? 'View feedback' : 'Give feedback';
   $('reviewFeedback').disabled = !canReview() || review.busy;
-  $('sendFeedback').disabled = true;
-  $('sendFeedback').textContent='Send unavailable in preview';
+  $('sendFeedback').disabled = review.busy || !canReview() || !!draft?.pending;
+  $('sendFeedback').textContent='Send feedback';
   for (const id of ['retryFeedback', 'checkReceipt', 'usePictureVersion']) {
     $(id).disabled = false; $(id).setAttribute('aria-disabled', String(review.busy));
   }
