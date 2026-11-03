@@ -1602,7 +1602,7 @@ function startCompose(c, record = true) {
   field.hidden = c.mode === 'stop' || c.mode === 'answer';
   $('cSend').textContent = 'Review';
   const d = S.details[c.k] || rowFor(c.k) || {};
-  if(S.compose.request){
+  if(S.compose.request&&['sending','uncertain','accepted'].includes(S.compose.request.status)){
     $('cTitle').textContent=c.mode==='new'?'New task':c.mode==='stop'?'Stop this task?':c.mode==='say'?'Reply':'Answer';
     S.compose.final=c.final||c.text||'';paintConfirmation(S.compose,false);return;
   }
@@ -1664,6 +1664,7 @@ function review() {
   if (!c) return;
   if(c.request?.status==='accepted'){openAcceptedTask(c);return;}
   if(c.request&&['sending','uncertain'].includes(c.request.status)){paintConfirmation(c);return;}
+  if(c.request?.status==='rejected'){c.request=null;$('cText').readOnly=false;saveCompose(c);}
   if (c.mode === 'yt') { findVideos(); return; }
   const text = c.mode === 'answer' ? c.text : $('cText').value;
   if (['new','say','answertext'].includes(c.mode) && !text.trim()) {
@@ -1713,7 +1714,7 @@ function taskSendProblem(c) {
 function paintConfirmation(c, record = true, focus = true) {
   if(record && history.state?.v!=='confirm')history.pushState({v:'confirm',draft:composeKey(c)},'');
   $('compose').classList.add('compose-review');$('cConfirm').hidden=false;
-  if(c.request){
+  if(c.request&&['sending','uncertain','accepted'].includes(c.request.status)){
     const original=c.request.summary||(c.request.command==='new'?`Send to ${PROVIDER[c.request.payload.p]||'the selected agent'}, folder ${c.request.payload.w}:`:`Request for task ${c.k}:`);
     $('cSummary').textContent=`Original request. ${original}`;
   }
@@ -1945,6 +1946,10 @@ async function main() {
   $('cEdit').addEventListener('click', () => {
     const mode = S.compose && S.compose.mode;
     if(S.compose?.request&&['sending','uncertain'].includes(S.compose.request.status)){history.go(-2);return;}
+    if(S.compose?.request?.status==='rejected'){
+      const c=S.compose;c.request=null;$('cText').readOnly=false;saveCompose(c);
+      if(['new','say','answertext'].includes(mode)){if(history.state?.v==='confirm')history.back();startCompose(c,false);return;}
+    }
     if(history.state?.v==='confirm'){history.back();return;}
     if (mode === 'answer' || mode === 'stop') { history.back(); return; }
     closeConfirm();$('cText').focus();
