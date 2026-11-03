@@ -1573,7 +1573,7 @@ function saveCompose(c = S.compose, durable = false) {
   try{
     localStorage.setItem('gh.composeDrafts',JSON.stringify(drafts));
     const saved=JSON.parse(localStorage.getItem('gh.composeDrafts')||'null')?.[composeKey(c)];
-    return !!saved&&saved.request?.id===c.request?.id&&JSON.stringify(saved.request?.payload)===JSON.stringify(c.request?.payload)&&saved.question===(c.question||'')&&saved.final===(c.final||'');
+    return !!saved&&saved.request?.id===c.request?.id&&JSON.stringify(saved.request?.payload)===JSON.stringify(c.request?.payload)&&saved.request?.summary===c.request?.summary&&saved.question===(c.question||'')&&saved.final===(c.final||'');
   }catch(_){return false;}
 }
 function clearComposeDraft(c) {
@@ -1602,6 +1602,10 @@ function startCompose(c, record = true) {
   field.hidden = c.mode === 'stop' || c.mode === 'answer';
   $('cSend').textContent = 'Review';
   const d = S.details[c.k] || rowFor(c.k) || {};
+  if(S.compose.request){
+    $('cTitle').textContent=c.mode==='new'?'New task':c.mode==='stop'?'Stop this task?':c.mode==='say'?'Reply':'Answer';
+    S.compose.final=c.final||c.text||'';paintConfirmation(S.compose,false);return;
+  }
   if (c.mode === 'new') {
     $('cTitle').textContent = 'New task';
     $('cLabel').textContent = 'Say what you want done';
@@ -1636,7 +1640,6 @@ function startCompose(c, record = true) {
     review();
     return;
   }
-  if(S.compose.request){S.compose.final=c.final||c.text||'';paintConfirmation(S.compose,false);return;}
   saveCompose();
   (pick.querySelector('button') || text).focus();
   if (!pick.querySelector('button')) text.focus();
@@ -1711,8 +1714,8 @@ function paintConfirmation(c, record = true, focus = true) {
   if(record && history.state?.v!=='confirm')history.pushState({v:'confirm',draft:composeKey(c)},'');
   $('compose').classList.add('compose-review');$('cConfirm').hidden=false;
   if(c.request){
-    const project=(S.snap?.can?.projects||[]).find(p=>p.k===c.project),d=S.details[c.k]||rowFor(c.k)||{};
-    $('cSummary').textContent=c.mode==='new'?`Original request to ${PROVIDER[c.provider]||'the selected agent'} · ${project?.n||'the selected folder'}:`:`Original request for ${d.ti||'this task'}:`;
+    const original=c.request.summary||(c.request.command==='new'?`Send to ${PROVIDER[c.request.payload.p]||'the selected agent'}, folder ${c.request.payload.w}:`:`Request for task ${c.k}:`);
+    $('cSummary').textContent=`Original request. ${original}`;
   }
   $('cQuote').textContent=c.mode==='stop'?'':c.final||'';
   const pending=c.request && ['sending','uncertain'].includes(c.request.status),accepted=c.request?.status==='accepted';
@@ -1783,7 +1786,7 @@ async function go() {
   const problem=taskSendProblem(c);if(problem){$('cNote').textContent=problem;return;}
   const command=c.mode==='new'?'new':c.mode==='stop'?'stop':'say';
   const payload=c.mode==='new'?{p:c.provider,w:c.project,text:c.final}:c.mode==='stop'?{k:c.k}:{k:c.k,text:c.final,answer:['answer','answertext'].includes(c.mode)};
-  const request={id:toB64url(crypto.getRandomValues(new Uint8Array(9))),command,payload,status:'sending',at:Date.now()};
+  const request={id:toB64url(crypto.getRandomValues(new Uint8Array(9))),command,payload,summary:$('cSummary').textContent,status:'sending',at:Date.now()};
   c.request=request;
   if(!saveCompose(c,true)){c.request=null;$('cGo').disabled=true;$('cNote').textContent='This device could not save the request safely. Nothing was sent; your draft stays open.';return;}
   $('cText').readOnly=true;$('cGo').disabled=true;$('cNote').textContent='Sending. Waiting for the PC’s saved acknowledgement.';
