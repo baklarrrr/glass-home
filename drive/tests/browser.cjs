@@ -57,6 +57,10 @@ async function phoneSeal(page, obj) {
   return '1.' + await L.seal(subtle, down, obj);
 }
 
+const warn = async (pg) => ({ text: await pg.textContent('#speedWarn'), shown: await pg.isVisible('#speedWarn'), level: await pg.getAttribute('#hud', 'data-speed-level') });
+// Where the dash and its unit sit: they must not move when the self-check line comes and goes.
+const dashAt = (pg) => pg.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(); return { speed: Math.round(r('speed').top), unit: Math.round(r('heading').top) }; });
+
 async function layoutOk(page, what) {
   const r = await page.evaluate(() => {
     const d = document.documentElement;
@@ -100,13 +104,28 @@ async function layoutOk(page, what) {
   check((await page.textContent('#heading')) === 'NE', 'course 47° shows as NE');
   check((await page.textContent('#status')) === 'Phone GPS', 'top line says Phone GPS');
   await shot('03a-speed-live');
+  check(!(await warn(page)).shown, 'self-check: a live speed carries no warning line');
+  const liveDash = await dashAt(page);
   await page.waitForTimeout(8300);
   check(!(await page.isVisible('#controls')), 'controls hide themselves after 8 s');
-  await shot('03-speed-live');
-  await layoutOk(page, 'speed screen');
+  // The 16.1 m/s reading is now old: no number from the past, a dash, and the amber line says why.
+  let lost = await warn(page);
+  check((await page.textContent('#speed')) === '—' && lost.shown && lost.text === 'GPS speed lost\nPair your phone when parked' && lost.level === 'warn', `self-check: the speed stopped coming: a dash and the reason (${JSON.stringify(lost.text)})`);
+  const lostDash = await dashAt(page);
+  check(lostDash.speed === liveDash.speed && lostDash.unit === liveDash.unit, `self-check: the dash and unit do not move when the line appears (${JSON.stringify(liveDash)} -> ${JSON.stringify(lostDash)})`);
+  await layoutOk(page, 'speed lost');
+  await shot('03b-speed-lost');
+  // A slow reading first (walking pace): the speed is back and there is no heading, since none was good a moment ago.
   await page.evaluate(() => window.__drive(1.0, 200));
   await page.waitForTimeout(50);
   check((await page.textContent('#heading')) === '', 'no heading below walking speed');
+  // Then a fresh driving reading: live, controls still hidden, no warning and nothing else changed.
+  await page.evaluate(() => window.__drive(16.1, 47));
+  await page.waitForTimeout(100);
+  lost = await warn(page);
+  check((await page.textContent('#speed')) === '58' && !lost.shown && lost.level === 'ok' && (await page.textContent('#status')) === 'Phone GPS' && !(await page.isVisible('#controls')), 'self-check: speed back means the line is gone at once, with the controls still hidden');
+  await shot('03-speed-live');
+  await layoutOk(page, 'speed screen');
 
   // 2. With the phone link address: pairing, then directions.
   await page.goto(`${base}?t=${V.t}&p=${V.phone.pub}`);
@@ -297,7 +316,6 @@ async function layoutOk(page, what) {
   await fresh.close();
 
   // 5. Speed self-check: a plain amber line when speed is dead and nothing healthy backs it up; silent otherwise.
-  const warn = async (pg) => ({ text: await pg.textContent('#speedWarn'), shown: await pg.isVisible('#speedWarn'), level: await pg.getAttribute('#hud', 'data-speed-level') });
   // GPS that was started last time comes back on by itself, so each scenario forgets that first and starts GPS by a press.
   const open5 = async (pg, url) => { await pg.goto(base); await pg.evaluate(() => localStorage.removeItem('bd.gps')); await pg.goto(url); };
   const startGps = async (pg) => {
@@ -316,10 +334,13 @@ async function layoutOk(page, what) {
   await p5.waitForTimeout(200);
   check(!(await warn(p5)).shown, 'self-check: nothing to say before GPS is started');
   await startGps(p5);
+  const askingDash = await dashAt(p5);
   await p5.evaluate(() => window.__deny());
   await p5.waitForTimeout(60);
   let w = await warn(p5);
-  check(w.shown && w.text === 'Glasses location not allowed\nPair your phone' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
+  const deniedDash = await dashAt(p5);
+  check(deniedDash.speed === askingDash.speed && deniedDash.unit === askingDash.unit, `self-check: the dash and unit stay put when the refusal line appears (${JSON.stringify(askingDash)} -> ${JSON.stringify(deniedDash)})`);
+  check(w.shown && w.text === 'Glasses location not allowed\nPair your phone when parked' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
   check((await p5.textContent('#speed')) === '—', 'self-check: the dash stays a dash');
   await layoutOk(p5, 'refused location, no phone');
   await shot5('11-refused-no-phone');
@@ -328,7 +349,7 @@ async function layoutOk(page, what) {
   await p5.keyboard.press('ArrowRight'); await p5.keyboard.press('ArrowRight');
   await p5.keyboard.press('Enter');
   await p5.waitForTimeout(30);
-  check((await p5.isVisible('#panel')) && (await p5.textContent('#panelSpeed')) === 'Speed: none. Glasses location not allowed. Pair your phone', 'self-check: the Directions panel says the speed source is none, and why');
+  check((await p5.isVisible('#panel')) && (await p5.textContent('#panelSpeed')) === 'Speed: none. Glasses GPS blocked.', 'self-check: the Directions panel says the speed source is none, and why, on one line');
   await layoutOk(p5, 'directions panel with the speed source');
   await p5.keyboard.press('Escape');                                                                           // focus comes back on Directions
   await p5.keyboard.press('ArrowLeft'); await p5.keyboard.press('ArrowLeft');
@@ -348,16 +369,25 @@ async function layoutOk(page, what) {
   await p5.evaluate(() => window.__deny());
   await p5.waitForTimeout(60);
   w = await warn(p5);
-  check(w.text === 'Glasses location not allowed\nAccept the code on your phone' && w.level === 'warn' && !w.shown, `self-check: while pairing the code is the one thing on screen; the line waits behind it (${JSON.stringify(w.text)})`);
+  check(w.text === 'Glasses location not allowed\nCompare the code on your phone' && w.level === 'warn' && !w.shown, `self-check: while pairing the code is the one thing on screen; the line waits behind it (${JSON.stringify(w.text)})`);
   await layoutOk(p5, 'refused location, pairing');
   await shot5('12-refused-pairing');
 
   // (c) A live phone link is the speed source to come: no warning on top of a dash.
   await open5(p5, `${base}?t=${V.t}&p=${V.phone.pub}`);
   await p5.waitForFunction(() => window.__bakarDrive && window.__bakarDrive.state.keys);
+  await p5.waitForFunction(() => window.__bakarDrive.state.links.length > 0);                                // the page has opened its brokers (blocked here)
   const hello5b = await p5.evaluate(() => (window.__bakarDrive.state.hellos.push('HelloIdTest6'), 'HelloIdTest6'));
   const frame5 = (seq, gps) => ({ m: 'nav', sid: 'SelfCheck01', seq, at: Date.now(), re: hello5b, nav: null, gps });
+  // The brokers are blocked in this test, so the page never gets a real connection: say it is up, as it is once the phone has answered.
+  // The page's own broker attempts would flip it back as they fail, so they are ended first.
+  const net5 = (n) => p5.evaluate((v) => {
+    const S = window.__bakarDrive.state;
+    for (const l of S.links) { clearTimeout(l.retryTimer); try { l.end(true); } catch (e) { /* closed already */ } }
+    S.links = []; S.net = v; window.__bakarDrive.render();
+  }, n);
   await p5.evaluate((x) => window.__bakarDrive.onDown(x), await phoneSeal(p5, frame5(1, null)));
+  await net5('up');
   await startGps(p5);
   await p5.evaluate(() => window.__deny());
   await p5.waitForTimeout(60);
@@ -377,6 +407,25 @@ async function layoutOk(page, what) {
   check((await p5.textContent('#speed')) === '—' && w.text === 'Glasses location not allowed\nPhone not answering' && w.level === 'warn', `self-check: the phone went quiet as well: both named (${w.text})`);
   await layoutOk(p5, 'both sources dead');
   await shot5('14-both-dead');
+  // The glasses cannot reach the brokers at all: that is the story, not the phone.
+  await net5('down');
+  w = await warn(p5);
+  check(w.text === 'Glasses location not allowed\nNo signal to phone' && w.level === 'warn', `self-check: no signal is named as no signal, not as a silent phone (${JSON.stringify(w.text)})`);
+  await layoutOk(p5, 'both sources dead, no signal');
+  await shot5('14b-both-dead-no-signal');
+  // The display slept and woke: the page opens its brokers again, and until the phone answers it is being found, not silent.
+  await net5('up');
+  await p5.evaluate(() => { window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('pageshow')); });
+  await p5.waitForTimeout(40);
+  await p5.keyboard.press('Enter');                                                                            // Start GPS again, by a press: the glasses refuse again
+  if ((await p5.textContent('#gpsBtn')) !== 'Stop GPS') await p5.keyboard.press('Enter');
+  await p5.evaluate(() => window.__deny());
+  await p5.waitForTimeout(40);
+  w = await warn(p5);
+  const woke = await p5.evaluate(() => ({ net: window.__bakarDrive.state.net, gps: window.__bakarDrive.state.gps.status }));
+  check(woke.net === 'connecting' && woke.gps === 'denied' && !w.shown && w.level === 'wait', `self-check: the display woke, the link is opening again and the glasses refuse again: no false "Phone not answering" (${JSON.stringify(woke)} ${JSON.stringify(w.text)})`);
+  await shot5('14c-wake-reconnecting');
+  await net5('up');
   // (e) Turn-by-turn on screen, then the phone goes quiet: the small speed corner carries the same two lines.
   await p5.evaluate((x) => window.__bakarDrive.onDown(x), await phoneSeal(p5, { m: 'nav', sid: 'SelfCheck01', seq: 3, at: Date.now(), re: hello5b,
     nav: { ss: 'OnRoute', turn: 'TURN_RIGHT', exit: 0, toTurn: '350 m', next: 'King St W', street: 'Bay St', left: '12 km', secs: 1380, pct: 41.5, sim: false }, gps: null }));
@@ -384,10 +433,59 @@ async function layoutOk(page, what) {
   check(await p5.isVisible('#turn') && !(await warn(p5)).shown, 'self-check: a live link with directions shows no warning');
   await p5.waitForTimeout(4300);
   w = await warn(p5);
-  check(await p5.isVisible('#turn') && w.shown && w.text === 'Glasses location not allowed\nPhone not answering', `self-check: directions paused and no speed anywhere: the corner says why (${JSON.stringify(w.text)})`);
+  check(await p5.isVisible('#turn') && w.shown && w.text === 'Glasses GPS blocked\nPhone not answering', `self-check: directions paused and no speed anywhere: the corner says why, in its short words (${JSON.stringify(w.text)})`);
+  const corner = await p5.evaluate(() => { const e = document.getElementById('speedWarn'); const cs = getComputedStyle(e); return { h: e.getBoundingClientRect().height, line: parseFloat(cs.lineHeight), w: e.getBoundingClientRect().width, size: parseFloat(cs.fontSize) }; });
+  check(corner.h <= corner.line * 2 + 1, `self-check: the corner warning is exactly two lines, not three (${Math.round(corner.h)} px high, ${Math.round(corner.line)} px a line, ${corner.size} px type)`);
   await layoutOk(p5, 'directions paused, no speed anywhere');
   await shot5('15-guide-both-dead');
+  await net5('down');
+  w = await warn(p5);
+  check(w.text === 'Glasses GPS blocked\nNo signal to phone', `self-check: the corner names no signal too (${JSON.stringify(w.text)})`);
+  const corner2 = await p5.evaluate(() => { const e = document.getElementById('speedWarn'); const cs = getComputedStyle(e); return e.getBoundingClientRect().height <= parseFloat(cs.lineHeight) * 2 + 1; });
+  check(corner2, 'self-check: and it is two lines as well');
+  await layoutOk(p5, 'directions paused, no signal');
+  // The Directions panel does not say "Linked to your phone." while the phone is silent or there is no signal, and its speed line is one line.
+  const openPanel5 = () => p5.evaluate(() => document.getElementById('linkBtn').click());
+  await openPanel5();
+  await p5.waitForTimeout(30);
+  check((await p5.isVisible('#panel')) && (await p5.textContent('#panelState')) === 'No signal right now.' && (await p5.textContent('#panelSpeed')) === 'Speed: none. Glasses GPS blocked.', `self-check: the panel agrees with the screen on no signal (${await p5.textContent('#panelState')} / ${await p5.textContent('#panelSpeed')})`);
+  await layoutOk(p5, 'directions panel, no signal, code shown');
+  await p5.keyboard.press('Escape');
+  await net5('up');
+  await openPanel5();
+  await p5.waitForTimeout(30);
+  check((await p5.isVisible('#panel')) && (await p5.textContent('#panelState')) === 'Your phone is not answering.' && (await p5.textContent('#panelSpeed')) === 'Speed: none. Glasses GPS blocked.', `self-check: the panel agrees with the screen on a silent phone (${await p5.textContent('#panelState')} / ${await p5.textContent('#panelSpeed')})`);
+  await layoutOk(p5, 'directions panel, silent phone, code shown');
+  await shot5('16-panel-silent-phone');
   await fresh5.close();
+
+  // (f) Launch with a saved phone link: GPS comes back on by itself and the glasses refuse it at once, before the page has read the saved
+  // link (reading it takes a while on the glasses). Until the link is read nothing is known about the phone, so no "Pair your phone".
+  const fresh6 = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
+  await fresh6.route(/^(?!http:\/\/127\.0\.0\.1)/, (r) => r.abort());
+  await fresh6.addInitScript(FAKE_GEO);
+  await fresh6.addInitScript(`(() => {
+    try { localStorage.setItem('bd.gps', 'on'); } catch (e) {}
+    const g = navigator.geolocation, watch = g.watchPosition.bind(g);
+    g.watchPosition = (ok, fail) => { const id = watch(ok, fail); setTimeout(() => fail({ code: 1 }), 0); return id; };
+    for (const name of ['importKey', 'deriveBits', 'deriveKey', 'generateKey']) {
+      const f = SubtleCrypto.prototype[name];
+      SubtleCrypto.prototype[name] = async function (...a) { await new Promise((r) => setTimeout(r, 250)); return f.apply(this, a); };
+    }
+    window.__warnLog = []; window.__samples = [];
+    new MutationObserver(() => { const e = document.getElementById('speedWarn'); window.__warnLog.push(e.hidden ? '' : e.textContent); })
+      .observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+    setInterval(() => { const b = window.__bakarDrive; if (b) window.__samples.push([b.state.setup, b.state.gps.status]); }, 20);
+  })();`);
+  const p6 = await fresh6.newPage();
+  p6.on('pageerror', (e) => errors.push(String(e)));
+  await p6.goto(`${base}?t=${V.t}&p=${V.phone.pub}`);
+  await p6.waitForFunction(() => window.__bakarDrive && window.__bakarDrive.state.setup === true);
+  await p6.waitForTimeout(300);
+  const launch = await p6.evaluate(() => ({ log: window.__warnLog, samples: window.__samples, status: window.__bakarDrive.state.gps.status, net: window.__bakarDrive.state.net }));
+  check(launch.samples.some(([setup, status]) => setup === false && status === 'denied'), 'self-check: at launch the refusal really did land before the saved phone link was read');
+  check(launch.status === 'denied' && launch.log.every((t) => t === ''), `self-check: and the page said nothing false about the phone meanwhile (${JSON.stringify(launch.log.filter((t) => t))})`);
+  await fresh6.close();
 
   // Size budget for the first load (without the phone link library).
   const sizes = ['index.html', 'style.css', 'app.js', 'link-core.js', 'speed-check.js', '../drive-location.js'].map((f) => fs.statSync(path.join(ROOT, 'drive', f)).size);
