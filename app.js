@@ -37,11 +37,13 @@ const SITE = 'https://baklarrrr.github.io/';
 // The Apps and Games lists live in apps.json so another session can add an app or a game without touching this
 // code. These are used when it can't be read.
 let APPS = [
-  { group: 'Studio', name: 'Bakar Studio', url: SITE + 'studio-glass/', why: 'Renders, AI at work and today’s AI cost', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
-  { group: 'Listen', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Now playing and controls', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
-  { group: 'Listen', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'EQ, tone and loudness for the glasses’ speakers', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
-  { group: 'Watch', name: 'Watchlight', url: 'https://watchlight.heralds.gg/', why: 'YouTube on the glasses, from Herald', icon: 'play' },
-  { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
+  { group: 'Studio', name: 'Studio Glass', url: SITE + 'studio-glass/', why: 'Review pictures and renders from your PC', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
+  { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
+  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Playback controls for the Android companion', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Adjust Tidal’s sound on Android', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
+  { group: 'Driving', name: 'Bakar Drive', url: SITE + 'glass-home/drive/', why: 'Phone GPS and paired turn directions', icon: 'glass-home/drive/icon-mono.svg', pass: 'drive' },
+  { group: 'Utilities', name: 'Battery', url: SITE + 'battery-glass/', why: 'Glasses level and paired battery history', icon: 'battery-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Activities', name: 'Gulzar', url: SITE + 'gulzar/', why: 'Guided cooking, crafts and drawing', icon: 'gulzar/icon-mono.svg' },
 ];
 let GAMES = [];
 const GLYPHS = {
@@ -1316,6 +1318,7 @@ function stopReading() {
 
 function appRow(app) {
   const b = el('button', 'row app');
+  b.dataset.appUrl = app.url;
   const icon = el('span', 'icon');
   if (app.icon && !GLYPHS[app.icon]) icon.dataset.src = SITE + app.icon;
   icon.style.setProperty('--icon', `url("${iconSrc(app)}")`);
@@ -1338,6 +1341,7 @@ async function loadApps() {
 
 function renderApps() {
   const list = $('appRows');
+  const focusedUrl = document.activeElement?.dataset.appUrl;
   list.textContent = '';
   let group = '';
   for (const app of APPS) {
@@ -1353,6 +1357,7 @@ function renderApps() {
     li.append(appRow(game));
     games.append(li);
   }
+  if (focusedUrl) focusApp(focusedUrl);
   $('gamesNote').textContent = GAMES.length
     ? 'Games stay here, away from Work and Apps.'
     : 'No web games added yet. Games you add will appear here, away from Work and Apps. Meta’s own games stay in the glasses’ main app list.';
@@ -1391,14 +1396,30 @@ async function keepIcons() {
   }
 }
 
+function focusApp(url) {
+  const button = [...document.querySelectorAll('.row.app')].find(b => b.dataset.appUrl === url && !b.closest('[hidden]'));
+  if (button) button.focus();
+  return Boolean(button);
+}
+
 function launch(app) {
-  if (/^https:\/\/baklarrrr\.github\.io\/glass-home\/(?:drive\/)?(?:[?#]|$)/.test(app.url)) { selectTab('drive'); return; }
-  if (/studio-glass/.test(app.url)) { selectTab('review'); return; }
-  let url = app.url;
-  // The app opens inside Bakar Home's own storage, so it gets its pairing in its address, the way it was added.
-  const pass = app.pass && passPairing(app.pass);
-  if (pass) url += `#t=${encodeURIComponent(pass.t)}&k=${encodeURIComponent(pass.k)}`;
-  location.assign(url);
+  const url = new URL(app.url);
+  // Only these exact app addresses may receive a pairing. Never forward it to another catalog entry.
+  const destinations = {
+    'studio-glass/': 'sg', 'tidal-glass/': 'tg', 'tidal-glass/sound/': 'tg',
+    'battery-glass/': 'tg', 'glass-home/drive/': 'drive',
+  };
+  const pairing = destinations[url.pathname.slice(1)];
+  if (url.origin === new URL(SITE).origin && pairing && app.pass === pairing) {
+    const data = pairing === 'drive' ? drivePhone.link?.addr : passPairing(pairing);
+    if (data) {
+      const fragment = pairing === 'drive' ? { t: data.t, p: data.p } : { t: data.t, k: data.k };
+      url.hash = new URLSearchParams(fragment).toString();
+    }
+  }
+  // The public catalog address identifies the focus row. Keep pairing data out of history state.
+  history.replaceState({ v: 'list', tab: S.tab, appUrl: app.url }, '');
+  location.assign(url.href);
 }
 
 // ---- pairing ---------------------------------------------------------------------------------------
@@ -2001,8 +2022,10 @@ async function main() {
   HomeShell.init();
   renderApps();
   loadApps();
-  const start = TABS.includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'now';
-  history.replaceState({ v: 'list', tab: start }, '');
+  const returned = history.state;
+  const fromApp = returned?.appUrl && ['apps', 'games'].includes(returned.tab);
+  const start = fromApp ? returned.tab : TABS.includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'now';
+  history.replaceState(fromApp ? returned : { v: 'list', tab: start }, '');
   S.tab = start;
   let ready = false;
   try { ready = await setupKeys(); } catch (e) { ready = false; }
@@ -2012,7 +2035,7 @@ async function main() {
   renderWork();
   showPane(start);
   requestAnimationFrame(placeTabline);
-  focusFirst(start);
+  if (!fromApp || !focusApp(returned.appUrl)) focusFirst(start);
   renderState();
   registerServiceWorker();
   if (ready || S.tg) wake();

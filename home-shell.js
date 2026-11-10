@@ -60,7 +60,7 @@ window.HomeShell=(()=>{
   }
   function paint(){
     const group=groups[S.tab]||'work';
-    by('appContext').textContent=S.view==='compose'?'Message':S.view==='detail'?'Chat':group==='review'?'Pictures':S.tab==='watch'?'Watch':group==='drive'?'Drive':'Work';
+    by('appContext').textContent=S.view==='compose'?'Message':S.view==='detail'?'Chat':group==='review'?'Pictures':S.tab==='watch'?'Watch':group==='drive'?'Drive':S.tab==='apps'?'Apps':S.tab==='games'?'Games':'Work';
     for(const button of document.querySelectorAll('[data-section]')){button.setAttribute('aria-current',button.dataset.section===group?'page':'false');button.disabled=S.view!=='list';button.title=button.disabled?'Use Back to return before changing sections.':'';}
     for(const button of document.querySelectorAll('.tab')){button.hidden=groups[button.dataset.tab]!==group;button.disabled=S.view!=='list';}
     document.querySelector('.tabs').hidden=group==='review';
