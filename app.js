@@ -39,7 +39,7 @@ const SITE = 'https://baklarrrr.github.io/';
 let APPS = [
   { group: 'Studio', name: 'Studio Glass', url: SITE + 'studio-glass/', why: 'Review pictures and renders from your PC', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
   { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
-  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Playback controls for the Android companion', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'iPhone Bluetooth audio · Android controls', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
   { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Adjust Tidal’s sound on Android', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
   { group: 'Driving', name: 'Bakar Drive', url: SITE + 'glass-home/drive/', why: 'Phone GPS and paired turn directions', icon: 'glass-home/drive/icon-mono.svg', pass: 'drive' },
   { group: 'Utilities', name: 'Battery', url: SITE + 'battery-glass/', why: 'Glasses level and paired battery history', icon: 'battery-glass/icon-mono.svg', pass: 'tg' },
