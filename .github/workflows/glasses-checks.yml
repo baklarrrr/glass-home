@@ -1,0 +1,22 @@
+name: Glasses release
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    name: Home and Drive release checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install the browser test dependency
+        run: npm ci --prefix tools/release-checks --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium
+        run: tools/release-checks/node_modules/.bin/playwright install --with-deps chromium
+      - name: Check Home, both Drive entry points, and offline release identity
+        run: bash tools/release-checks/run.sh

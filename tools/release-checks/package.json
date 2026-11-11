@@ -1,0 +1,7 @@
+{
+  "name": "glasses-release-checks",
+  "private": true,
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
