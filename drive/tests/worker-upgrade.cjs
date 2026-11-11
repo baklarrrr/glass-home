@@ -38,14 +38,14 @@ async function run(){
   }catch{res.writeHead(404).end();}
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const browser=await chromium.launch({executablePath:process.env.CHROME_PATH,args:['--disable-background-networking','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1']});
+ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH,args:['--disable-background-networking','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1','--proxy-server=http://127.0.0.1:9','--proxy-bypass-list=127.0.0.1;localhost']});
  try{
   for(const [slug,cache] of [['','glass-home-v'],['drive/','bakar-drive-v']]){
    for(const [ref,priorBuild] of [['56523c9',null],['74bbe03',44]])for(const active of [true,false]){
     old=true;priorDir=path.join(baseline,ref);
     const ctx=await browser.newContext({viewport:{width:600,height:600}});
-    await ctx.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
-    await ctx.routeWebSocket(/.*/,s=>s.close());
+    // Do not intercept local navigation or service-worker fetches. Chromium's
+    // loopback-only proxy and resolver isolate external hosts without introducing a DevTools routing race.
     await ctx.addInitScript(()=>{
      window.documentMarker=crypto.randomUUID();
      if(location.pathname.startsWith('/glass-home/'))sessionStorage.loads=String(Number(sessionStorage.loads||0)+1);
