@@ -1,4 +1,5 @@
 'use strict';
+const APP_BUILD = 42; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -126,13 +127,6 @@ function drawArrow(turn, exit) {
 
 // The shared feed reads speed only. This wrapper also notes the GPS course (a direction, never a position) when
 // the phone reports one at driving speed.
-const geo = navigator.geolocation && {
-  watchPosition(ok, fail, options) {
-    return navigator.geolocation.watchPosition((p) => { noteHeading(p); ok(p); }, fail, options);
-  },
-  clearWatch(id) { navigator.geolocation.clearWatch(id); },
-};
-
 function noteHeading(p) {
   const c = p && p.coords, h = c && c.heading;
   const fresh = p && Number.isFinite(p.timestamp) && Date.now() - p.timestamp < StudioDriveLocation.MAX_AGE_MS;
@@ -146,7 +140,10 @@ function compass(deg) {
   return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8];
 }
 
-const feed = new StudioDriveLocation.Feed({ geo, permissions: navigator.permissions, change: onGps });
+const motion = typeof DriveGuide==='undefined'?null:new DriveGuide.Guide();
+const feed = new StudioDriveLocation.Feed({geo:navigator.geolocation,permissions:navigator.permissions,change:onGps,
+  transform:position=>{motion?.fix(position);const sample=motion?motion.fill(position):position;noteHeading(sample);return sample;}
+});
 
 // Trip: time and an estimated distance from reported speed (not from positions), while a speed is live. One source
 // at a time (the phone's while it is fresh, else the glasses'), so nothing counts twice.
@@ -169,6 +166,9 @@ function phoneSpeed(now = performance.now()) {
 
 function onGps(reading) {
   S.gps = reading;
+  if(reading.status==='waiting'&&!local('bd.gps'))local('bd.gps','asked');
+  if(reading.status==='live'&&local('bd.gps')!=='on')local('bd.gps','on');
+  if(reading.status==='denied')local('bd.gps','denied');
   if (phoneSpeed()) { render(); return; }          // the phone's speed is on screen and in the trip already
   if (reading.status === 'live') addTrip(reading.speed); else S.trip.lastAt = 0;
   render();
@@ -176,7 +176,7 @@ function onGps(reading) {
 
 function toggleGps() {
   if (feed.enabled) { feed.stop(); local('bd.gps', 'off'); }
-  else { feed.enable(); local('bd.gps', 'on'); }
+  else { local('bd.gps','asked'); feed.enable(); }
   render();
 }
 
@@ -423,9 +423,9 @@ function sunLight(when = new Date()) {
 }
 
 const GPS_WORDS = {
-  off: 'Phone GPS off', waiting: 'Finding GPS…', 'no-response': 'No GPS answer yet', live: 'Phone GPS',
+  off: 'App GPS stopped', waiting: 'Finding GPS…', 'no-response': 'No GPS answer yet', live: 'App GPS',
   stale: 'GPS signal old', inaccurate: 'GPS too rough', invalid: 'GPS reading rejected', unavailable: 'No speed from GPS',
-  timeout: 'GPS timed out', disconnected: 'GPS unavailable', denied: 'Location not allowed', paused: 'GPS paused',
+  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', denied: 'Location not allowed', paused: 'GPS paused',
   unsupported: 'No GPS here',
 };
 
@@ -444,7 +444,10 @@ function topLine(view) {
       if (n.ss === 'OffRoute') return 'Off route';
       if (n.ss === 'RouteRebuilding' || n.ss === 'RouteNeedsRebuild') return 'Rerouting…';
       return 'Bakar Drive';
-    default: return S.shown && S.shown.text ? 'No speed' : (GPS_WORDS[S.gps.status] || 'Phone GPS');   // the amber line under the dash says why
+    default:
+      if(S.gps.status==='live'&&S.gps.source==='estimated')return 'Speed estimated from positions';
+      if(S.gps.status==='unavailable'&&feed.report().fresh&&feed.report().coordinates)return 'Location found · measuring speed';
+      return S.shown && S.shown.text ? 'No speed' : (GPS_WORDS[S.gps.status] || 'App GPS');   // the amber line under the dash says why
   }
 }
 
@@ -639,7 +642,9 @@ $('panelStudio').addEventListener('click',()=>{
 
 function visible() {
   const on = !document.hidden;
-  feed.setVisible(on);
+  const preference=local('bd.gps');
+  if(!on&&feed.visible)motion?.clearMotion?.();
+  feed.setVisible(on,{autoStart:preference!=='off',resumeOnly:preference==='asked'||preference==='denied'});
   if (on) { S.openedAt = performance.now(); openLink(); } else closeLink();
   render();
 }
@@ -651,10 +656,16 @@ function tickClock() {
 }
 
 (async () => {
-  // GPS comes back on by itself only if it was on last time and the browser already allows it (no new prompt).
-  if (local('bd.gps') === 'on') feed.enabled = true;
+  const buildLabel=document.createElement('small');
+  buildLabel.id='runningBuild';
+  buildLabel.textContent='v'+APP_BUILD;
+  buildLabel.setAttribute('aria-label','Bakar Drive build '+APP_BUILD);
+  // The same label remains visible above the full-screen Directions panel.
+  Object.assign(buildLabel.style,{position:'fixed',right:'5vmin',bottom:'0.7vmin',zIndex:'3',
+    fontSize:'14px',lineHeight:'1.1',fontWeight:'500',color:'#99a69f',pointerEvents:'none'});
+  document.body.append(buildLabel);
   document.addEventListener('visibilitychange', visible);
-  window.addEventListener('pagehide', () => { feed.setVisible(false); closeLink(); });
+  window.addEventListener('pagehide', () => { motion?.clearMotion?.();feed.setVisible(false);closeLink(); });
   window.addEventListener('pageshow', visible);
   window.addEventListener('online', () => { for (const l of S.links) if (!l.connected) { clearTimeout(l.retryTimer); l.retryTimer = 0; l.fails = 0; scheduleRetry(l); } });
   tickClock();

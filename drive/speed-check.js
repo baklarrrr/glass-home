@@ -22,10 +22,11 @@
 
   // What backs the glasses' own GPS up, in words. "Compare", not "accept": the wearer taps Yes on the phone only when the
   // number it asks about is the one the glasses show (the Journal's own rule), and Studio Drive already says it this way.
-  function backup(link) {
+  function backup(link,gpsStatus) {
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
-      case 'none': return 'pair your phone';
+      case 'none': return gpsStatus==='denied'?'allow location for this app':
+        gpsStatus==='unsupported'?'location API unavailable':'waiting for a new fix';
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -70,7 +71,7 @@
     const quiet = { level: gpsStatus === 'live' ? 'ok' : 'wait', text: '', short: '' };
     if (!Object.prototype.hasOwnProperty.call(FAULTS, gpsStatus) || HEALTHY.includes(link)) return quiet;
     const fault = FAULTS[gpsStatus];
-    const way = backup(link);
+    const way = backup(link,gpsStatus);
     const then = `${way[0].toUpperCase()}${way.slice(1)}`;
     // two short lines: what is wrong, then what to do
     return { level: 'warn', text: `${fault[0]}\n${then}`, short: `${fault[1] || fault[0]}\n${then}` };

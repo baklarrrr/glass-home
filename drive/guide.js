@@ -108,12 +108,13 @@
 
   class Guide {
     constructor({ now = Date.now } = {}) { this.now = now; this.route = null; this.anchor = null; this.moved = null; this.trail = []; this.reset(); }
+    clearMotion() { this.trail=[];this.anchor=null;this.moved=null; }
     // The way the car is moving, for a runtime whose location gives no heading: the bearing between two fixes at least
     // 12 m apart (more when the fix is rough). The earlier fix is held in page memory for this only and replaced as the car
     // moves; a reported heading always wins. Nothing here needs a route.
     track(c, at) {
       // A few seconds of fixes, for a speed where the device reports none (see estimate). Page memory only.
-      this.trail = this.trail.filter((p) => at - p.at <= 6000 && at > p.at);
+      this.trail = this.trail.filter((p) => at - p.at <= 12000 && at > p.at);
       this.trail.push({ lat: c.latitude, lon: c.longitude, at, acc: c.accuracy });
       const a = this.anchor;
       if (a && at - a.at <= 15000 && at >= a.at) {
@@ -124,12 +125,12 @@
       this.anchor = { lat: c.latitude, lon: c.longitude, at };
     }
     // Ground speed in metres a second from the last few fixes, for a runtime whose location reports no speed: the distance
-    // from a fix 1.5 to 6 seconds back, over the time between. Movement smaller than the fixes' own scatter counts as
+    // from a fix 1.5 to 6 seconds back (up to 12 seconds for sparse one-shot callbacks), over the time between. Movement smaller than the fixes' own scatter counts as
     // standing still. Null until there are two usable fixes. An estimate from positions, labelled as GPS on screen.
     estimate() {
       const t = this.trail, last = t[t.length - 1];
       if (!last || this.now() - last.at >= FIX_MAX_AGE_MS) return null;
-      const from = t.find((p) => last.at - p.at >= 1500);
+      const from = t.find((p) => last.at-p.at>=1500 && last.at-p.at<=6000) || t.find((p) => last.at-p.at>=1500);
       if (!from) return null;
       const [dx, dy] = flat(from.lat, from.lon, last.lat, last.lon), far = Math.hypot(dx, dy);
       const speed = far < Math.max(5, 0.6 * Math.max(from.acc, last.acc)) ? 0 : far / ((last.at - from.at) / 1000);
@@ -139,16 +140,19 @@
     // filled in. Never a made-up number: with no estimate the fix goes through as it came.
     fill(position) {
       const c = position && position.coords;
-      if (!c || finite(c.speed) || c.speed === 0) return position;
+      if (!c || (finite(c.speed) && c.speed >= 0)) return position;
       const e = this.estimate();
-      if (!e || !finite(e.speed) || this.trail.length === 0 || this.trail[this.trail.length - 1].at !== position.timestamp) return position;
+      if (!e || !finite(e.speed) || this.trail.length === 0 || this.trail[this.trail.length - 1].at !== position.timestamp) {
+        if(c.speed!==-1)return position;
+        return {timestamp:position.timestamp,coords:{latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,speed:null,heading:null}};
+      }
       return { timestamp: position.timestamp, coords: { latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy, speed: e.speed, heading: e.heading } };
     }
     // The course to show or steer by right now, or null: reported by the device, else worked out from movement, and
     // never older than the speed's own limit.
     course(c) {
       if (c && finite(c.heading) && c.heading >= 0 && c.heading < 360 && finite(c.speed) && c.speed >= 2) return c.heading;
-      if (c && finite(c.speed) && c.speed < 2) return null;                   // the device says stopped
+      if (c && finite(c.speed) && c.speed >= 0 && c.speed < 2) return null;                   // the device says stopped
       return this.moved && this.now() - this.moved.at < FIX_MAX_AGE_MS && this.now() >= this.moved.at ? this.moved.deg : null;
     }
     reset() { this.joined = false; this.s = null; this.away = null; this.at = 0; this.offCount = 0; this.offSince = 0; this.done = false; this.doneAt = 0;
@@ -168,6 +172,9 @@
       const r = this.route, c = position && position.coords, at = position && position.timestamp, now = this.now();
       if (!c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
       if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
+      if(Math.abs(c.latitude)>90||Math.abs(c.longitude)>180)return;
+      const previous=this.trail[this.trail.length-1];
+      if(previous&&at<=previous.at)return;
       this.track(c, at);
       if (!r || this.over) return;
       const limit = OFF_BASE_M + c.accuracy;

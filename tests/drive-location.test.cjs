@@ -38,10 +38,18 @@ test('cached fix expires from acquisition rather than arrival',()=>{const h=harn
 test('clock rollback cannot prolong a reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(5000,0);assert.equal(h.feed.snapshot().speed,null);});
 test('future wall clock invalidates a cached reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(0,-1);assert.equal(h.feed.snapshot().speed,null);});
 test('old callbacks do not overwrite newer fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(20));h.watches[0].ok(fix(30,now-1));assert.equal(h.feed.snapshot().speed,72);});
-test('null speed clears preceding valid speed immediately',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].ok(fix(null));assert.equal(h.feed.snapshot().speed,null);assert.equal(h.tasks.size,0);});
-for(const [code,status] of [[1,'denied'],[2,'disconnected'],[3,'timeout']])test('error clears current speed: '+status,()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code});assert.equal(h.feed.snapshot().status,status);assert.equal(h.feed.snapshot().speed,null);assert.equal(h.tasks.size,0);});
+for(const next of [null,-1])test('missing speed holds a valid fix only through its initial lifetime: '+next,()=>{
+ const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());
+ h.advance(3000);h.watches[0].ok(fix(next,now+3000));assert.equal(h.feed.snapshot().speed,36);assert.equal(h.feed.report().held,true);
+ h.advance(2000);assert.equal(h.feed.snapshot().speed,null);
+});
+for(const [code,status] of [[1,'denied'],[2,'disconnected'],[3,'timeout']])test('error respects permission and original speed expiry: '+status,()=>{
+ const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code});
+ if(code!==1){assert.equal(h.feed.snapshot().speed,36);h.advance(MAX_AGE_MS);}
+ assert.equal(h.feed.snapshot().status,status);assert.equal(h.feed.snapshot().speed,null);assert.equal(h.tasks.size,0);
+});
 test('hidden cleanup clears watch zero exactly once, no late update',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(false);h.watches[0].ok(fix());assert.deepEqual(h.clears,[0]);assert.equal(h.feed.snapshot().status,'paused');assert.equal(h.tasks.size,0);});
-test('resume uses existing grant and does not show cached speed',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,2);assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.feed.snapshot().speed,null);});
+test('resume uses existing grant and shows only the still-fresh prior speed',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,2);assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.snapshot().speed,36);h.advance(MAX_AGE_MS);assert.equal(h.feed.snapshot().speed,null);});
 for(const permission of ['prompt','denied'])test('resume never prompts after grant '+permission,async()=>{const h=harness(permission);h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.enabled,false);});
 test('permission query unavailable needs deliberate re-enable',async()=>{const h=harness();h.feed.permissions=null;h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.snapshot().status,'off');});
 test('permission revoked clears watch and prevents resume',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();h.p.state='denied';h.p.onchange();assert.deepEqual(h.clears,[0]);assert.equal(h.feed.enabled,false);assert.equal(h.feed.snapshot().status,'denied');});
@@ -64,7 +72,7 @@ test('details do not turn malformed or future timestamps into an age',()=>{const
 test('details are bounded to one fix and one sanitized error',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();for(let i=0;i<30;i++)h.watches[0].ok({...fix(i),coords:{speed:i,accuracy:5,latitude:40+i,longitude:70,deviceId:'private'}});h.watches[0].fail({code:3,message:'private raw error'});const text=JSON.stringify(h.feed.details());assert.equal(h.feed.details().fixes,30);assert.equal(text.includes('latitude'),false);assert.equal(text.includes('longitude'),false);assert.equal(text.includes('private'),false);assert.equal(text.includes('receivedMono'),false);assert.ok(text.length<500);});
 test('details are copies, not mutable feed records',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code:3});const d=h.feed.details();d.lastFix.at=0;d.lastError.code=1;assert.equal(h.feed.details().lastFix.at,now);assert.equal(h.feed.details().lastError.code,3);});
 test('permission revoked while hidden is not reported as an old grant',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();assert.equal(h.feed.details().permission,'granted');h.feed.setVisible(false);h.p.state='denied';h.feed.setVisible(true);await Promise.resolve();assert.equal(h.feed.details().permission,'denied');assert.equal(h.feed.snapshot().status,'denied');assert.equal(h.watches.length,1);});
-test('unavailable resume permission query clears the old permission claim',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();h.feed.setVisible(false);h.feed.permissions=null;h.feed.setVisible(true);await Promise.resolve();assert.equal(h.feed.details().permission,'unknown');assert.equal(h.feed.snapshot().status,'off');});
+test('a previously observed grant can resume with current permission reported unknown',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();h.feed.setVisible(false);h.feed.permissions=null;h.feed.setVisible(true);await Promise.resolve();assert.equal(h.feed.details().permission,'unknown');assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.watches.length,2);});
 test('permission query completion repaints details without a GPS callback',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();const before=h.states.length;await Promise.resolve();assert.ok(h.states.length>before);assert.equal(h.feed.details().permission,'granted');assert.equal(h.feed.details().fixes,0);});
 test('timeout then denial updates current state and stops watch',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].fail({code:3});assert.equal(h.feed.details().status,'timeout');h.watches[0].fail({code:1});assert.equal(h.feed.snapshot().status,'denied');assert.equal(h.feed.details().status,'denied');assert.equal(h.feed.details().watchActive,false);assert.equal(h.feed.details().lastError.code,1);assert.deepEqual(h.clears,[0]);});
 test('late timeout after denial cannot overwrite denied headline or error',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].fail({code:1});h.watches[0].fail({code:3});assert.equal(h.feed.snapshot().status,'denied');assert.equal(h.feed.details().lastError.code,1);});
@@ -77,8 +85,8 @@ test('return from Work/Watch resumes an already working watch when the host lack
  const h=harness();h.feed.permissions=null;h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());
  h.feed.setVisible(false);assert.equal(h.feed.snapshot().speed,null);
  h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,2);
- assert.equal(h.feed.snapshot().status,'waiting');assert.equal(h.feed.details().permission,'unknown');
- h.watches[0].ok(fix(30));assert.equal(h.feed.snapshot().speed,null);
+ assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.details().permission,'unknown');
+ h.watches[0].ok(fix(30));assert.equal(h.feed.snapshot().speed,36);
  h.watches[1].ok(fix(12));assert.equal(h.feed.snapshot().speed,43.2);
 });
 test('a real permission denial still prevents automatic re-entry after a working fix',async()=>{
@@ -89,4 +97,149 @@ test('a real permission denial still prevents automatic re-entry after a working
 test('a successful watch never overrides an explicit prompt state on resume',async()=>{
  const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.feed.setVisible(false);h.p.state='prompt';
  h.feed.setVisible(true);await Promise.resolve();assert.equal(h.watches.length,1);assert.equal(h.feed.enabled,false);
+});
+
+test('one-shot-only wearable uses real fresh positions, estimates missing Apple speed and ignores hidden callbacks',async()=>{
+ const h=harness(),requests=[];
+ const {Guide}=require('../drive/guide.js');
+ const guide=new Guide({now:h.feed.now});
+ h.feed.transform=p=>{guide.fix(p);return guide.fill(p);};
+ h.feed.geo={getCurrentPosition(ok,fail,options){requests.push({ok,fail,options});}};
+ h.feed.setVisible(true,{autoStart:true});
+ assert.equal(requests.length,1);assert.equal(h.feed.snapshot().status,'waiting');
+ const first=h.feed.now(),position=(at,x,speed)=>({timestamp:at,coords:{latitude:43,longitude:x,accuracy:4,speed,heading:null}});
+ requests[0].ok(position(first,-79,-1));await Promise.resolve();
+ assert.equal(h.feed.report().positions,1);assert.equal(h.feed.snapshot().speed,null);
+ h.advance(4000);assert.equal(requests.length,2);
+ requests[1].ok(position(h.feed.now(),-78.9994,-1));
+ assert.equal(h.feed.snapshot().source,'estimated');assert.ok(h.feed.snapshot().speed>20);
+ const summary=h.feed.report();
+ assert.equal(summary.reason,'positions-estimate');
+ assert.deepEqual(Object.keys(summary).sort(),'accurate callbacks coordinates error fresh held observation permission positions reason source status version'.split(' '));
+ h.advance(4000);assert.equal(requests.length,3);
+ h.feed.setVisible(false);requests[2].ok(position(h.feed.now(),-78.98,22));assert.equal(h.feed.snapshot().speed,null);
+});
+test('repeat timestamps and poor accuracy cannot move the original speed expiry',()=>{
+ const h=harness();h.feed.setVisible(true);h.feed.enable();
+ h.watches[0].ok(fix(10,now));h.advance(3000,0);
+ h.watches[0].ok(fix(10,now));h.watches[0].ok(fix(18,now,400));
+ assert.equal(h.feed.snapshot().speed,36);
+ h.advance(2000,0);assert.equal(h.feed.snapshot().speed,null);
+});
+
+test('a working watch starts on entry even if one-shots never answer and permission is unavailable',async()=>{
+  const h=harness(),probes=[];
+  h.feed.permissions=null;
+  h.feed.geo.getCurrentPosition=ok=>probes.push(ok);
+  h.feed.setVisible(true,{autoStart:true});
+  assert.equal(h.watches.length,1);
+  assert.equal(probes.length,0);
+  h.watches[0].ok(fix(10));
+  h.advance(3500);
+  h.watches[0].ok(fix(11,h.wall));
+  h.advance(3500);
+  assert.equal(h.feed.snapshot().speed,39.6);
+  assert.equal(probes.length,0);
+  h.feed.setVisible(false);
+  h.feed.setVisible(true,{autoStart:true,resumeOnly:true});
+  await Promise.resolve();
+  assert.equal(h.watches.length,2);
+  assert.equal(probes.length,0);
+});
+test('a silent watch leaves a pending permission prompt alone and a later grant enables fallback',async()=>{
+  const h=harness('prompt'),probes=[];
+  h.feed.geo.getCurrentPosition=(ok,fail)=>probes.push({ok,fail});
+  h.feed.setVisible(true,{autoStart:true});
+  await Promise.resolve();
+  assert.equal(h.watches.length,1);
+  h.advance(RESPONSE_NOTICE_MS*2);
+  assert.equal(probes.length,0);
+  assert.equal(h.feed.snapshot().status,'no-response');
+  h.p.state='granted';
+  h.p.onchange();
+  h.advance(0);
+  assert.equal(h.watches.length,1);
+  assert.equal(probes.length,1);
+  probes[0].ok(fix(10,h.wall));
+  assert.equal(h.feed.snapshot().speed,36);
+  h.feed.setVisible(false);
+  assert.deepEqual(h.clears,[0]);
+  h.advance(RESPONSE_NOTICE_MS*2);
+  assert.equal(probes.length,1);
+});
+test('an initially silent one-shot-only host recovers when the first permission query resolves late',async()=>{
+  const h=harness(),probes=[];
+  let resolvePermission;
+  h.feed.permissions={query:()=>new Promise(resolve=>{resolvePermission=resolve;})};
+  h.feed.geo={getCurrentPosition:(ok,fail)=>probes.push({ok,fail})};
+  h.feed.setVisible(true,{autoStart:true});
+  h.advance(RESPONSE_NOTICE_MS*2);
+  assert.equal(probes.length,1);
+  assert.equal(h.feed.snapshot().status,'no-response');
+  resolvePermission(h.p);
+  await Promise.resolve();
+  h.advance(0);
+  assert.equal(probes.length,2);
+  probes[0].fail({code:1});
+  probes[1].ok(fix(9,h.wall));
+  assert.equal(h.feed.snapshot().speed,32.4);
+  h.advance(MAX_AGE_MS);
+  assert.equal(h.feed.snapshot().speed,null);
+});
+test('resume-only entry never starts without a grant; a real permission transition resumes once',async()=>{
+  const h=harness('prompt');
+  h.feed.setVisible(true,{autoStart:true,resumeOnly:true});
+  await Promise.resolve();
+  assert.equal(h.watches.length,0);
+  assert.equal(h.feed.enabled,false);
+  assert.equal(typeof h.p.onchange,'function');
+  h.p.state='granted';
+  h.p.onchange();
+  await Promise.resolve();
+  assert.equal(h.watches.length,1);
+  h.watches[0].ok(fix());
+  assert.equal(h.feed.snapshot().status,'live');
+});
+
+test('an unknown cold reopen with no observed permission or prior fix never prompts',async()=>{
+  const h=harness();
+  h.feed.permissions=undefined;
+  h.feed.setVisible(true,{autoStart:true,resumeOnly:true});
+  await Promise.resolve();
+  assert.equal(h.watches.length,0);
+  assert.equal(h.feed.snapshot().status,'off');
+  assert.equal(h.feed.details().permission,'unknown');
+});
+test('a late grant on a silent watch permits one fallback without adding a second watch',async()=>{
+  const h=harness(),probes=[];
+  let resolvePermission;
+  h.feed.permissions={query:()=>new Promise(resolve=>{resolvePermission=resolve;})};
+  h.feed.geo.getCurrentPosition=(ok,fail)=>probes.push({ok,fail});
+  h.feed.setVisible(true,{autoStart:true});
+  h.advance(RESPONSE_NOTICE_MS);
+  assert.equal(h.watches.length,1);
+  assert.equal(probes.length,0);
+  resolvePermission(h.p);
+  await Promise.resolve();
+  h.advance(0);
+  assert.equal(probes.length,1);
+  h.p.onchange();h.advance(0);
+  assert.equal(probes.length,1);
+  h.watches[0].ok(fix(10,h.wall));
+  probes[0].fail({code:3});
+  assert.equal(h.feed.snapshot().status,'live');
+  assert.equal(h.watches.length,1);
+});
+test('when watch registration throws, first visible gesture falls back to one current-position request',async()=>{
+  const h=harness('prompt'),probes=[];
+  h.feed.geo={watchPosition(){throw new TypeError('unsupported');},getCurrentPosition:ok=>probes.push(ok)};
+  h.feed.setVisible(true,{autoStart:true});
+  await Promise.resolve();
+  h.advance(RESPONSE_NOTICE_MS*2);
+  assert.equal(probes.length,1);
+  probes[0](fix(9,h.wall));
+  assert.equal(h.feed.snapshot().speed,32.4);
+  h.advance(MAX_AGE_MS);
+  assert.equal(probes.length,1);
+  assert.equal(h.feed.snapshot().speed,null);
 });
