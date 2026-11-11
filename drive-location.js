@@ -22,7 +22,7 @@
       schedule=(fn,ms)=>setTimeout(fn,ms), cancel=id=>clearTimeout(id), change=()=>{}}) {
       Object.assign(this,{geo,permissions,transform,now,mono,schedule,cancel,change});
       this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';
-      this.receivedFix=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
+      this.hadGrant=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
       this.state={status:geo?'off':'unsupported',speed:null}; this.permission=null;
       // Page-local facts only: never copy the position object or its coordinates.
       this.facts={attempts:0,fixes:0,positionFixes:0,lastFix:null,lastError:null,permission:'unknown'};
@@ -86,7 +86,7 @@
     }
     // Explicit Start or Retry replaces the watch. Entering the same visible view keeps it.
     enable() { this.denied=false;this.enabled=true; if(this.visible)this.start(true); }
-    stop() { this.observed='off';this.lastGood=null;this.pendingState=null;this.receivedFix=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
+    stop() { this.observed='off';this.lastGood=null;this.pendingState=null;this.hadGrant=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
     setVisible(visible, {autoStart=false, resumeOnly=false}={}) {
       if(this.visible===visible)return;
       this.visible=visible;
@@ -106,18 +106,35 @@
       const epoch=this.epoch;
       // Resume only with an existing grant. Never surprise a returning wearer
       // with a permission prompt after waking a sleeping page.
+      let permission;
       if(!deliberate){
-        let permission;
         try { permission=await this.permissions?.query({name:'geolocation'}); } catch(_) {}
         if(epoch!==this.epoch||!this.visible||!this.enabled)return;
         this.facts.permission=['granted','denied','prompt'].includes(permission?.state)?permission.state:'unknown';
-        // A real callback proves this same page's earlier deliberate request was allowed.
-        // Some glasses runtimes implement geolocation but not Permissions.query. Resume
-        // that existing request after a temporary hide; an explicit prompt/denial still wins.
+        // An earlier granted status or real success callback on this page
+        // permits resuming on hosts without Permissions.query. A current
+        // prompt or denial always wins over that historical observation.
         const known=['granted','denied','prompt'].includes(permission?.state);
-        if(permission?.state!=='granted'&&(known||!this.receivedFix)){
-          this.receivedFix=false;this.enabled=false;
-          this.publish({status:permission?.state==='denied'||this.facts.lastError?.code===1?'denied':'off',speed:null});return;
+        if(permission?.state!=='granted'&&(known||!this.hadGrant)){
+          this.hadGrant=false;
+          this.enabled=false;
+          this.denied=permission?.state==='denied';
+          this.lastGood=null;this.pendingState=null;
+          this.publish({status:this.denied?'denied':'off',speed:null});
+          if(permission?.state==='prompt') {
+            // Just observe. Waking the app cannot launch a permission sheet.
+            this.permission=permission;
+            permission.onchange=()=>{
+              if(epoch!==this.epoch||!this.visible)return;
+              this.facts.permission=permission.state;
+              if(permission.state==='granted'){
+                this.hadGrant=true;this.enabled=true;this.start(true);
+              } else if(permission.state==='denied'){
+                this.denied=true;this.clear();this.publish({status:'denied',speed:null});
+              }
+            };
+          }
+          return;
         }
       }
       ++this.facts.attempts;
@@ -140,7 +157,8 @@
       },RESPONSE_NOTICE_MS);
       // One native request for this visible visit. An incoming status or repaint cannot start another.
       const options={enableHighAccuracy:true,maximumAge:0,timeout:10000};
-      let lastWatchFix=-Infinity,watchTried=false;
+      const startedAt=this.mono();
+      let lastWatchFix=-Infinity, probeExpired=false;
       const active=()=>epoch===this.epoch&&this.visible&&this.enabled;
       const accept=(position,fromWatch)=>{
         if(!active())return;
@@ -160,7 +178,7 @@
           next.status==='live'?(reported?'reported-speed':'positions-estimate'):'need-speed-fixes';
         this.positionFacts={at:Number.isFinite(at)&&at>0&&at<=now?at:null,coordinates,accurate,reason};
         if(fromWatch && fresh && (hasPosition||next.status==='live'))lastWatchFix=this.mono();
-        this.receivedFix=true;
+        if(raw&&Number.isFinite(at)&&at>0)this.hadGrant=true;
         this.facts.lastFix={at:Number.isFinite(at)&&at>0&&at<=now?at:null,
           receivedMono:this.mono(),initialAge:Number.isFinite(at)&&at>0&&at<=now?now-at:null,
           accuracy:Number.isFinite(raw?.accuracy)&&raw.accuracy>=0?raw.accuracy:null,
@@ -178,70 +196,100 @@
         const code=[1,2,3].includes(error?.code)?error.code:null;
         this.facts.lastError={code,at:this.now(),attempt:this.facts.attempts};
         if(code===1){
-          this.lastGood=null;this.pendingState=null;this.denied=true;this.receivedFix=false;this.enabled=false;this.clear();
+          this.lastGood=null;this.pendingState=null;this.denied=true;this.hadGrant=false;this.enabled=false;this.clear();
           this.observed='denied';this.publish({status:'denied',speed:null});return;
         }
         if(!this.observe({status:code===3?'timeout':code===2?'disconnected':'error',speed:null}))return;
         if(this.timer!==null){this.cancel(this.timer);this.timer=null;}
       };
-      // The glasses runtime can expose only getCurrentPosition. Keep at most one
-      // outstanding one-shot and stop polling when the watch supplies fresh fixes.
+      // A second API call while the first prompt is open can stack permission
+      // sheets. Poll only after evidence of permission; leave a silent watch alive.
+      const mayPoll=()=>this.facts.permission==='granted'||
+        (this.facts.permission==='unknown'&&this.hadGrant);
       const scheduleProbe=(delay=4000)=>{
-        if(!this.geo.getCurrentPosition||!active()||this.probeDeadline!==null)return;
+        if(!this.geo.getCurrentPosition||!active()||!mayPoll()||this.probeDeadline!==null)return;
         if(this.probeTimer!==null)this.cancel(this.probeTimer);
         this.probeTimer=this.schedule(probe,delay);
       };
       const probe=()=>{
         if(!active()||!this.geo.getCurrentPosition||this.probeDeadline!==null)return;
         if(this.probeTimer!==null){this.cancel(this.probeTimer);this.probeTimer=null;}
-        if(this.mono()-lastWatchFix<4000){scheduleProbe();return;}
+        const watchAge=this.mono()-lastWatchFix;
+        if(watchAge<MAX_AGE_MS){scheduleProbe(MAX_AGE_MS-watchAge);return;}
         const id=++this.probeId;
         const finish=callback=>{
           if(!active()||id!==this.probeId)return;
           ++this.probeId;
-          this.cancel(this.probeDeadline);this.probeDeadline=null;
+          this.cancel(this.probeDeadline);this.probeDeadline=null;probeExpired=false;
           callback();scheduleProbe();
         };
         this.probeDeadline=this.schedule(()=>{
           if(!active()||id!==this.probeId)return;
           if(this.mono()-lastWatchFix>=MAX_AGE_MS)this.observe({status:'no-response',speed:null});
-          // A prompt may still be open. Keep accepting its first callback and
-          // do not issue another request until the host reports a decision.
-          if(!this.receivedFix&&this.facts.permission!=='granted')return;
-          finish(startWatch);
+          if(mayPoll())finish(()=>{});
+          else probeExpired=true; // A pending prompt can still produce a valid first callback.
         },RESPONSE_NOTICE_MS);
         try {
-          this.geo.getCurrentPosition(p=>finish(()=>{accept(p,false);startWatch();}),e=>finish(()=>{
+          this.geo.getCurrentPosition(p=>finish(()=>accept(p,false)),e=>finish(()=>{
             if(e?.code===1||this.mono()-lastWatchFix>=MAX_AGE_MS)fail(e);
-            if(active())startWatch();
           }),options);
         }catch(e){finish(()=>{if(this.watch===null)fail(e);});}
       };
-      const startWatch=()=>{
-        if(!active()||watchTried||typeof this.geo.watchPosition!=='function')return;
-        watchTried=true;
-        try {
-          const watch=this.geo.watchPosition(p=>accept(p,true),err=>{
-            fail(err);
-            if(active())scheduleProbe(0);
+      const granted=()=>{
+        this.hadGrant=true;
+        if(probeExpired){
+          // A real grant arrived after the host ignored the first one-shot.
+          // Replace its expired generation. Late replies cannot revoke a new visit.
+          ++this.probeId;
+          this.cancel(this.probeDeadline);this.probeDeadline=null;probeExpired=false;
+        }
+        scheduleProbe(Math.max(0,4000-(this.mono()-startedAt)));
+      };
+      const observePermission=p=>{
+        if(!p||!active())return;
+        this.permission=p;
+        const update=(initial=false)=>{
+          if(!active())return;
+          const state=p.state;
+          this.facts.permission=['granted','denied','prompt'].includes(state)?state:'unknown';
+          if(state==='granted')granted();
+          else if(state==='denied'||(!initial&&state==='prompt')){
+            this.denied=state==='denied';this.lastGood=null;this.pendingState=null;
+            this.hadGrant=false;this.enabled=false;this.clear();
+            this.observed=this.denied?'denied':'off';
+            this.publish({status:this.observed,speed:null});return;
+          }
+          this.change(this.snapshot());
+        };
+        p.onchange=()=>update();
+        update(true);
+      };
+      // Register one stream immediately; a silent getCurrentPosition must not
+      // keep a working watch from receiving its first fix. Hosts with only
+      // one-shot location still receive one request on the entry gesture.
+      if(typeof this.geo.watchPosition==='function'){
+        try{
+          const watch=this.geo.watchPosition(p=>{
+            accept(p,true);
+            if(this.probeTimer===null)scheduleProbe();
+          },e=>{
+            fail(e);
+            scheduleProbe(0);
           },options);
           if(!active()){this.geo.clearWatch?.(watch);return;}
           this.watch=watch;
-        } catch {
-          if(!this.geo.getCurrentPosition){this.enabled=false;this.clear();this.publish({status:'unsupported',speed:null});}
+          if(this.hadGrant)scheduleProbe();
+        }catch(e){
+          if(e?.code===1){fail(e);return;}
+          if(this.geo.getCurrentPosition)probe();
+          else{this.enabled=false;this.clear();this.publish({status:'unsupported',speed:null});return;}
         }
-      };
-      // Meta documents getCurrentPosition. Start it on entry itself. An
-      // already authorized watch can continue providing updates after the fix.
-      if(this.geo.getCurrentPosition)probe(); else startWatch();
-      // Observe revocation when this browser supports it; do not request permissions here.
-      if(this.permissions?.query)this.permissions.query({name:'geolocation'}).then(p=>{
-        if(epoch!==this.epoch)return;
-        this.permission=p;
-        this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';
-        p.onchange=()=>{if(epoch!==this.epoch)return;this.facts.permission=['granted','denied','prompt'].includes(p.state)?p.state:'unknown';if(p.state!=='granted'){this.denied=p.state==='denied';this.lastGood=null;this.pendingState=null;this.receivedFix=false;this.enabled=false;this.clear();this.publish({status:p.state==='denied'?'denied':'off',speed:null});}else {this.change(this.snapshot());startWatch();}};
-        if(p.state==='denied')p.onchange();else {this.change(this.snapshot());if(p.state==='granted')startWatch();}
-      }).catch(()=>{});
+      }else probe();
+      if(permission)observePermission(permission);
+      else if(deliberate&&active()&&this.permissions?.query){
+        try{this.permissions.query({name:'geolocation'}).then(observePermission).catch(()=>{});}
+        catch{ /* Some hosts expose this method without implementing it. */ }
+      }
     }
   }
   const api=Object.freeze({Feed,reading,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
