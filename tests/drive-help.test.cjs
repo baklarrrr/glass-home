@@ -35,6 +35,7 @@ function harness(permission='granted',opts={}) {
   context.window=context;vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../home-shell.js'),'utf8'),context);
   const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
+  vm.runInContext(app.match(/const APP_BUILD = \d+;/)[0],context);
   vm.runInContext(app.slice(app.indexOf('const DRIVE_PHONE_LABELS='),app.indexOf('// Light: the display')),context);
   vm.runInContext("HomeShell.init();HomeShell.onPane('drive','now');driveFeed.setVisible(true);paintDrive(driveFeed.snapshot());",context);
   const feed=vm.runInContext('driveFeed',context);

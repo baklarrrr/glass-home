@@ -1,4 +1,5 @@
 'use strict';
+const APP_BUILD = 42; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -655,6 +656,14 @@ function tickClock() {
 }
 
 (async () => {
+  const buildLabel=document.createElement('small');
+  buildLabel.id='runningBuild';
+  buildLabel.textContent='v'+APP_BUILD;
+  buildLabel.setAttribute('aria-label','Bakar Drive build '+APP_BUILD);
+  // The same label remains visible above the full-screen Directions panel.
+  Object.assign(buildLabel.style,{position:'fixed',right:'5vmin',bottom:'0.7vmin',zIndex:'3',
+    fontSize:'14px',lineHeight:'1.1',fontWeight:'500',color:'#99a69f',pointerEvents:'none'});
+  document.body.append(buildLabel);
   document.addEventListener('visibilitychange', visible);
   window.addEventListener('pagehide', () => { motion?.clearMotion?.();feed.setVisible(false);closeLink(); });
   window.addEventListener('pageshow', visible);

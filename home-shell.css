@@ -1,6 +1,7 @@
 .glance { display:contents; }
 .app-identity { display:flex; align-items:center; gap:9px; flex-basis:100%; font-size:24px; line-height:1.3; font-weight:640; color:var(--ink); }
 .app-identity svg { width:22px; height:22px; color:var(--accent); flex:none; }
+#runningBuild { color:#9eaba3; font-size:15px; font-weight:500; line-height:1; }
 #appContext { margin-left:auto; color:var(--soft); font-size:20px; font-weight:420; }
 .top { flex-wrap:wrap; height:auto; min-height:76px; gap:6px; }
 .sections { display:flex; flex:1; gap:8px; }

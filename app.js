@@ -1,4 +1,5 @@
 'use strict';
+const APP_BUILD = 42; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
@@ -288,6 +289,7 @@ function addBroker({ url, ...extra }) {
     for (const o of S.sentLately) client.publish(`bkr/${S.topic}/u`, o.payload, { qos: 1 });
     flushOutbox();
     linkChanged();
+    if(S.tab==='drive')scheduleDriveReport();
     // Back after a drop: a hello the PC hasn't answered is asked again (the PC ignores a repeat).
     if (!S.paused && S.askedAt && S.heardAt < S.askedAt && now - S.askedAt > 3000) hello();
   });
@@ -378,7 +380,7 @@ function diagnostics() {
 
 function hello() {
   S.askedAt = Date.now();
-  const gps=S.tab==='drive'&&S.view==='list'&&!document.hidden?driveFeed.report():undefined;
+  const gps=S.tab==='drive'&&S.view==='list'&&!document.hidden?{...driveFeed.report(),build:APP_BUILD}:undefined;
   send('hello', { w: S.view === 'detail' ? S.open : '', d: diagnostics(), gps });
   clearTimeout(S.answer);
   S.answer = setTimeout(() => {
@@ -968,18 +970,28 @@ const DRIVE_STATUS_LABELS=Object.freeze({
     paused:'App GPS paused'
   });
 // Only the already-paired private workstation receives these coarse facts.
-let driveReportTimer=0,driveReportCount=0,lastDriveReport='';
+let driveReportTimer=0,lastDriveReport='',lastDriveReportAt=-Infinity;
+const driveBursts=[],driveMilestones=new Set();
 function scheduleDriveReport(){
-  if(driveReportTimer||driveReportCount>=6||S.tab!=='drive'||document.hidden||!S.kUp||!linkUp())return;
-  const signature=({status,source,reason,coordinates,accurate,positions,error,held})=>[status,source,reason,coordinates,accurate,Math.min(positions,2),error,held].join('|');
-  if(signature(driveFeed.report())===lastDriveReport)return;
-  driveReportTimer=setTimeout(()=>{
-    driveReportTimer=0;
-    if(S.tab!=='drive'||S.view!=='list'||document.hidden||!S.kUp||!linkUp())return;
-    const next=signature(driveFeed.report());
-    if(next===lastDriveReport)return;
-    lastDriveReport=next;driveReportCount++;hello();
-  },6000);
+  if(S.tab!=='drive'||S.view!=='list'||document.hidden||!S.kUp||!driveFeed.visible)return;
+  const report=driveFeed.report(),now=performance.now();
+  const signature=[report.status,report.source,report.reason,report.coordinates,report.fresh,report.accurate,
+    Math.min(report.positions,2),report.error,report.held].join('|');
+  if(signature===lastDriveReport)return;
+  while(driveBursts.length&&now-driveBursts[0]>=60000)driveBursts.shift();
+  const milestone=!lastDriveReport?'entry':report.positions>0&&!driveMilestones.has('fix')?'fix':
+    (report.status==='timeout'||report.status==='denied')?report.status:'';
+  const urgent=milestone&&!driveMilestones.has(milestone);
+  const delay=driveBursts.length>=6?60000-(now-driveBursts[0]):urgent?0:3000-(now-lastDriveReportAt);
+  clearTimeout(driveReportTimer);driveReportTimer=0;
+  if(delay>0){driveReportTimer=setTimeout(scheduleDriveReport,Math.ceil(delay));return;}
+  if(!S.paused&&!linkUp()){openLink();return;} // connect events recheck the current state.
+  if(milestone)driveMilestones.add(milestone);
+  lastDriveReport=signature;lastDriveReportAt=now;driveBursts.push(now);
+  if(S.paused)wake();else hello(); // wake sends its own authenticated hello immediately.
+}
+function resetDriveReport(){
+  clearTimeout(driveReportTimer);driveReportTimer=0;lastDriveReport='';driveMilestones.clear();
 }
 function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
@@ -1061,7 +1073,7 @@ function paintDriveDetails() {
   let policy='unknown';
   try {const p=document.permissionsPolicy||document.featurePolicy;if(p?.allowsFeature)policy=p.allowsFeature('geolocation')?'allowed':'blocked';}catch(_){}
   $('driveFacts').textContent=[
-    'Drive 41 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
+    'Bakar Home v'+APP_BUILD+' · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fresh positions: '+f.positionFixes+' · callbacks: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix+(last?' · position '+(sample.coordinates?'present':'missing'):''),
@@ -1084,10 +1096,12 @@ function paintDriveDetails() {
 }
 function syncDriveFeed() {
   const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
+  if(visible!==driveFeed.visible)resetDriveReport();
   const pref=drivePreference();
   if(!visible&&driveFeed.visible)driveGuide?.clearMotion?.();
   driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied'});
   drivePhone.setVisible(visible);
+  if(visible)scheduleDriveReport();
 }
 let driveStopped=false;
 const DRIVE_REMEMBER='bakar.drive.gps';
@@ -1095,7 +1109,7 @@ function drivePreference(){try{return localStorage.getItem(DRIVE_REMEMBER);}catc
 function driveHeld(){return drivePreference()==='0';}
 function driveRemember(value){try{if(drivePreference()!==value)localStorage.setItem(DRIVE_REMEMBER,value);}catch(_){}}
 document.addEventListener('visibilitychange',syncDriveFeed);
-window.addEventListener('pagehide',()=>{driveGuide?.clearMotion?.();driveFeed.setVisible(false);drivePhone.setVisible(false);});
+window.addEventListener('pagehide',()=>{resetDriveReport();driveGuide?.clearMotion?.();driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);
 // Light: the display adds to whatever is behind it, so a bright sky needs solid, simple shapes and a dark road needs
 // far less light. Auto follows the sun at Toronto's latitude; pressing the button picks one by hand and it's remembered.
@@ -2032,6 +2046,11 @@ function registerServiceWorker() {
 }
 
 async function main() {
+  const buildLabel=document.createElement('small');
+  buildLabel.id='runningBuild';buildLabel.textContent='v'+APP_BUILD;
+  buildLabel.setAttribute('aria-label','Bakar Home build '+APP_BUILD);
+  const context=$('appContext');
+  if(context)context.before(buildLabel);else ($('appIdentity')||document.querySelector('header')||document.body).append(buildLabel);
   for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => selectTab(t.dataset.tab, true));
   $('newTask').addEventListener('click', () => startCompose({ mode: 'new' }));
   $('cSend').addEventListener('click', review);
