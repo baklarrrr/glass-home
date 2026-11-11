@@ -272,6 +272,24 @@ test('guide: starts and follows the route on a runtime that reports no heading o
   assert.equal(s.state, 'on'); assert.ok(Math.abs(s.toTurn - 340) < 3);
 });
 
+test('speed: with none from the device it comes from the positions; scatter is standing still', () => {
+  const h = guide(route({ id: 'none', gl: undefined })), bare = { heading: null, speed: null };
+  const feed = (east, north) => { h.clock.t += 1000; const p = fix(east, north, h.clock.t, bare); h.g.fix(p); return h.g.fill(p); };
+  assert.equal(feed(0, 0).coords.speed, null);                     // one fix: nothing to estimate, passed through as it came
+  feed(14, 0);
+  let seen = feed(28, 0);
+  assert.ok(Math.abs(seen.coords.speed - 14) < 0.2, String(seen.coords.speed));    // 14 m a second: 50 km/h
+  assert.ok(Math.abs(seen.coords.heading - 90) < 1);
+  for (let i = 0; i < 7; i++) seen = feed(28 + (i % 2) * 2, i % 3);                 // parked: a couple of metres of scatter
+  assert.equal(seen.coords.speed, 0); assert.equal(seen.coords.heading, null);
+  const real = fix(0, 0, h.clock.t + 1000, { speed: 9, heading: 10 }); h.clock.t += 1000; h.g.fix(real);
+  assert.equal(h.g.fill(real), real);                              // a reported speed is never replaced
+  const zero = fix(0, 0, h.clock.t + 1000, { speed: 0, heading: null }); h.clock.t += 1000; h.g.fix(zero);
+  assert.equal(h.g.fill(zero), zero);
+  h.clock.t += G.FIX_MAX_AGE_MS;
+  assert.equal(h.g.estimate(), null);                              // no fresh fix: no estimate
+});
+
 test('metres: rounded the way a driver reads them', () => {
   assert.deepEqual([4, 96, 194, 349, 960, 990, 1249, 9949, 12400].map(G.metres),
     ['10 m', '100 m', '190 m', '350 m', '950 m', '1.0 km', '1.2 km', '9.9 km', '12 km']);
