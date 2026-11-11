@@ -16,7 +16,8 @@ async function run() {
   try {
     for (const offlineCatalog of [false,true]) {
       const context=await browser.newContext({viewport:{width:600,height:600},serviceWorkers:'block',reducedMotion:'reduce'});
-      await context.routeWebSocket(/.*/, ws => ws.close());
+      const connections=[];
+      await context.routeWebSocket(/.*/, ws => {connections.push(ws.url());ws.close();});
       await context.route('**/*', async route => {
         const url=new URL(route.request().url());
         if (url.origin !== origin) return route.abort();
@@ -29,10 +30,17 @@ async function run() {
         try { return await route.fulfill({body:await fs.readFile(filename),contentType:types[path.extname(filename)] || 'text/plain'}); }
         catch {return route.abort();}
       });
+      const oldPhoneKey = Buffer.alloc(32, 9).toString('base64url');
+      await context.addInitScript(key=>{
+        localStorage.setItem('tg.pair', JSON.stringify({t:'old-shared', k:key}));
+        localStorage.setItem('gh.pass', JSON.stringify({tg:'old-saved~'+key}));
+      },oldPhoneKey);
       const page=await context.newPage();
       const errors=[];
       page.on('pageerror',err=>errors.push(err.message));
-      await page.goto(home+'#sg=studio-topic~studio-key&tg=phone-topic~phone-key');
+      await page.goto(home+'#sg=studio-topic~studio-key&tg=old-installed~'+oldPhoneKey);
+      assert.equal(await page.evaluate(()=>Boolean(passPairing('tg'))), false,
+        'An old install, saved Home pairing or shared phone key cannot select Android');
       await page.click('#tab-apps');
       await page.locator('#appRows .row').first().waitFor();
       assert.deepEqual(await page.locator('#appRows .ti').allTextContents(),catalog.apps.map(app=>app.name));
@@ -56,12 +64,23 @@ async function run() {
         const url=new URL(page.url());
         assert.equal(url.search,'');
         const expected=app.pass==='drive' ? {t:'route-topic',p:'route-public'} :
-          app.pass==='sg' ? {t:'studio-topic',k:'studio-key'} : app.pass==='tg' ? {t:'phone-topic',k:'phone-key'} : {};
+          app.pass==='sg' ? {t:'studio-topic',k:'studio-key'} : {};
         assert.deepEqual(Object.fromEntries(new URLSearchParams(url.hash.slice(1))),expected);
         await page.goBack();
         await page.waitForFunction(url=>document.activeElement?.dataset.appUrl===url,app.url);
         assert.equal(await page.locator('#tab-apps').getAttribute('aria-selected'),'true');
       }
+      assert.equal(await page.evaluate(()=>S.tg), null, 'No Android bridge was opened');
+      assert.deepEqual(connections, [], 'A legacy Android pairing never opens a socket');
+      const newBridge='future-topic~'+oldPhoneKey;
+      await page.goto(home+'#androidBridge='+encodeURIComponent(newBridge));
+      await page.click('#tab-apps');
+      const tidal=page.locator('#appRows .row').filter({has:page.getByText('Tidal',{exact:true})});
+      await Promise.all([page.waitForURL(url=>url.pathname==='/tidal-glass/'),tidal.click()]);
+      assert.deepEqual(Object.fromEntries(new URLSearchParams(new URL(page.url()).hash.slice(1))),
+        {androidBridge:newBridge},'Only an explicitly provisioned future bridge is forwarded');
+      await page.goto(home);
+      assert.equal(await page.evaluate(()=>passPairing('tg')),null,'Explicit bridge is never restored');
       await page.click('#tab-games');
       assert.equal(await page.locator('#gameRows .row').count(),0);
       assert.equal(await page.locator('#appRows').isVisible(),false);

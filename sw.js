@@ -2,7 +2,7 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v36-iphone-audio';
+const CACHE = 'glass-home-v37-iphone';
 const SHELL = ['./', 'index.html', 'style.css','readable.css', 'app.js','watch-phone.js','watch-library.js', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.js','home-shell.css','parked.js','drive-location.js','drive/link-core.js','drive-phone.js','drive/speed-check.js','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 

@@ -39,10 +39,10 @@ const SITE = 'https://baklarrrr.github.io/';
 let APPS = [
   { group: 'Studio', name: 'Studio Glass', url: SITE + 'studio-glass/', why: 'Review pictures and renders from your PC', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
   { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
-  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'iPhone Bluetooth audio · Android controls', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
-  { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Adjust Tidal’s sound on Android', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
+  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Music from your iPhone through the glasses', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Check the audio output on your iPhone', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
   { group: 'Driving', name: 'Bakar Drive', url: SITE + 'glass-home/drive/', why: 'Phone GPS and paired turn directions', icon: 'glass-home/drive/icon-mono.svg', pass: 'drive' },
-  { group: 'Utilities', name: 'Battery', url: SITE + 'battery-glass/', why: 'Glasses level and paired battery history', icon: 'battery-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Utilities', name: 'Battery', url: SITE + 'battery-glass/', why: 'Check the charge on your glasses', icon: 'battery-glass/icon-mono.svg', pass: 'tg' },
   { group: 'Activities', name: 'Gulzar', url: SITE + 'gulzar/', why: 'Guided cooking, crafts and drawing', icon: 'gulzar/icon-mono.svg' },
 ];
 let GAMES = [];
@@ -370,8 +370,8 @@ function diagnostics() {
   if (S.diagSent) return undefined;
   S.diagSent = true;
   let sg = false;
-  let tg = false;
-  try { sg = Boolean(localStorage.getItem('sg.pair')); tg = Boolean(localStorage.getItem('tg.pair')); } catch (e) { /* none */ }
+  const tg = Boolean(passPairing('tg'));
+  try { sg = Boolean(localStorage.getItem('sg.pair')); } catch (e) { /* none */ }
   return { ua: navigator.userAgent.slice(0, 160), sg, tg, ref: document.referrer ? new URL(document.referrer).pathname : '',
     z: S.z, idb: Boolean(window.indexedDB), w: innerWidth, h: innerHeight };
 }
@@ -421,28 +421,27 @@ function armIdle() {
 }
 
 // ---- other apps' pairings ----------------------------------------------------------------------------
-// On the glasses each installed web app has its own storage, so Tidal Glass's and Studio Glass's saved pairings
-// aren't visible here. The phone puts them in Bakar Home's own address instead, after the # so they never reach a
-// server: #tg=<topic>~<key> (Tidal Glass, Sound Lab) and #sg=<topic>~<key> (Bakar Studio). Bakar Home keeps its own
-// copy ('gh.pass'), so a launch without them still works. On a desktop browser the apps share storage, so
-// Tidal's own 'tg.pair' is used when there's nothing else.
+// Studio's PC registration survives an update. A legacy phone registration does
+// not identify the current iPhone. A new Android companion integration must
+// explicitly supply its own Android bridge in the fragment, never the query.
 function passPairing(name) {
-  let v = S.fragment.get(name);
-  const saved = local('gh.pass') || {};
-  if (v && v.includes('~')) {
-    if (saved[name] !== v) local('gh.pass', { ...saved, [name]: v });
-  } else {
-    v = saved[name] || '';
-  }
-  const [t, k] = (v || '').split('~');
-  if (t && k) return { t, k };
   if (name === 'tg') {
-    try {
-      const own = JSON.parse(localStorage.getItem('tg.pair') || 'null');
-      if (own && own.t && own.k) return { t: own.t, k: own.k };
-    } catch (e) { /* none */ }
+    const bridge = new URLSearchParams(location.hash.slice(1)).get('androidBridge') || '';
+    const [t, k] = bridge.split('~');
+    return t && k ? { t, k } : null;
   }
-  return null;
+  if (name !== 'sg') return null;
+  const saved = local('gh.pass') || {};
+  const incoming = S.fragment.get('sg');
+  const studio = incoming && incoming.includes('~') ? incoming : saved.sg || '';
+  const [t, k] = studio.split('~');
+  if (t && k) {
+    if (saved.sg !== studio) local('gh.pass', { ...saved, sg: studio });
+    return { t, k };
+  }
+  // The embedded Review also stores its surviving Studio pairing on this origin.
+  const review = local('sg.pair');
+  return review && review.t && review.k ? { t: review.t, k: review.k } : null;
 }
 
 // ---- glasses battery -------------------------------------------------------------------------------
@@ -1413,7 +1412,8 @@ function launch(app) {
   if (url.origin === new URL(SITE).origin && pairing && app.pass === pairing) {
     const data = pairing === 'drive' ? drivePhone.link?.addr : passPairing(pairing);
     if (data) {
-      const fragment = pairing === 'drive' ? { t: data.t, p: data.p } : { t: data.t, k: data.k };
+      const fragment = pairing === 'drive' ? { t: data.t, p: data.p }
+        : pairing === 'tg' ? { androidBridge: data.t + '~' + data.k } : { t: data.t, k: data.k };
       url.hash = new URLSearchParams(fragment).toString();
     }
   }
@@ -1961,7 +1961,7 @@ function onKey(e) {
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* optional */ }
+  try { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}); } catch (e) { /* optional */ }
 }
 
 async function main() {
