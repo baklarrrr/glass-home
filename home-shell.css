@@ -59,3 +59,12 @@
 .drive-quiet .app-identity { font-size:20px; color:var(--soft); }
 .drive-quiet .app-identity svg { width:18px; height:18px; }
 @media (max-height:500px) { #drive {gap:6px;} .gps-hud[data-camera=ahead] .gps-state, .gps-hud[data-camera=over] .gps-state {font-size:22px; height:24.3px;} .gps-tape {margin-top:6px;} .gps-tape text.readout {font-size:17px;} #driveTurn {font-size:20px;} #driveTurn .dist {font-size:23px;} #driveTurn .dist.near {font-size:26px;} #driveTurn[data-level=warn] {font-size:24px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .gps-hud[data-level=warn] .gps-state {font-size:22px; height:24.3px;} .drive-controls .driverun {min-height:34px;} }
+
+/* A steady speed display; diagnostics remain in Details. */
+#driveHud .gps-state { color:var(--soft);font-size:18px;font-weight:500; }
+#driveHud[data-camera=ahead] .gps-state,#driveHud[data-camera=over] .gps-state { color:#ffc15e;font-weight:700; }
+#drive[data-controls=quiet] #driveReveal { font-size:17px;min-height:36px;padding:4px 12px; }
+#drive[data-controls=quiet] #driveReveal span { display:none; }
+
+#driveHud .gps-state {height:28.35px;display:flex;align-items:center;justify-content:center;}
+@media(max-height:500px){#driveHud .gps-state{height:24.3px;}}

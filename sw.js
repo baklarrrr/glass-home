@@ -2,11 +2,15 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v44';
-const ENTRY = 'runtime/home-v44-911287865e532298.js';
+const CACHE = 'glass-home-v45';
+const ENTRY = 'runtime/home-v45-d7fe8babf2669622.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 
+// Report the active worker identity on request. It never relabels or reloads a document.
+self.addEventListener('message',event=>{
+  if(event.data==='running-shell' && event.ports[0])event.ports[0].postMessage(CACHE);
+});
 self.addEventListener('install', (event) => {
   // New navigations can use the complete new shell. Existing documents keep running.
   // Review loads only on deliberate entry.

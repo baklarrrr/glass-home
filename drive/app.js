@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 44; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 45; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -161,7 +161,7 @@ function phoneSpeed(now = performance.now()) {
   const g = S.phoneGps;
   const elapsed=now-S.phoneGpsAt;
   const age=Math.max(Date.now()-S.phoneGpsSentAt,S.phoneGpsAge+elapsed);
-  return g && S.phone === 'live' && S.phoneGpsAge>=0 && elapsed>=0 && Date.now()>=S.phoneGpsSentAt && age < PHONE_GPS_FRESH_MS ? g : null;
+  return g && S.phone === 'live' && S.phoneGpsAge>=0 && elapsed>=0 && Date.now()>=S.phoneGpsSentAt && age < PHONE_GPS_FRESH_MS ? {...g,ageMs:age} : null;
 }
 
 function onGps(reading) {
@@ -459,9 +459,12 @@ function render() {
 
   // Speed: the phone's own GPS through the link while it is fresh, else the glasses' own location.
   const pg = phoneSpeed();
-  const live = Boolean(pg) || S.gps.status === 'live';
+  const localReading=feed.snapshot();
+  const selection=StudioDriveLocation.display(pg,localReading);
+  const live=selection.kmh!==null;
+  hud.dataset.source=selection.source;
   hud.dataset.gps = live ? 'live' : 'off';
-  $('speed').textContent = pg ? String(pg.kmh) : S.gps.status === 'live' ? String(Math.round(S.gps.speed)) : '—';
+  $('speed').textContent=live?String(selection.kmh):'—';
   const headingFresh = S.heading !== null && Date.now() - S.headingAt < 5000 && S.gps.status === 'live';
   const course = pg ? pg.hdg : (headingFresh ? S.heading : null);   // the phone already leaves the heading out below 2 m/s
   $('heading').textContent = course !== null ? compass(course) : '';
@@ -484,8 +487,8 @@ function render() {
   $('speedWarn').textContent = warnText;
   $('speedWarn').hidden = !warnText;
   hud.dataset.speedLevel = health.level;
-  hud.dataset.mode = guide ? 'guide' : pairing ? 'pair' : 'speed';
-  $('pairBox').hidden = !pairing || guide;
+  hud.dataset.mode=guide?'guide':'speed';
+  $('pairBox').hidden=true; // Link setup continues in the on-demand Details panel.
   $('pairCode').textContent = pairing ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
   hud.dataset.link = view;
   $('turn').hidden = !guide;
@@ -507,7 +510,7 @@ function render() {
     $('arriveTime').textContent = '';
     $('arriveLeft').textContent = '';
   }
-  $('status').textContent = topLine(view);
+  $('status').textContent=guide?topLine(view):selection.label;
   $('clock').textContent = clockText(new Date());
   if (S.panel) renderPanel();
 }
@@ -527,8 +530,8 @@ function renderPanel() {
     state = 'This link is for a different phone.';
     help = 'These glasses get directions from another phone now. Use this phone switches to the new one, with a new code to accept on it. Back keeps the phone you have.';
   } else if (!S.addr) {
-    state = 'Not set up on this pair of glasses.';
-    help = 'Directions come from Bakar Drive on your phone through its glasses link. Open this app from the link the phone gives you once. Until then this shows phone GPS speed.';
+    state = 'No linked source.';
+    help = 'App location can provide speed independently. A linked source can also supply speed and directions.';
   } else if (S.phone === 'pairing') {
     state = 'Your phone hasn\'t accepted these glasses yet.';
     help = 'On your phone, open the glasses link and accept this code.';
@@ -540,7 +543,7 @@ function renderPanel() {
     help = 'Directions come back on their own when the phone answers. Keep Bakar Drive and the phone\'s glasses link running.';
   } else if (S.phone === 'live' || S.phone === 'ready') {
     state = 'Linked to your phone.';
-    help = 'Start a route in Bakar Drive and the next turn shows here. Your speed comes from the phone\'s GPS while it is driving.';
+    help = 'When your linked source sends a route, the next turn appears here.';
   } else {
     state = 'Looking for your phone.';
     help = 'Keep Bakar Drive and the phone\'s glasses link running. The phone sends turns only while this screen is open.';
@@ -548,11 +551,12 @@ function renderPanel() {
   $('panelState').textContent = state;
   $('panelHelp').textContent = help;
   const h = S.shown;
-  $('panelSpeed').textContent = !h ? '' : h.source === 'phone' ? 'Speed: from your phone\'s GPS.'
-    : h.source === 'glasses' ? 'Speed: from the glasses\' own GPS.' : `Speed: none. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`;   // one line: the panel has no room for more, and the screen has the rest
-  $('panelCode').hidden = !S.code || Boolean(S.offer);
+  const source=StudioDriveLocation.display(phoneSpeed(),feed.snapshot()).source;
+  const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.'};
+  $('panelSpeed').textContent = origin[source] || (!h ? 'No current speed.' : `Speed unavailable. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`);   // one line: the panel has no room for more, and the screen has the rest
+  $('panelCode').hidden = !S.code || S.phone!=='pairing' || Boolean(S.offer);
   $('panelQuiet').hidden = Boolean(S.offer);
-  $('panelCodeNum').textContent = S.code ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
+  $('panelCodeNum').textContent = !$('panelCode').hidden ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
 }
 
 // ---- input: any press shows the controls, which go away again on their own ---------------------------
@@ -678,7 +682,7 @@ function tickClock() {
   S.setup = true;
   if (linked) openLink();
   render();
-  if (S.offer) openPanel();
+  if(S.offer)openPanel(); // Only a newly opened address offering a different phone needs a choice.
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
     let lastCheck=0;
     const check=()=>{if(!document.hidden&&Date.now()-lastCheck>=60000){lastCheck=Date.now();reg.update().catch(()=>{});}};

@@ -1,21 +1,8 @@
 # Bakar Drive for Meta Ray-Ban Display
 
-A glasses app for driving, opened from Bakar Home's Apps list or as its own app
-(`https://baklarrrr.github.io/glass-home/drive/`). It shows:
+Open the installed Bakar Drive app or select Bakar Drive in Bakar Home’s Apps list. The speed display prefers fresh readings from a linked source. It uses the location available to the app when that source has no current reading. Only an active route supplies turns and arrival details. The speed number is an estimate for reference; vehicle instruments remain the reference for driving.
 
-- **The next turn from Bakar Drive on the phone**: arrow, distance, next street, arrival time and distance left.
-  This needs the phone's glasses link and a one-time pairing; see [LINK.md](LINK.md).
-- **Phone GPS speed and heading**: through the glasses' web runtime, with the same filters as Bakar Home's Drive tab
-  (`../drive-location.js`). The heading is the GPS course, shown only above about 7 km/h. Nothing about the position is
-  kept or sent.
-
-The screen is glance-only. Controls (Start GPS, Light, Directions) appear on a press and hide after 8 seconds. Light
-follows the sun (Day, Dusk, Night) or is picked by hand. A turn older than 4 seconds dims and the top line says
-directions are paused; after 30 seconds it is taken off the screen.
-
-The phone link is kept on the glasses after the first visit. Opening a link for a different phone doesn't take over
-silently: the screen asks (Use this phone, or Back to keep the one you have). Directions recorded earlier can't be
-played back to the page, because every frame has to answer one of the page's own recent hellos.
+Use **Details** for connection and permission information. A pairing code is shown only while a new registration awaits acceptance. See [the Drive notes](../DRIVE.md) for speed selection, freshness and privacy.
 
 ## Files
 

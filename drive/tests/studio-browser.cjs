@@ -104,11 +104,19 @@ async function run(browser, height, tag) {
   });
   const shot = async (name, want) => {
     await page.waitForTimeout(80);
-    const m = await measure(page);
-    const b = await bands(page, Math.ceil(m.headerBottom) + 1, Math.floor(m.unitTop));
-    m.ink = { dash: b[b.length - 1], above: b.length > 1 ? b[b.length - 2] : null, count: b.length };
-    await page.screenshot({ path: path.join(OUT, `${name}${height === 600 ? '' : '-' + height}.png`) });
-    check(m.text === want.text && m.level === want.level && m.speed === want.speed, `${tag} ${name}: says ${JSON.stringify(want.text)} (${want.level}), the dash shows ${want.speed} (${JSON.stringify(m.text)}, ${m.level}, ${m.speed})`);
+    const m=await measure(page);
+    const details=await page.locator('#driveHealthDetail').textContent();
+    const source=await page.locator('#driveHud').getAttribute('data-source');
+    const isCamera=await page.locator('#driveHud').getAttribute('data-camera')!=='none';
+    const labels={none:'Speed unavailable',linked:'Linked speed',location:'Location speed',estimated:'Estimated speed'};
+    const expected=isCamera?want.text:labels[source];
+    const b=await bands(page,Math.ceil(m.headerBottom)+1,Math.floor(m.unitTop));
+    m.ink={dash:b[b.length-1],above:b.length>1?b[b.length-2]:null,count:b.length};
+    await page.screenshot({path:path.join(OUT,name+(height===600?'':'-'+height)+'.png')});
+    check(m.text===expected && m.speed===want.speed,tag+' '+name+': actual HUD '+m.text+' / '+m.speed);
+    if(!isCamera)check(details===want.text.replace('Phone link · GPS estimate','Linked speed'),tag+' '+name+': source and fault reason are accessible in Details');
+    check(isCamera||m.level==='ok',tag+' '+name+': ordinary signal problems are not driving warnings');
+    check(!(await page.locator('#driveHealthDetail').isVisible()),tag+' '+name+': troubleshooting stays off the HUD');
     return m;
   };
   const GRACE = { text: '', level: 'ok', speed: '—' };
@@ -176,7 +184,7 @@ async function run(browser, height, tag) {
   const guideOffline = await shot('s12-guide-no-signal', { text: 'Glasses location not allowed\nNo signal to phone', level: 'warn', speed: '—' });
   check(guideCalm.turn && guideDead.turn && guideOffline.turn, `${tag}: the turn line is up on all three direction screens`);
   check(Math.abs(guideDead.speedTop - guideCalm.speedTop) < 0.5 && Math.abs(guideOffline.speedTop - guideCalm.speedTop) < 0.5, `${tag}: with directions on screen the dash does not move either (${Math.round(guideCalm.speedTop)}, ${Math.round(guideDead.speedTop)}, ${Math.round(guideOffline.speedTop)} px)`);
-  check(!guideOffline.scroll && guideOffline.lines === 2 && guideOffline.ink.dash[0] - guideOffline.ink.above[1] >= 12, `${tag}: and the warning above them is two lines that fit and clear the dash`);
+  check(!guideOffline.scroll && guideOffline.lines === 1 && guideOffline.ink.dash[0] - guideOffline.ink.above[1] >= 12, `${tag}: and the speed status above them is one line that fit and clear the dash`);
   check(guideDead.ink.dash[0] === guideCalm.ink.dash[0] && guideOffline.ink.dash[0] === guideCalm.ink.dash[0], `${tag}: nor is the dash drawn on other rows (${guideCalm.ink.dash[0]}, ${guideDead.ink.dash[0]}, ${guideOffline.ink.dash[0]})`);
 
   // Compass tape and saved-route guidance (drive/guide.js): a made-up L-shaped route, 1,000 m east then 500 m north, with the
@@ -257,7 +265,7 @@ async function run(browser, height, tag) {
   check(c.mark === 'ahead' && (await page.textContent('#driveState')) === 'Red light camera · 40 m', `${tag}: stopped at the light, the warning stays (${await page.textContent('#driveState')})`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(700, 0));
   c = await cameraOf();
-  check(c.mark === 'none' && (await page.textContent('#driveState')) === 'App location · GPS estimate' && c.colour !== 'rgb(255, 193, 94)', `${tag}: past the camera, the calm line is back (${c.mark}, ${await page.textContent('#driveState')})`);
+  check(c.mark === 'none' && (await page.textContent('#driveState')) === 'Location speed' && c.colour !== 'rgb(255, 193, 94)', `${tag}: past the camera, the calm line is back (${c.mark}, ${await page.textContent('#driveState')})`);
   const calm = await measure(page);
   check(Math.abs(red.speedTop - calm.speedTop) < 0.5 && Math.abs(red.unitTop - calm.unitTop) < 0.5 && !red.scroll, `${tag}: the speed and unit do not move when the warning comes and goes (${Math.round(red.speedTop)} px, calm ${Math.round(calm.speedTop)} px)`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 17.5, 90), spot(1700, 0));
@@ -279,9 +287,9 @@ async function run(browser, height, tag) {
   c = await cameraOf();
   const note = await page.evaluate(() => ({ text: document.getElementById('driveAge').textContent, colour: getComputedStyle(document.getElementById('driveAge')).color }));
   check(c.lines === 1 && c.left >= 0 && c.right <= 600, `${tag}: the longer line with a street still fits on one line (${Math.round(c.left)}-${Math.round(c.right)})`);
-  check(/^Just now · camera list (39|40|41) days old$/.test(note.text) && note.colour === 'rgb(255, 193, 94)', `${tag}: a list over 30 days old says so on the face in amber, beside the fix's own age (${JSON.stringify(note.text)}, ${note.colour})`);
+  check(/^camera list (39|40|41) days old$/.test(note.text) && note.colour === 'rgb(255, 193, 94)', `${tag}: a list over 30 days old says so on the face in amber, while the dashboard stays quiet (${JSON.stringify(note.text)}, ${note.colour})`);
   const missing = await page.evaluate(() => { const kept = driveCams.ix; driveCamsFailed = true; driveCams.load({ items: [] }); paintDrive(driveFeed.snapshot()); const text = document.getElementById('driveAge').textContent; driveCamsFailed = false; driveCams.ix = kept; paintDrive(driveFeed.snapshot()); return text; });
-  check(missing === 'Just now · no camera list', `${tag}: a list that could not be loaded is said on the face too, never a quiet screen (${JSON.stringify(missing)})`);
+  check(missing === 'no camera list', `${tag}: a list that could not be loaded is said on the face too, never a quiet screen (${JSON.stringify(missing)})`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 27, 90), spot(2150, 0));
   c = await cameraOf();
   check(c.mark === 'none', `${tag}: at motorway speed a camera marked as beside the motorway says nothing (${c.mark})`);
@@ -315,7 +323,7 @@ async function autoStart(browser) {
       check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
-    } else check(m.enabled && m.text === 'Finding your location…' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
+    } else check(m.enabled && m.text === 'Speed unavailable' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
     await ctx.close();
   }
 }

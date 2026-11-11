@@ -257,3 +257,14 @@ test('late one-shot can deliver a newly acquired fix in the same visit, never an
  h.advance(4000);assert.equal(probes.length,2);
  h.feed.setVisible(false);probes[1].ok(fix(12,h.wall));assert.equal(h.feed.snapshot().speed,null);
 });
+
+test('drive display accepts freshly sourced numeric speed only, prioritizes linked readings, and preserves zero',()=>{
+ const {display}=require('../drive-location.js');
+ const actual={status:'live',ageMs:20,speed:12,source:'reported'};
+ assert.equal(display({kmh:0,ageMs:12},actual).source,'linked');
+ assert.equal(display({kmh:0,ageMs:12},actual).kmh,0);
+ for(const ageMs of [-1,3500,NaN,undefined])assert.equal(display({kmh:99,ageMs},actual).kmh,12);
+ assert.equal(display(null,{...actual,source:'estimated'}).label,'Estimated speed');
+ assert.equal(display(null,{...actual,ageMs:5000}).kmh,null);
+ assert.equal(display({kmh:-1,ageMs:5},{status:'denied'}).label,'Speed unavailable');
+});

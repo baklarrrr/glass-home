@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 44; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 45; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
@@ -380,7 +380,7 @@ function diagnostics() {
 
 function hello() {
   S.askedAt = Date.now();
-  const gps=S.tab==='drive'&&S.view==='list'&&!document.hidden?{...driveFeed.report(),build:APP_BUILD}:undefined;
+  const gps=S.tab==='drive'&&S.view==='list'&&driveFeed.visible&&!$('drive').hidden&&!document.hidden?{...driveFeed.report(),build:APP_BUILD}:undefined;
   send('hello', { w: S.view === 'detail' ? S.open : '', d: diagnostics(), gps });
   clearTimeout(S.answer);
   S.answer = setTimeout(() => {
@@ -583,7 +583,8 @@ function renderState() {
   const dot = $('dot');
   let text = '';
   let tone = '';
-  if (S.flash) text = S.flash;
+  if(S.tab==='drive'&&S.view==='list')text='';
+  else if (S.flash) text = S.flash;
   else if (!S.kUp) text = '';
   else if (S.pairing) { text = 'Not paired'; tone = 'warn'; }
   else if (S.paused) text = S.snap ? `Paused · ${clock(S.snap.at)}` : 'Paused';
@@ -699,6 +700,7 @@ function openStudio() {
 // ---- messages from the PC (relay/push.py, MCP glasses_say) ------------------------------------------
 
 function showPush(p) {
+  if(S.tab==='drive'&&S.view==='list')return;
   if (S.tab === 'drive' || S.tab === 'route') return; // Never reveal or speak an incoming banner in Drive.
   if (!p || !p.id || p.id === S.pushed) return;
   S.pushed = p.id;
@@ -1013,7 +1015,9 @@ function resetDriveReport(){
   clearTimeout(driveReportTimer);driveReportTimer=0;lastDriveReport='';driveMilestones.clear();
 }
 function paintDrive(reading) {
-  const phone=drivePhone.snapshot(),pg=phone.gps;
+  const phone=drivePhone.snapshot();
+  const selection=StudioDriveLocation.display(phone.gps&&{...phone.gps,ageMs:phone.ageMs},reading);
+  const pg=selection.source==='linked'?phone.gps:null;
   // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
   const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=7.2&&driveGuide?driveGuide.course():null;   // 7.2 km/h is the feed's own 2 m/s: slower than that there is no course
   if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
@@ -1041,25 +1045,27 @@ function paintDrive(reading) {
   if(reading.status==='live'&&!pg)driveRemember('1');
   else if(reading.status==='waiting'&&!drivePreference())driveRemember('asked');
   else if(reading.status==='denied'&&!driveHeld())driveRemember('denied');
-  const live=Boolean(pg)||reading.status==='live';
-  $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
+  const live=selection.kmh!==null;
+  $('driveSpeed').textContent=live?String(selection.kmh):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
   // in plain words and shown amber. Calm states keep the words below; a missing module leaves the old wording alone.
   const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
   const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
-  $('driveState').textContent=pg?'Phone link · GPS estimate':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
+  $('driveHealthDetail').textContent=pg?'Linked speed':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
     (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
-  $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
+  $('driveHealthDetail').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
+  $('driveState').textContent=selection.label;
+  $('driveHud').dataset.level='ok';
+  $('driveHud').dataset.source=selection.source;
   // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.
   const camera=driveCams&&reading.status==='live'&&!pg?DriveCameras.words(driveCams.snapshot(),reading.speed):null;
   if(camera)$('driveState').textContent=camera.text;
   $('driveHud').dataset.camera=camera?(camera.over?'over':'ahead'):'none';
-  const age=pg?phone.ageMs:reading.ageMs;
   // An old camera list says so here, in amber, until a fresh one is published: a quiet screen must not look like a clear road.
   // The fix's own age stays; the list's trouble is added after it.
   const oldList=!guide?.note&&live?driveCamsNote():'';
-  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago')+(oldList?' · '+oldList:''):'');
+  $('driveAge').textContent=guide?.note||oldList||'';
   $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
@@ -1541,6 +1547,7 @@ function showPairing(code) {
   $('pText').textContent = 'At your PC, ask Claude to open Glass Home pairing, then press Try again. The PC shows this code when it pairs.';
   $('pCode').textContent = code || '';
   $('pRetry').hidden = false;
+  if(S.view!=='list'||!NEEDS_PC.includes(S.tab))return; // Drive and Apps work without a PC session.
   showPane('pair');
   $('pRetry').focus();
 }
@@ -1548,7 +1555,7 @@ function showPairing(code) {
 function closePairing() {
   if (!S.pairing) return;
   S.pairing = null;
-  if (S.view === 'list') showPane(S.tab);
+  if (S.view === 'list'&&!$('pair').hidden) showPane(S.tab);
 }
 
 // ---- screens and history ---------------------------------------------------------------------------
@@ -1565,6 +1572,7 @@ function showPane(id,driveGesture=false) {
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
   syncDriveFeed(driveGesture); if (id === 'drive') applyDriveLight();
+  if(before==='drive'&&['now','work'].includes(id)&&S.snap?.say)showPush(S.snap.say);
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);

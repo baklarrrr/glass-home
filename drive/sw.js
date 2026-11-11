@@ -1,11 +1,15 @@
 'use strict';
 // Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Network first, so an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
-const CACHE = 'bakar-drive-v44';
-const ENTRY = 'runtime/drive-v44-95d87b7bfa9e56fc.js';
+const CACHE = 'bakar-drive-v45';
+const ENTRY = 'runtime/drive-v45-6b45579549937935.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
 const LATER = ['../vendor/mqtt.min.js'];   // kept once it has been fetched, only when the phone link is set up
 
+// Report the active worker identity on request. It never relabels or reloads a document.
+self.addEventListener('message',event=>{
+  if(event.data==='running-shell' && event.ports[0])event.ports[0].postMessage(CACHE);
+});
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL.map(p=>new Request(new URL(p,self.registration.scope),{cache:'reload'})))).then(()=>self.skipWaiting()));
 });

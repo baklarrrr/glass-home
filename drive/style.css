@@ -122,3 +122,8 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: no-preference) {
   .turn { transition: opacity 300ms ease; }
 }
+
+/* Connection faults and pairing details appear only in the explicit panel. */
+#hud .status { color:var(--soft);font-weight:500; }
+#hud .status .dot { display:none; }
+#panel { overflow-y:auto; }

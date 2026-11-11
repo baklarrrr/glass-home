@@ -25,7 +25,7 @@
 <body>
   <main id="hud" class="hud" data-light="dusk" data-mode="speed" data-link="none">
     <header class="top">
-      <p class="status" role="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="status">Preparing GPS…</span></p>
+      <p class="status" role="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="status">Speed unavailable</span></p>
       <p id="clock" class="clock" aria-label="Time"></p>
     </header>
 
@@ -45,7 +45,6 @@
     <section id="speedBox" class="speedbox" aria-label="GPS speed">
       <p id="speed" class="speed">—</p>
       <p class="unit"><span>km/h</span><span id="heading" class="heading"></span></p>
-      <p id="speedWarn" class="speedwarn" role="status" aria-live="polite" hidden></p>
     </section>
 
     <footer class="bottom">
@@ -56,16 +55,17 @@
     <nav id="controls" class="controls" aria-label="Drive controls" hidden>
       <button id="gpsBtn" class="btn">Start GPS</button>
       <button id="lightBtn" class="btn">Light: Auto</button>
-      <button id="linkBtn" class="btn">Directions</button>
+      <button id="linkBtn" class="btn">Details</button>
     </nav>
 
     <section id="panel" class="panel" role="region" aria-labelledby="panelTitle" hidden>
-      <h1 id="panelTitle">Directions from your phone</h1>
+      <h1 id="panelTitle">Drive details</h1>
       <p id="panelState" class="pstate"></p>
       <p id="panelCode" class="pcode" hidden><span class="plabel">Code of these glasses</span><span id="panelCodeNum"></span></p>
       <p id="panelHelp" class="phelp"></p>
       <p id="panelSpeed" class="phelp"></p>
-      <p id="panelQuiet" class="phelp quiet">Glance only. Speed is a phone GPS estimate; your car's instruments come first. Nothing you see here is saved or sent.</p>
+      <p id="speedWarn" class="phelp" hidden></p>
+      <p id="panelQuiet" class="phelp quiet">Your vehicle’s instruments are the reference for driving speed.</p>
       <div class="pbtns">
         <button id="panelUse" class="btn" hidden>Use this phone</button>
         <button id="panelStudio" class="btn">Open Studio Drive</button>
@@ -74,7 +74,7 @@
     </section>
   </main>
   <!-- app-entry -->
-  <script src="runtime/drive-v44-95d87b7bfa9e56fc.js"></script>
+  <script src="runtime/drive-v45-6b45579549937935.js"></script>
   <!-- end-app-entry -->
 </body>
 </html>

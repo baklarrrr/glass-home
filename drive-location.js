@@ -116,6 +116,8 @@
       // with a permission prompt after waking a sleeping page.
       let permission;
       if(!deliberate){
+        // The feed is visible again. Recheck the current grant without re-prompting.
+        this.observe({status:'waiting',speed:null});
         try { permission=await this.permissions?.query({name:'geolocation'}); } catch(_) {}
         if(epoch!==this.epoch||!this.visible||!this.enabled)return;
         this.facts.permission=['granted','denied','prompt'].includes(permission?.state)?permission.state:'unknown';
@@ -315,6 +317,19 @@
       }
     }
   }
-  const api=Object.freeze({Feed,reading,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
+  // Each producer expires its own samples using both its sampling time and its
+  // arrival clock. A linked reading carries no authenticated wheel/vehicle provenance.
+  function display(linked,location){
+    if(linked && Number.isFinite(linked.ageMs) && linked.ageMs>=0 && linked.ageMs<3500 &&
+      Number.isFinite(linked.kmh) && linked.kmh>=0 && linked.kmh<=360)
+      return {source:'linked',kmh:Math.round(linked.kmh),label:'Linked speed'};
+    if(location?.status==='live' && Number.isFinite(location.ageMs) && location.ageMs>=0 && location.ageMs<MAX_AGE_MS &&
+      Number.isFinite(location.speed) && location.speed>=0 && location.speed<=360)
+      return {source:location.source==='estimated'?'estimated':'location',kmh:Math.round(location.speed),
+        label:location.source==='estimated'?'Estimated speed':'Location speed'};
+    return {source:'none',kmh:null,label:'Speed unavailable'};
+  }
+
+  const api=Object.freeze({Feed,reading,display,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
   if(typeof module!=='undefined'&&module.exports)module.exports=api; else root.StudioDriveLocation=api;
 })(globalThis);
