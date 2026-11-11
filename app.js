@@ -378,7 +378,8 @@ function diagnostics() {
 
 function hello() {
   S.askedAt = Date.now();
-  send('hello', { w: S.view === 'detail' ? S.open : '', d: diagnostics() });
+  const gps=S.tab==='drive'&&S.view==='list'&&!document.hidden?driveFeed.report():undefined;
+  send('hello', { w: S.view === 'detail' ? S.open : '', d: diagnostics(), gps });
   clearTimeout(S.answer);
   S.answer = setTimeout(() => {
     if (S.heardAt < S.askedAt) { S.quiet = true; renderState(); }
@@ -934,10 +935,6 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
 // Compass tape and saved-route guidance (drive/guide.js). The guide is handed each fix as it arrives and keeps only how far
 // along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
 const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
-const driveGeo = driveGuide&&navigator.geolocation?{
-  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(driveGuide.fill(p));},fail,options),   // fill: a speed from positions where the device reports none
-  clearWatch:id=>navigator.geolocation.clearWatch(id)
-}:navigator.geolocation;
 let driveTapeShown='';
 function paintDriveTape(course) {
   const svg=$('driveTape'); if(!svg?.style)return;
@@ -957,18 +954,33 @@ function paintDriveTape(course) {
   make('text',{x:0,y:41,class:'readout'},t.readout);
 }
 const driveFeed = new StudioDriveLocation.Feed({
-  geo:driveGeo, permissions:navigator.permissions,
+  geo:navigator.geolocation, permissions:navigator.permissions,
+  transform:position=>{if(!driveGuide)return position;driveGuide.fix(position);return driveGuide.fill(position);},
   change:paintDrive
 });
 const driveCheck = typeof SpeedCheck!=='undefined'?SpeedCheck:null;
 const DRIVE_STATUS_LABELS=Object.freeze({
-    off:'GPS not started in this app', unsupported:'Location API unavailable',
-    waiting:'Waiting for phone GPS', unavailable:'GPS has no speed reading',
+    off:'GPS stopped', error:'Location provider error', unsupported:'Location API unavailable',
+    waiting:'Finding your location…', unavailable:'GPS has no speed reading',
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
-    timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'Location fix unavailable',
+    timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'No GPS fix yet',
     paused:'App GPS paused'
   });
+// Only the already-paired private workstation receives these coarse facts.
+let driveReportTimer=0,driveReportCount=0,lastDriveReport='';
+function scheduleDriveReport(){
+  if(driveReportTimer||driveReportCount>=6||S.tab!=='drive'||document.hidden||!S.kUp||!linkUp())return;
+  const signature=({status,source,reason,coordinates,accurate,positions,error,held})=>[status,source,reason,coordinates,accurate,Math.min(positions,2),error,held].join('|');
+  if(signature(driveFeed.report())===lastDriveReport)return;
+  driveReportTimer=setTimeout(()=>{
+    driveReportTimer=0;
+    if(S.tab!=='drive'||S.view!=='list'||document.hidden||!S.kUp||!linkUp())return;
+    const next=signature(driveFeed.report());
+    if(next===lastDriveReport)return;
+    lastDriveReport=next;driveReportCount++;hello();
+  },6000);
+}
 function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
   // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
@@ -995,15 +1007,17 @@ function paintDrive(reading) {
     $('driveTurn').hidden=!$('driveTurn').textContent;
   }
   paintDriveTape(course);
-  if(reading.status==='live'&&!pg)driveRemember(true); else if(reading.status==='denied'&&!driveHeld())driveRemember(null);
+  if(reading.status==='live'&&!pg)driveRemember('1');
+  else if(reading.status==='waiting'&&!drivePreference())driveRemember('asked');
+  else if(reading.status==='denied'&&!driveHeld())driveRemember('denied');
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
   // in plain words and shown amber. Calm states keep the words below; a missing module leaves the old wording alone.
   const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
   const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
-  $('driveState').textContent=pg?'Phone link · GPS estimate':reading.status==='live'?'App location · GPS estimate':
-    check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
+  $('driveState').textContent=pg?'Phone link · GPS estimate':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
+    (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   const age=pg?phone.ageMs:reading.ageMs;
@@ -1017,11 +1031,12 @@ function paintDrive(reading) {
   const permission=driveFeed.details().permission;
   HomeShell.setLocationPending(driveFeed.enabled&&['waiting','no-response'].includes(reading.status)&&permission!=='granted');
   if(!$('driveInfo').hidden)paintDriveDetails();
+  if(S.tab==='drive')scheduleDriveReport();
 }
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
   driveStopped=driveFeed.enabled;
-  if(driveFeed.enabled){driveRemember(false);driveFeed.stop();} else driveFeed.enable();
+  if(driveFeed.enabled){driveRemember('0');driveFeed.stop();} else {driveRemember('asked');driveFeed.enable();}
 }
 function retryDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden||$('driveRetry').hidden)return;
@@ -1029,6 +1044,7 @@ function retryDriveGps() {
 }
 function paintDriveDetails() {
   const f=driveFeed.details(),last=f.lastFix,error=f.lastError,status=f.status,phone=drivePhone.snapshot();
+  const sample=driveFeed.report();
   if($('drivePhoneState')){
   $('drivePhoneState').textContent=DRIVE_PHONE_LABELS[phone.state]||'Phone link unavailable';
   $('drivePhoneCode').textContent=phone.configured&&['pairing','waiting','ready','connecting'].includes(phone.state)?'Pairing code: '+phone.code:'';
@@ -1045,10 +1061,10 @@ function paintDriveDetails() {
   let policy='unknown';
   try {const p=document.permissionsPolicy||document.featurePolicy;if(p?.allowsFeature)policy=p.allowsFeature('geolocation')?'allowed':'blocked';}catch(_){}
   $('driveFacts').textContent=[
-    'Drive 29 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
+    'Drive 41 · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
-    'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
-    'Last fix: '+fix,
+    'Fresh positions: '+f.positionFixes+' · callbacks: '+f.fixes+' · starts: '+f.attempts,
+    'Last fix: '+fix+(last?' · position '+(sample.coordinates?'present':'missing'):''),
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
@@ -1068,24 +1084,18 @@ function paintDriveDetails() {
 }
 function syncDriveFeed() {
   const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
-  driveFeed.setVisible(visible);drivePhone.setVisible(visible);
-  // Opening Drive starts the speed by itself when location is already allowed (Bakar, 11 Nov 2026: no unnecessary
-  // presses). This is the feed's own resume path: it asks the browser first and goes on only with an existing grant, so
-  // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
-  // Where the glasses cannot report the permission at all, a Start that worked before is remembered and simply made again:
-  // at worst that is one system prompt the wearer has already answered.
-  if(visible&&!driveFeed.enabled&&!driveStopped&&!driveHeld()){
-    if(driveRemembered())driveFeed.enable(); else {driveFeed.enabled=true;driveFeed.start();}
-  }
+  const pref=drivePreference();
+  if(!visible&&driveFeed.visible)driveGuide?.clearMotion?.();
+  driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied'});
+  drivePhone.setVisible(visible);
 }
 let driveStopped=false;
 const DRIVE_REMEMBER='bakar.drive.gps';
-function driveRemembered(){try{return localStorage.getItem(DRIVE_REMEMBER)==='1';}catch(_){return false;}}
-// '1' a Start that worked; '0' a deliberate Stop, which holds through a relaunch until the next Start; nothing after a denial.
-function driveHeld(){try{return localStorage.getItem(DRIVE_REMEMBER)==='0';}catch(_){return false;}}
-function driveRemember(on){try{if(on===null)localStorage.removeItem(DRIVE_REMEMBER);else localStorage.setItem(DRIVE_REMEMBER,on?'1':'0');}catch(_){}}
+function drivePreference(){try{return localStorage.getItem(DRIVE_REMEMBER);}catch(_){return null;}}
+function driveHeld(){return drivePreference()==='0';}
+function driveRemember(value){try{if(drivePreference()!==value)localStorage.setItem(DRIVE_REMEMBER,value);}catch(_){}}
 document.addEventListener('visibilitychange',syncDriveFeed);
-window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
+window.addEventListener('pagehide',()=>{driveGuide?.clearMotion?.();driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);
 // Light: the display adds to whatever is behind it, so a bright sky needs solid, simple shapes and a dark road needs
 // far less light. Auto follows the sun at Toronto's latitude; pressing the button picks one by hand and it's remembered.
@@ -2080,10 +2090,12 @@ async function main() {
   renderApps();
   loadApps();
   const returned = history.state;
-  const fromApp = returned?.appUrl && ['apps', 'games'].includes(returned.tab);
-  const start = fromApp ? returned.tab : TABS.includes(S.fragment.get('tab')) ? S.fragment.get('tab') : 'now';
+  const requested=S.fragment.get('tab') || (location.hash==='#drive'?'drive':null);
+  const fromApp=returned?.appUrl && ['apps','games'].includes(returned.tab) && (!requested||requested===returned.tab);
+  const start=fromApp?returned.tab:TABS.includes(requested)?requested:'now';
   history.replaceState(fromApp ? returned : { v: 'list', tab: start }, '');
   S.tab = start;
+  if(start==='drive')showPane('drive'); // Start location before waiting for the unrelated workstation or phone links.
   let ready = false;
   try { ready = await setupKeys(); } catch (e) { ready = false; }
   try { await setupBattery(); } catch (e) { S.tg = null; }

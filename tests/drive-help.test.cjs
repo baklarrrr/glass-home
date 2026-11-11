@@ -56,18 +56,18 @@ test('GPS help stays open indefinitely without moving focus',()=>{const h=harnes
 test('repeated reading keys do not arm a details dismissal timer',()=>{const h=harness();h.reveal();h.details();for(let i=0;i<5;i++){h.key('ArrowDown');h.advance(9000);}assert.equal(h.element('driveInfo').hidden,false);});
 test('explicit Back button restores focus and ordinary idle hide',()=>{const h=harness();h.reveal();h.details();h.element('driveInfoClose').click();assert.equal(h.element('driveInfo').hidden,true);assert.equal(h.document.activeElement.id,'driveInfoButton');h.advance(8000);assert.equal(h.element('drive').dataset.controls,'quiet');});
 test('Escape dismisses details explicitly before quieting controls',()=>{const h=harness();h.reveal();h.details();h.key('Escape');assert.equal(h.element('driveInfo').hidden,true);assert.equal(h.element('drive').dataset.controls,'open');assert.equal(h.document.activeElement.id,'driveInfoButton');h.key('Escape');assert.equal(h.element('drive').dataset.controls,'quiet');});
-test('timeout then denial updates headline and open details together',()=>{const h=harness();h.reveal();h.feed.enable();h.error(3);assert.equal(h.element('driveState').textContent,'GPS timed out\nPair your phone');h.details();h.error(1);assert.equal(h.element('driveState').textContent,'Glasses location not allowed\nPair your phone');assert.match(h.element('driveFacts').textContent,/Now: Location permission not granted/);assert.match(h.element('driveFacts').textContent,/watch stopped/);h.advance(20000);assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.document.activeElement.id,'driveInfoClose');});
+test('timeout then denial updates headline and open details together',()=>{const h=harness();h.reveal();h.feed.enable();h.error(3);assert.equal(h.element('driveState').textContent,'GPS timed out\nWaiting for a new fix');h.details();h.error(1);assert.equal(h.element('driveState').textContent,'Glasses location not allowed\nAllow location for this app');assert.match(h.element('driveFacts').textContent,/Now: Location permission not granted/);assert.match(h.element('driveFacts').textContent,/watch stopped/);h.advance(20000);assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.document.activeElement.id,'driveInfoClose');});
 test('unresolved permission pauses ordinary hide, observed grant resumes it',async()=>{const h=harness('prompt');h.reveal();h.feed.enable();await Promise.resolve();h.advance(30000);assert.equal(h.element('drive').dataset.controls,'open');assert.equal(h.feed.snapshot().status,'no-response');h.p.state='granted';h.p.onchange();h.advance(8000);assert.equal(h.element('drive').dataset.controls,'quiet');});
 test('page visibility changes preserve details and release location watch',async()=>{const h=harness();h.reveal();h.feed.enable();await Promise.resolve();h.details();h.document.hidden=true;h.emitDoc('visibilitychange');assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.feed.details().watchActive,false);h.document.hidden=false;h.emitDoc('visibilitychange');await Promise.resolve();h.advance(9000);assert.equal(h.element('driveInfo').hidden,false);});
 test('pagehide preserves help while stopping the active watch',()=>{const h=harness();h.reveal();h.feed.enable();h.details();h.emitWindow('pagehide');assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.feed.details().watchActive,false);});
 test('navigation explicitly closes details',()=>{const h=harness();h.reveal();h.details();h.context.S.tab='now';h.context.HomeShell.onPane('now','drive');assert.equal(h.element('driveInfo').hidden,true);});
 test('last fix uses fixed acquisition time after expiry, not frozen age',()=>{const h=harness();h.reveal();h.feed.enable();h.fix();h.details();h.advance(60000);assert.match(h.element('driveFacts').textContent,/Now: GPS reading expired/);assert.doesNotMatch(h.element('driveFacts').textContent,/\d+ s old/);assert.match(h.element('driveFacts').textContent,/Last fix: (?!none|time unknown)/);});
-test('new request shows waiting separately from an earlier denied error',()=>{const h=harness();h.reveal();h.feed.enable();h.error(1);h.feed.enable();h.details();assert.match(h.element('driveFacts').textContent,/Now: Waiting for phone GPS/);assert.match(h.element('driveFacts').textContent,/Last API error: Denied.*\(#1\)/);assert.match(h.element('driveFacts').textContent,/starts: 2/);});
+test('new request shows waiting separately from an earlier denied error',()=>{const h=harness();h.reveal();h.feed.enable();h.error(1);h.feed.enable();h.details();assert.match(h.element('driveFacts').textContent,/Now: Finding your location…/);assert.match(h.element('driveFacts').textContent,/Last API error: Denied.*\(#1\)/);assert.match(h.element('driveFacts').textContent,/starts: 2/);});
 
 // ---- speed self-check on the Drive headline (drive/speed-check.js) ----
 test('no phone set up and location refused: plain amber warning, exact status kept in the details',()=>{
   const h=harness();h.reveal();h.feed.enable();h.error(1);h.details();
-  assert.equal(h.element('driveState').textContent,'Glasses location not allowed\nPair your phone');
+  assert.equal(h.element('driveState').textContent,'Glasses location not allowed\nAllow location for this app');
   assert.equal(h.element('driveHud').dataset.level,'warn');
   assert.equal(h.element('driveSpeed').textContent,'—');
   assert.match(h.element('driveFacts').textContent,/Now: Location permission not granted/);
@@ -75,9 +75,9 @@ test('no phone set up and location refused: plain amber warning, exact status ke
 });
 test('calm states are not warnings: GPS never started, still asking',()=>{
   const h=harness();h.reveal();
-  assert.equal(h.element('driveState').textContent,'GPS not started in this app');assert.equal(h.element('driveHud').dataset.level,'ok');
+  assert.equal(h.element('driveState').textContent,'GPS stopped');assert.equal(h.element('driveHud').dataset.level,'ok');
   h.feed.enable();assert.equal(h.element('driveHud').dataset.level,'ok');
-  assert.equal(h.element('driveState').textContent,'Waiting for phone GPS');
+  assert.equal(h.element('driveState').textContent,'Finding your location…');
 });
 test('a healthy phone link keeps its own calm words even though the glasses location is refused',()=>{
   const h=harness();h.reveal();h.feed.enable();h.error(1);
@@ -124,7 +124,7 @@ test('the glasses speed shows with no warning when the phone has none',()=>{
 test('speed that goes dead is shown as a dash and a warning, never an old number',()=>{
   const h=harness();h.reveal();h.feed.enable();h.fix(10);assert.equal(h.element('driveSpeed').textContent,'36');
   h.advance(5200);
-  assert.equal(h.element('driveSpeed').textContent,'—');assert.equal(h.element('driveState').textContent,'GPS speed lost\nPair your phone');assert.equal(h.element('driveHud').dataset.level,'warn');
+  assert.equal(h.element('driveSpeed').textContent,'—');assert.equal(h.element('driveState').textContent,'GPS speed lost\nWaiting for a new fix');assert.equal(h.element('driveHud').dataset.level,'warn');
   h.fix(10);assert.equal(h.element('driveSpeed').textContent,'36');assert.equal(h.element('driveHud').dataset.level,'ok');
 });
 test('without the self-check module the old wording stays and nothing breaks',()=>{

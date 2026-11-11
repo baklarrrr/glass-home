@@ -295,3 +295,12 @@ test('metres: rounded the way a driver reads them', () => {
     ['10 m', '100 m', '190 m', '350 m', '950 m', '1.0 km', '1.2 km', '9.9 km', '12 km']);
   assert.equal(G.metres(NaN), ''); assert.equal(G.metres(-5), '');
 });
+
+test('sparse accurate fixes estimate a negative missing-speed sentinel; hiding clears the trail',()=>{
+ const h=guide(),bare={heading:null,speed:-1};
+ const a=fix(0,0,h.clock.t,bare);h.g.fix(a);assert.equal(h.g.fill(a).coords.speed,null);
+ h.clock.t+=8000;
+ const b=fix(80,0,h.clock.t,bare);h.g.fix(b);
+ assert.ok(Math.abs(h.g.fill(b).coords.speed-10)<.2);
+ h.g.clearMotion();assert.equal(h.g.estimate(),null);
+});

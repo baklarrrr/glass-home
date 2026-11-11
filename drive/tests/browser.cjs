@@ -79,7 +79,7 @@ async function layoutOk(page, what) {
 (async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}/glass-home/drive/`;
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH });
   const ctx = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
   await ctx.route(/^(?!http:\/\/127\.0\.0\.1)/, (r) => r.abort());     // no outside network: brokers fail as offline
   await ctx.addInitScript(FAKE_GEO);
@@ -91,18 +91,18 @@ async function layoutOk(page, what) {
   // 1. No phone link: GPS off, then live speed and heading.
   await page.goto(base);
   await page.waitForTimeout(300);
-  check((await page.textContent('#status')) === 'Phone GPS off', 'starts with GPS off and says so');
+  check((await page.textContent('#status')) === 'Finding GPS…', 'enters Drive acquiring GPS immediately');
   check((await page.textContent('#speed')) === '—', 'no speed shown before GPS');
   await shot('01-gps-off');
   await page.keyboard.press('Enter');
   check(await page.isVisible('#controls'), 'a press shows the controls');
   await shot('02-controls');
-  await page.keyboard.press('Enter');                                  // Start GPS (focused first)
+  check((await page.textContent('#gpsBtn')) === 'Stop GPS', 'GPS is already on');
   await page.evaluate(() => window.__drive(16.1, 47));
   await page.waitForTimeout(100);
   check((await page.textContent('#speed')) === '58', 'speed 16.1 m/s shows as 58 km/h');
   check((await page.textContent('#heading')) === 'NE', 'course 47° shows as NE');
-  check((await page.textContent('#status')) === 'Phone GPS', 'top line says Phone GPS');
+  check((await page.textContent('#status')) === 'App GPS', 'top line says App GPS');
   await shot('03a-speed-live');
   check(!(await warn(page)).shown, 'self-check: a live speed carries no warning line');
   const liveDash = await dashAt(page);
@@ -110,7 +110,7 @@ async function layoutOk(page, what) {
   check(!(await page.isVisible('#controls')), 'controls hide themselves after 8 s');
   // The 16.1 m/s reading is now old: no number from the past, a dash, and the amber line says why.
   let lost = await warn(page);
-  check((await page.textContent('#speed')) === '—' && lost.shown && lost.text === 'GPS speed lost\nPair your phone' && lost.level === 'warn', `self-check: the speed stopped coming: a dash and the reason (${JSON.stringify(lost.text)})`);
+  check((await page.textContent('#speed')) === '—' && lost.shown && lost.text === 'GPS speed lost\nWaiting for a new fix' && lost.level === 'warn', `self-check: the speed stopped coming: a dash and the reason (${JSON.stringify(lost.text)})`);
   const lostDash = await dashAt(page);
   check(lostDash.speed === liveDash.speed && lostDash.unit === liveDash.unit, `self-check: the dash and unit do not move when the line appears (${JSON.stringify(liveDash)} -> ${JSON.stringify(lostDash)})`);
   await layoutOk(page, 'speed lost');
@@ -123,7 +123,7 @@ async function layoutOk(page, what) {
   await page.evaluate(() => window.__drive(16.1, 47));
   await page.waitForTimeout(100);
   lost = await warn(page);
-  check((await page.textContent('#speed')) === '58' && !lost.shown && lost.level === 'ok' && (await page.textContent('#status')) === 'Phone GPS' && !(await page.isVisible('#controls')), 'self-check: speed back means the line is gone at once, with the controls still hidden');
+  check((await page.textContent('#speed')) === '58' && !lost.shown && lost.level === 'ok' && (await page.textContent('#status')) === 'App GPS' && !(await page.isVisible('#controls')), 'self-check: speed back means the line is gone at once, with the controls still hidden');
   await shot('03-speed-live');
   await layoutOk(page, 'speed screen');
 
@@ -319,7 +319,7 @@ async function layoutOk(page, what) {
   // GPS that was started last time comes back on by itself, so each scenario forgets that first and starts GPS by a press.
   const open5 = async (pg, url) => { await pg.goto(base); await pg.evaluate(() => localStorage.removeItem('bd.gps')); await pg.goto(url); };
   const startGps = async (pg) => {
-    await pg.keyboard.press('Enter'); await pg.keyboard.press('Enter');                                      // controls, then Start GPS
+    await pg.keyboard.press('Enter'); if (await pg.textContent('#gpsBtn') === 'Start GPS') await pg.keyboard.press('Enter');
     check((await pg.textContent('#gpsBtn')) === 'Stop GPS', 'self-check: GPS was started by the press');
   };
   const fresh5 = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
@@ -340,7 +340,7 @@ async function layoutOk(page, what) {
   let w = await warn(p5);
   const deniedDash = await dashAt(p5);
   check(deniedDash.speed === askingDash.speed && deniedDash.unit === askingDash.unit, `self-check: the dash and unit stay put when the refusal line appears (${JSON.stringify(askingDash)} -> ${JSON.stringify(deniedDash)})`);
-  check(w.shown && w.text === 'Glasses location not allowed\nPair your phone' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
+  check(w.shown && w.text === 'Glasses location not allowed\nAllow location for this app' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
   check((await p5.textContent('#speed')) === '—', 'self-check: the dash stays a dash');
   await layoutOk(p5, 'refused location, no phone');
   await shot5('11-refused-no-phone');
@@ -361,7 +361,7 @@ async function layoutOk(page, what) {
   await p5.evaluate(() => window.__drive(8.3, 10));
   await p5.waitForTimeout(80);
   w = await warn(p5);
-  check((await p5.textContent('#speed')) === '30' && !w.shown && (await p5.textContent('#status')) === 'Phone GPS', `self-check: speed back means the line is gone at once (${await p5.textContent('#speed')}, "${w.text}", ${await p5.textContent('#status')})`);
+  check((await p5.textContent('#speed')) === '30' && !w.shown && (await p5.textContent('#status')) === 'App GPS', `self-check: speed back means the line is gone at once (${await p5.textContent('#speed')}, "${w.text}", ${await p5.textContent('#status')})`);
 
   // (b) A phone that has not accepted these glasses yet.
   await open5(p5, `${base}?t=${V.t}&p=${V.phone.pub}`);

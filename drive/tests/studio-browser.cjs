@@ -27,11 +27,11 @@ const server = http.createServer((req, res) => {
 // app has no location access.
 const FAKE_GEO = `(() => {
   const watchers = new Map(); let n = 0; window.__fix = null;
-  const geo = { watchPosition(ok, fail) { const id = ++n; watchers.set(id, { ok, fail }); if (window.__fix) setTimeout(() => ok(window.__fix()), 10); return id; },
-    clearWatch(id) { watchers.delete(id); }, getCurrentPosition() {} };
+  const geo = { watchPosition(ok, fail) { const id = ++n; watchers.set(id, { ok, fail }); if (window.__fix) {const last=window.__fix();setTimeout(() => ok(last),10);} return id; },
+    clearWatch(id) { watchers.delete(id); }, getCurrentPosition(ok, fail) { const id=++n;watchers.set(id,{ok(p){watchers.delete(id);ok(p);},fail(e){watchers.delete(id);fail(e);}}); } };
   Object.defineProperty(navigator, 'geolocation', { get: () => geo });
-  window.__drive = (mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: 0, longitude: 0 } }); for (const w of watchers.values()) w.ok(window.__fix()); };
-  window.__at = (lat, lon, mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: lat, longitude: lon } }); for (const w of watchers.values()) w.ok(window.__fix()); }
+  window.__drive = (mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: 0, longitude: 0 } }); for (const w of [...watchers.values()]) w.ok(window.__fix()); };
+  window.__at = (lat, lon, mps, heading) => { const at=Date.now();window.__fix = () => ({ timestamp: at, coords: { speed: mps, heading, accuracy: 8, latitude: lat, longitude: lon } }); for (const w of [...watchers.values()]) w.ok(window.__fix()); }
   window.__deny = () => { window.__fix = null; for (const w of watchers.values()) w.fail({ code: 1 }); };
   const perm = { state: window.__grantAtStart ? 'granted' : 'prompt', onchange: null }; window.__perm = perm;   // not allowed yet, unless a test says so: looking at Drive must not start anything then
   Object.defineProperty(navigator, 'permissions', { get: () => ({ query: async () => perm }) });
@@ -110,14 +110,14 @@ async function run(browser, height, tag) {
 
   // No phone set up, GPS not started: the calm start screen, the reference for where the dash sits.
   await unpaired();
-  const start = await shot('s0-start', { text: 'GPS not started in this app', level: 'ok', speed: '—' });
+  const start = await shot('s0-start', { text: 'Finding your location…', level: 'ok', speed: '—' });
   check(!start.scroll, `${tag}: the start screen fits without scrolling`);
   await page.evaluate(() => { driveFeed.setVisible(true); driveFeed.enable(); });
   await page.waitForTimeout(100);
 
   const seen = [];          // [name, measure] of every screen below, for the common checks
   await page.evaluate(() => window.__deny());
-  seen.push(['s1-unpaired-denied', await shot('s1-unpaired-denied', { text: 'Glasses location not allowed\nPair your phone', level: 'warn', speed: '—' })]);
+  seen.push(['s1-unpaired-denied', await shot('s1-unpaired-denied', { text: 'Glasses location not allowed\nAllow location for this app', level: 'warn', speed: '—' })]);
   await phone('ready');
   seen.push(['s2-paired-denied-calm', await shot('s2-paired-denied-calm', { text: 'Phone linked · waiting for GPS', level: 'ok', speed: '—' })]);
   await phone('live', { gps: { kmh: 62, hdg: 90 }, ageMs: 300 });
@@ -136,11 +136,11 @@ async function run(browser, height, tag) {
   await page.evaluate(() => window.__drive(16.1, 47));
   seen.push(['s7-glasses-speed', await shot('s7-glasses-speed', { text: 'App location · GPS estimate', level: 'ok', speed: '58' })]);
   await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
-  seen.push(['s8-glasses-speed-lost', await shot('s8-glasses-speed-lost', { text: 'GPS speed lost\nPair your phone', level: 'warn', speed: '—' })]);
+  seen.push(['s8-glasses-speed-lost', await shot('s8-glasses-speed-lost', { text: 'GPS speed lost\nWaiting for a new fix', level: 'warn', speed: '—' })]);
   // the day look (the brightest, for sunlight) and the night look of the same line
   for (const look of ['day', 'night']) {
     await page.evaluate((l) => { document.getElementById('driveHud').dataset.light = l; }, look);
-    seen.push([`s9-lost-${look}`, await shot(`s9-lost-${look}`, { text: 'GPS speed lost\nPair your phone', level: 'warn', speed: '—' })]);
+    seen.push([`s9-lost-${look}`, await shot(`s9-lost-${look}`, { text: 'GPS speed lost\nWaiting for a new fix', level: 'warn', speed: '—' })]);
   }
   await page.evaluate(() => { delete document.getElementById('driveHud').dataset.light; });
 
@@ -186,7 +186,7 @@ async function run(browser, height, tag) {
       turnBox: document.getElementById('driveTurn').getBoundingClientRect().toJSON(), turnCut: document.getElementById('driveTurn').scrollWidth > document.getElementById('driveTurn').clientWidth && getComputedStyle(document.getElementById('driveTurn')).textOverflow === 'ellipsis', note: document.getElementById('driveAge').textContent,
       noteBottom: document.getElementById('driveAge').getBoundingClientRect().bottom, revealTop: document.getElementById('driveReveal').getBoundingClientRect().top }; });
   await unpaired();
-  await page.evaluate((rt) => { S.snap = { ...(S.snap || {}), rt }; driveFeed.enable(); }, saved);
+  await page.evaluate((rt) => { window.__fix=null; S.snap = { ...(S.snap || {}), rt }; driveFeed.enable(); }, saved);
   await page.waitForTimeout(50);
   for (const east of [630, 640]) { await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(east, 0)); await page.waitForTimeout(30); }
   check((await tapeOf()).turn === '', `${tag}: two fixes on the saved route are not enough to start guidance`);
@@ -211,7 +211,7 @@ async function run(browser, height, tag) {
   check(!t.shown && t.ticks === 0 && t.label === 'Compass: no heading while stopped', `${tag}: stopped, there is no course and no tape, never an old one (${t.shown}, ${t.ticks})`);
   check(t.turn === '300 m · Arrive at Depot', `${tag}: back on the line after the turn, the destination is next, by name (${JSON.stringify(t.turn)})`);
   // A long street name is cut, never wrapped.
-  await page.evaluate(([rt, lat, lon]) => { S.snap = { ...S.snap, rt }; for (let i = 0; i < 5; i++) window.__at(lat, lon + i * 0.0001, 13.9, 90); },
+  await page.evaluate(async ([rt, lat, lon]) => { S.snap = { ...S.snap, rt }; for (let i = 0; i < 5; i++) {window.__at(lat, lon + i * 0.0001, 13.9, 90);await new Promise(r=>setTimeout(r,4));} },
     [{ ...saved, id: 'test-long', gs: [[0, 'Start'], [1000, 'Turn sharp left onto Regional Municipality Road 124 North Service Rd'], [1500, 'Arrive']] }, ...spot(300, 0)]);
   await shot('s16-long-turn', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
   t = await tapeOf();
@@ -260,14 +260,14 @@ async function autoStart(browser) {
       check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
-    } else check(!m.enabled && m.text === 'GPS not started in this app' && m.button === 'Start app GPS', `auto start: not allowed yet, nothing starts and nothing asks (${m.enabled}, ${JSON.stringify(m.text)})`);
+    } else check(m.enabled && m.text === 'Finding your location…' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
     await ctx.close();
   }
 }
 
 (async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH });
   await autoStart(browser);
   await run(browser, 600, '600x600');
   await run(browser, 480, '600x480');          // the short layout (max-height 500px) has its own sizes

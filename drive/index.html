@@ -25,7 +25,7 @@
 <body>
   <main id="hud" class="hud" data-light="dusk" data-mode="speed" data-link="none">
     <header class="top">
-      <p class="status" role="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="status">Phone GPS off</span></p>
+      <p class="status" role="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="status">Preparing GPS…</span></p>
       <p id="clock" class="clock" aria-label="Time"></p>
     </header>
 
@@ -42,7 +42,7 @@
       <p id="pairCode" class="paircode"></p>
     </section>
 
-    <section id="speedBox" class="speedbox" aria-label="Phone GPS speed">
+    <section id="speedBox" class="speedbox" aria-label="GPS speed">
       <p id="speed" class="speed">—</p>
       <p class="unit"><span>km/h</span><span id="heading" class="heading"></span></p>
       <p id="speedWarn" class="speedwarn" role="status" aria-live="polite" hidden></p>
@@ -76,6 +76,7 @@
   <script src="../drive-location.js"></script>
   <script src="link-core.js"></script>
   <script src="speed-check.js"></script>
+  <script src="guide.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -24,7 +24,7 @@ test('the glasses speed is used when the phone has none, and says nothing', () =
 });
 
 test('a refused location with no phone behind it says so, and names the way out', () => {
-  assert.equal(at({ gpsStatus: 'denied', link: 'none' }).text, 'Glasses location not allowed\nPair your phone');
+  assert.equal(at({ gpsStatus: 'denied', link: 'none' }).text, 'Glasses location not allowed\nAllow location for this app');
   assert.equal(at({ gpsStatus: 'denied', link: 'pairing' }).text, 'Glasses location not allowed\nCompare the code on your phone');
   assert.equal(at({ gpsStatus: 'denied', link: 'stopped' }).text, 'Glasses location not allowed\nResume the phone link');
   assert.equal(at({ gpsStatus: 'denied', link: 'unavailable' }).text, 'Glasses location not allowed\nPhone link unavailable');
@@ -42,7 +42,7 @@ test('a refused location is not a warning while the phone is, or is about to be,
 });
 
 test('no location in this app is a warning too', () => {
-  assert.equal(at({ gpsStatus: 'unsupported', link: 'none' }).text, 'This app gets no location\nPair your phone');
+  assert.equal(at({ gpsStatus: 'unsupported', link: 'none' }).text, 'This app gets no location\nLocation API unavailable');
   assert.equal(at({ gpsStatus: 'unsupported', link: 'paused' }).level, 'warn');
   assert.equal(at({ gpsStatus: 'unsupported', link: 'live' }).text, '');
 });
@@ -51,7 +51,7 @@ test('each hard GPS fault is named as it is, and what backs it up follows', () =
   const words = { stale: 'GPS speed lost', timeout: 'GPS timed out', disconnected: 'No GPS fix' };
   for (const [gpsStatus, fault] of Object.entries(words)) {
     const r = at({ gpsStatus, link: 'none' });
-    assert.deepEqual([r.level, r.text], ['warn', `${fault}\nPair your phone`], gpsStatus);
+    assert.deepEqual([r.level, r.text], ['warn', `${fault}\nWaiting for a new fix`], gpsStatus);
     assert.equal(at({ gpsStatus, link: 'paused' }).text, `${fault}\nPhone not answering`, gpsStatus);
     assert.equal(at({ gpsStatus, link: 'live' }).text, '', `${gpsStatus}: the phone is up, so no warning on top`);
   }
