@@ -31,6 +31,7 @@ const FAKE_GEO = `(() => {
     clearWatch(id) { watchers.delete(id); }, getCurrentPosition() {} };
   Object.defineProperty(navigator, 'geolocation', { get: () => geo });
   window.__drive = (mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: 0, longitude: 0 } }); for (const w of watchers.values()) w.ok(window.__fix()); };
+  window.__at = (lat, lon, mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: lat, longitude: lon } }); for (const w of watchers.values()) w.ok(window.__fix()); }
   window.__deny = () => { window.__fix = null; for (const w of watchers.values()) w.fail({ code: 1 }); };
   const perm = { state: 'granted', onchange: null };
   Object.defineProperty(navigator, 'permissions', { get: () => ({ query: async () => perm }) });
@@ -172,6 +173,48 @@ async function run(browser, height, tag) {
   check(Math.abs(guideDead.speedTop - guideCalm.speedTop) < 0.5 && Math.abs(guideOffline.speedTop - guideCalm.speedTop) < 0.5, `${tag}: with directions on screen the dash does not move either (${Math.round(guideCalm.speedTop)}, ${Math.round(guideDead.speedTop)}, ${Math.round(guideOffline.speedTop)} px)`);
   check(!guideOffline.scroll && guideOffline.lines === 2 && guideOffline.ink.dash[0] - guideOffline.ink.above[1] >= 12, `${tag}: and the warning above them is two lines that fit and clear the dash`);
   check(guideDead.ink.dash[0] === guideCalm.ink.dash[0] && guideOffline.ink.dash[0] === guideCalm.ink.dash[0], `${tag}: nor is the dash drawn on other rows (${guideCalm.ink.dash[0]}, ${guideDead.ink.dash[0]}, ${guideOffline.ink.dash[0]})`);
+
+  // Compass tape and saved-route guidance (drive/guide.js): a made-up L-shaped route, 1,000 m east then 500 m north, with the
+  // glasses' own location played along it. No phone directions, so the saved route is what the turn line shows.
+  const LAT0 = 43, LON0 = -79, spot = (east, north) => [LAT0 + north / 110540, LON0 + east / (Math.cos(LAT0 * Math.PI / 180) * 111320)];
+  const saved = { id: 'test-route', ti: 'Depot', km: 1.5, min: 3, at: Math.floor(Date.now() / 1000) - 60, pts: [[0, 1000], [1000, 1000], [1000, 500]], steps: [],
+    gm: 1500, gl: [spot(0, 0), spot(500, 0), spot(1000, 0), spot(1000, 500)], gs: [[0, 'Start on First St'], [1000, 'Turn left onto Second Ave'], [1500, 'Arrive']] };
+  const tapeOf = () => page.evaluate(() => { const t = document.getElementById('driveTape'), r = t.getBoundingClientRect(), u = document.querySelector('.gps-unit').getBoundingClientRect();
+    return { shown: getComputedStyle(t).visibility === 'visible', letters: [...t.querySelectorAll('text')].map((x) => x.textContent).join(' '), ticks: t.querySelectorAll('line').length,
+      label: t.getAttribute('aria-label'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, unitBottom: u.bottom,
+      turn: document.getElementById('driveTurn').hidden ? '' : document.getElementById('driveTurn').textContent, turnLevel: document.getElementById('driveTurn').dataset.level,
+      turnBox: document.getElementById('driveTurn').getBoundingClientRect().toJSON(), note: document.getElementById('driveAge').textContent,
+      noteBottom: document.getElementById('driveAge').getBoundingClientRect().bottom, revealTop: document.getElementById('driveReveal').getBoundingClientRect().top }; });
+  await unpaired();
+  await page.evaluate((rt) => { S.snap = { ...(S.snap || {}), rt }; driveFeed.enable(); }, saved);
+  await page.waitForTimeout(50);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(650, 4));
+  const onRoute = await shot('s13-saved-route', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
+  let t = await tapeOf();
+  check(t.shown && t.letters === 'NE E SE' && t.ticks === 7 && t.label === 'Compass: heading E, 90 degrees', `${tag}: heading east, the tape shows NE E SE around the needle (${t.letters}; ${t.ticks} ticks; ${t.label})`);
+  check(t.top >= t.unitBottom && t.left >= 0 && t.right <= 600, `${tag}: the tape sits under the unit line, inside the screen (${Math.round(t.top)} px, unit ends ${Math.round(t.unitBottom)} px)`);
+  check(t.turn === '350 m · Turn left onto Second Ave' && t.turnLevel === 'ok', `${tag}: on the saved route the turn line gives the distance and the turn (${JSON.stringify(t.turn)})`);
+  check(t.note === 'Saved route · no traffic · 850 m left', `${tag}: and the line under it says what this guidance is (${JSON.stringify(t.note)})`);
+  check(t.turnBox.left >= 0 && t.turnBox.right <= 600 && t.turnBox.top >= t.bottom - 0.5 && t.noteBottom <= t.revealTop + 0.5 && !onRoute.scroll, `${tag}: turn and note fit between the tape and the Controls button without scrolling`);
+  check(Math.abs(onRoute.unitTop - onRoute.speedTop - (start.unitTop - start.speedTop)) < 0.5, `${tag}: the speed and its unit keep their spacing with the tape up`);
+  for (let i = 0; i < 3; i++) { await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 0), spot(700, 300 + i * 10)); await page.waitForTimeout(30); }
+  await shot('s14-off-saved-route', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
+  t = await tapeOf();
+  check(t.turn === 'Off the saved route' && t.turnLevel === 'warn' && /m from it · no rerouting$/.test(t.note), `${tag}: three fixes off the line and it says so in amber, with no rerouting promised (${JSON.stringify(t.turn)}, ${JSON.stringify(t.note)})`);
+  check(t.letters === 'NW N NE', `${tag}: heading north, the tape wraps through N (${t.letters})`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 0.4, null), spot(1000, 200));
+  await shot('s15-stopped-no-course', { text: 'App location · GPS estimate', level: 'ok', speed: '1' });
+  t = await tapeOf();
+  check(!t.shown && t.ticks === 0 && t.label === 'Compass: no heading while stopped', `${tag}: stopped, there is no course and no tape, never an old one (${t.shown}, ${t.ticks})`);
+  check(t.turn === '300 m · Arrive', `${tag}: back on the line after the turn, the arrival is next (${JSON.stringify(t.turn)})`);
+  await phone('live', { nav: NAV, gps: { kmh: 62, hdg: 90 }, ageMs: 300 });
+  t = await tapeOf();
+  check(t.turn.includes('King St W') && !t.note.startsWith('Saved route'), `${tag}: directions from a phone win over the saved route (${JSON.stringify(t.turn)})`);
+  await unpaired();
+  await page.evaluate(() => { S.snap = { ...(S.snap || {}), rt: {} }; paintDrive(driveFeed.snapshot()); });
+  t = await tapeOf();
+  check(t.turn === '', `${tag}: no saved route, no turn line (${JSON.stringify(t.turn)})`);
+  check(await page.evaluate(() => !document.getElementById('parkedGate') && StudioParked.confirmed() && StudioParked.controlsAllowed() && !StudioParked.isOpen()), `${tag}: there is no parked check: no dialog in the page and nothing held back`);
 
   check(errors.length === 0, `${tag}: no script errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await ctx.close();

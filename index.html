@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="application-name" content="Bakar Studio">
-  <meta name="description" content="Bakar Studio: work, picture review and parked Drive controls in one glasses app.">
+  <meta name="description" content="Bakar Studio: work, picture review and Drive in one glasses app.">
   <meta name="mrbd-web-app-capable" content="yes">
   <meta name="robots" content="noindex, nofollow">
   <!-- YouTube's embedded player needs this page's origin as the referrer of its request (error 153 without it). -->
@@ -116,6 +116,7 @@
         <p id="driveState" class="gps-state">GPS not started in this app</p>
         <p id="driveSpeed" class="gps-speed" aria-label="Speed in kilometres per hour">—</p>
         <p class="gps-unit">km/h <span id="driveHeading"></span></p>
+        <svg id="driveTape" class="gps-tape" viewBox="-160 0 320 38" role="img" aria-label="Compass" focusable="false"></svg>
         <p id="driveTurn" class="gps-age" hidden></p>
         <p id="driveAge" class="gps-age"></p>
       </div>
@@ -175,12 +176,12 @@
     </section>
   </main>
   </div>
-  <section id="parkedGate" class="parked-gate" role="dialog" aria-modal="true" aria-labelledby="parkedTitle" hidden><h1 id="parkedTitle">Controls while parked</h1><p>Vehicle motion is not checked. Use menus, messages and feedback only while parked.</p><button id="parkedConfirm" class="btn">I'm parked - show controls</button><button id="parkedCancel" class="btn">View only</button></section>
   <script src="parked.js"></script>
   <script src="drive-location.js"></script>
   <script src="drive/link-core.js"></script>
   <script src="drive-phone.js"></script>
   <script src="drive/speed-check.js"></script>
+  <script src="drive/guide.js"></script>
   <script src="home-shell.js"></script>
   <script src="vendor/mqtt.min.js"></script>
   <script src="watch-phone.js"></script>

@@ -931,8 +931,32 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
   enabled:false,snapshot:()=>({state:'unavailable',configured:false,gps:null,nav:null,offer:false,code:''}),
   setup:async()=>false,setVisible(){},setEnabled(){},cancelChoice(){},acceptOffer:async()=>false,keepCurrent(){}
 };
+// Compass tape and saved-route guidance (drive/guide.js). The guide is handed each fix as it arrives and keeps only how far
+// along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
+const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
+const driveGeo = driveGuide&&navigator.geolocation?{
+  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(p);},fail,options),
+  clearWatch:id=>navigator.geolocation.clearWatch(id)
+}:navigator.geolocation;
+let driveTapeShown='';
+function paintDriveTape(course) {
+  const svg=$('driveTape'); if(!svg?.style)return;
+  const t=driveGuide?DriveGuide.tape(Number.isFinite(course)?course:NaN):null,key=t?String(Math.round(course*2)/2):'';
+  svg.style.visibility=t?'visible':'hidden';
+  svg.setAttribute('aria-label',t?`Compass: heading ${t.point}, ${t.deg} degrees`:'Compass: no heading while stopped');
+  if(key===driveTapeShown)return;
+  driveTapeShown=key; svg.textContent='';
+  if(!t)return;
+  const make=(name,attrs,text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const k in attrs)n.setAttribute(k,attrs[k]);if(text)n.textContent=text;svg.append(n);};
+  for(const k of t.ticks){
+    const x=(k.x*150).toFixed(1),fade=(1-Math.abs(k.x)*.75).toFixed(2);   // the edges dim, so the eye lands on the middle
+    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.major?'major':'',opacity:fade});
+    if(k.label)make('text',{x,y:36,class:k.north?'north':'',opacity:fade},k.label);
+  }
+  make('path',{d:'M-6 0H6L0 8Z',class:'needle'});
+}
 const driveFeed = new StudioDriveLocation.Feed({
-  geo:navigator.geolocation, permissions:navigator.permissions,
+  geo:driveGeo, permissions:navigator.permissions,
   change:paintDrive
 });
 const driveCheck = typeof SpeedCheck!=='undefined'?SpeedCheck:null;
@@ -948,12 +972,19 @@ function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
   const course=pg?pg.hdg:reading.heading;
   if($('driveHeading'))$('driveHeading').textContent=Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
+  let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
   if($('driveTurn')){
     const route=nav&&['OnRoute','OffRoute','RouteRebuilding','RouteNeedsRebuild','RouteNotStarted'].includes(nav.ss);
     $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],words[nav.turn],nav.toTurn,nav.next||nav.street].filter(Boolean).join(' · '):'';
+    // No directions from a phone: the next turn along the route the PC saved, if the glasses are on it (drive/guide.js).
+    driveGuide?.setRoute(S.snap&&S.snap.rt);
+    guide=!route&&driveGuide?DriveGuide.words(driveGuide.snapshot()):null;
+    if(guide?.turn)$('driveTurn').textContent=guide.turn;
+    $('driveTurn').dataset.level=guide?.turn?guide.level:'ok';
     $('driveTurn').hidden=!$('driveTurn').textContent;
   }
+  paintDriveTape(course);
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
@@ -965,7 +996,7 @@ function paintDrive(reading) {
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   const age=pg?phone.ageMs:reading.ageMs;
-  $('driveAge').textContent=live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'';
+  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
   $('driveGps').disabled=reading.status==='unsupported';
