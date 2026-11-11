@@ -1009,6 +1009,7 @@ function paintDrive(reading) {
 }
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
+  driveStopped=driveFeed.enabled;
   if(driveFeed.enabled)driveFeed.stop(); else driveFeed.enable();
 }
 function retryDriveGps() {
@@ -1057,7 +1058,12 @@ function paintDriveDetails() {
 function syncDriveFeed() {
   const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
   driveFeed.setVisible(visible);drivePhone.setVisible(visible);
+  // Opening Drive starts the speed by itself when location is already allowed (Bakar, 11 Nov 2026: no unnecessary
+  // presses). This is the feed's own resume path: it asks the browser first and goes on only with an existing grant, so
+  // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
+  if(visible&&!driveFeed.enabled&&!driveStopped){driveFeed.enabled=true;driveFeed.start();}
 }
+let driveStopped=false;
 document.addEventListener('visibilitychange',syncDriveFeed);
 window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);

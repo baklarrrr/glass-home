@@ -33,7 +33,7 @@ const FAKE_GEO = `(() => {
   window.__drive = (mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: 0, longitude: 0 } }); for (const w of watchers.values()) w.ok(window.__fix()); };
   window.__at = (lat, lon, mps, heading) => { window.__fix = () => ({ timestamp: Date.now(), coords: { speed: mps, heading, accuracy: 8, latitude: lat, longitude: lon } }); for (const w of watchers.values()) w.ok(window.__fix()); }
   window.__deny = () => { window.__fix = null; for (const w of watchers.values()) w.fail({ code: 1 }); };
-  const perm = { state: 'granted', onchange: null };
+  const perm = { state: window.__grantAtStart ? 'granted' : 'prompt', onchange: null }; window.__perm = perm;   // not allowed yet, unless a test says so: looking at Drive must not start anything then
   Object.defineProperty(navigator, 'permissions', { get: () => ({ query: async () => perm }) });
 })();`;
 
@@ -220,9 +220,33 @@ async function run(browser, height, tag) {
   await ctx.close();
 }
 
+// Location already allowed: opening Drive starts the speed by itself, with no press. Not allowed yet: nothing starts and nothing asks.
+async function autoStart(browser) {
+  for (const granted of [true, false]) {
+    const ctx = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
+    await ctx.route(/^(?!http:\/\/127\.0\.0\.1)/, (r) => r.abort());
+    await ctx.addInitScript(`window.__grantAtStart = ${granted}; window.__watches = 0;`);
+    await ctx.addInitScript(FAKE_GEO);
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/glass-home/#tab=drive`);
+    await page.waitForTimeout(700);
+    if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(400); }
+    const m = await page.evaluate(() => ({ enabled: driveFeed.enabled, text: document.getElementById('driveState').textContent, button: document.getElementById('driveGps').textContent }));
+    if (granted) {
+      check(m.enabled && m.button === 'Stop app GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
+      await page.evaluate(() => window.__drive(20, 180)); await page.waitForTimeout(80);
+      check((await page.textContent('#driveSpeed')) === '72', 'auto start: and the speed arrives with no press at all');
+      const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
+      check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
+    } else check(!m.enabled && m.text === 'GPS not started in this app' && m.button === 'Start app GPS', `auto start: not allowed yet, nothing starts and nothing asks (${m.enabled}, ${JSON.stringify(m.text)})`);
+    await ctx.close();
+  }
+}
+
 (async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch();
+  await autoStart(browser);
   await run(browser, 600, '600x600');
   await run(browser, 480, '600x480');          // the short layout (max-height 500px) has its own sizes
   await browser.close();
