@@ -267,6 +267,22 @@ async function run(browser, height, tag) {
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.3, 90), spot(1800, 0));
   c = await cameraOf();
   check(c.mark === 'ahead' && c.speedColour === 'rgb(255, 255, 255)' && (await page.textContent('#driveState')) === 'Speed camera · limit 50 · 200 m', `${tag}: at 48 the speed is white again and the warning still counts down (${c.mark}, ${await page.textContent('#driveState')})`);
+  // The night look of the same warning, for the review.
+  await page.evaluate(() => { document.getElementById('driveHud').dataset.light = 'night'; });
+  await page.screenshot({ path: path.join(OUT, `s19b-speed-camera-night${height === 600 ? '' : '-' + height}.png`) });
+  await page.evaluate(() => { delete document.getElementById('driveHud').dataset.light; });
+  // A camera beside a motorway names its street; and an old list says so on the face, in amber, where "Just now" sits.
+  const old = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+  await page.evaluate(([site, made]) => { driveCams.load({ made, region: 'Canada', redLightOnly: ['Ontario', 'Alberta'], items: [[...site, 'r', 0, 1, 'Lake Shore']] }); }, [spot(2400, 10), old]);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(2100, 0));
+  await shot('s20-camera-street-old-list', { text: 'Red light camera on Lake Shore · 300 m', level: 'ok', speed: '50' });
+  c = await cameraOf();
+  const note = await page.evaluate(() => ({ text: document.getElementById('driveAge').textContent, colour: getComputedStyle(document.getElementById('driveAge')).color }));
+  check(c.lines === 1 && c.left >= 0 && c.right <= 600, `${tag}: the longer line with a street still fits on one line (${Math.round(c.left)}-${Math.round(c.right)})`);
+  check(/^Camera list (39|40|41) days old$/.test(note.text) && note.colour === 'rgb(255, 193, 94)', `${tag}: a list over 30 days old says so on the face in amber (${JSON.stringify(note.text)}, ${note.colour})`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 27, 90), spot(2150, 0));
+  c = await cameraOf();
+  check(c.mark === 'none', `${tag}: at motorway speed a camera marked as beside the motorway says nothing (${c.mark})`);
   await page.evaluate(() => { window.__fix = null; });
   await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
   c = await cameraOf();

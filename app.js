@@ -1025,7 +1025,10 @@ function paintDrive(reading) {
   if(camera)$('driveState').textContent=camera.text;
   $('driveHud').dataset.camera=camera?(camera.over?'over':'ahead'):'none';
   const age=pg?phone.ageMs:reading.ageMs;
-  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
+  // An old camera list says so here, in amber, until a fresh one is published: a quiet screen must not look like a clear road.
+  const oldList=!guide?.note&&live&&driveCams?driveCams.staleNote():'';
+  $('driveAge').textContent=guide?.note||oldList||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
+  $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
   $('driveGps').disabled=reading.status==='unsupported';
@@ -1067,7 +1070,7 @@ function paintDriveDetails() {
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix,
-    'Cameras: '+(driveCams?.count?driveCams.count+' fixed sites, list of '+driveCams.made+'. No mobile radar or police.':'list not loaded'),
+    driveCams?driveCams.about():'Cameras: not available',
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')

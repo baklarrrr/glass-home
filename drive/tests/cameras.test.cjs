@@ -48,11 +48,49 @@ test('a camera on a parallel street, behind, or on a cross street away from the 
   assert.ok(go(watch([cam(300, 40)]), 0, 0));                    // the far side of a wide junction still counts
 });
 
-test('the warning goes once the camera is passed', () => {
+test('the warning stays through the stop line and the junction, and goes once the camera is behind', () => {
   const h = watch([cam(300, 0)]);
   assert.ok(go(h, 0, 0)); assert.ok(go(h, 260, 0));
-  assert.equal(go(h, 290, 0), null);                             // within 25 m: being passed
+  assert.ok(Math.abs(go(h, 290, 0).dist - 10) < 2);              // 10 m before it: still warned
+  assert.ok(go(h, 310, 0));                                      // 10 m past the point: still in the junction
+  assert.equal(go(h, 320, 0), null);                             // 20 m behind: gone
   assert.equal(go(h, 340, 0), null);
+  const late = watch([cam(300, 0)]);
+  assert.equal(go(late, 285, 0), null);                          // first seen 15 m away: too late to start on
+});
+
+test('a camera marked as beside a motorway warns on the street, names the street, and is silent at motorway speed', () => {
+  const marked = [...at(300, 20), 'r', 0, 1, 'Lake Shore'];
+  const street = watch([marked]);
+  const s = go(street, 0, 0, 90, 14);
+  assert.equal(C.words(s, 50).text, 'Red light camera on Lake Shore · 300 m');
+  const motorway = watch([marked]);
+  assert.equal(go(motorway, 0, 0, 90, 27), null);                // 97 km/h: on the motorway above it
+  assert.equal(go(motorway, 100, 0, 90, 27), null);
+  const slowing = watch([marked]);
+  assert.ok(go(slowing, 0, 0, 90, 14));
+  assert.equal(go(slowing, 30, 0, 90, 25), null);                // back up to motorway speed: dropped
+  assert.equal(C.words(go(watch([cam(300, 0)]), 0, 0), 50).text, 'Red light camera · 300 m');    // unmarked: no street
+});
+
+test('a rough fix widens the lane by 15 m at most', () => {
+  assert.ok(go(watch([cam(300, 70)]), 0, 0, 90, 14, { accuracy: 40 }));       // 70 m to the side: inside 60 + 15
+  assert.equal(go(watch([cam(300, 80)]), 0, 0, 90, 14, { accuracy: 40 }), null);
+});
+
+test('the list says what it covers and how old it is', () => {
+  const clock = { t: Date.parse('2026-11-12T12:00:00Z') }, w = new C.Watch({ now: () => clock.t });
+  assert.equal(w.about(), 'Cameras: list not loaded'); assert.equal(w.staleNote(), '');
+  w.load({ made: '2026-11-11', region: 'Canada', redLightOnly: ['Ontario', 'Alberta'], items: [cam(0, 0), cam(500, 0)] });
+  assert.equal(w.ageDays(), 1);
+  assert.equal(w.about(), 'Cameras: 2 fixed sites, Canada only. Ontario and Alberta: red light cameras only. List of 2026-11-11. No mobile radar or police.');
+  assert.equal(w.staleNote(), '');
+  clock.t = Date.parse('2026-11-30T12:00:00Z');
+  assert.match(w.about(), /List of 2026-11-11, 19 days old\./); assert.equal(w.staleNote(), '');
+  clock.t = Date.parse('2026-12-15T12:00:00Z');
+  assert.equal(w.staleNote(), 'Camera list 34 days old');
+  w.load({ made: 'soon', items: [cam(0, 0)] });
+  assert.equal(w.ageDays(), null); assert.equal(w.staleNote(), ''); assert.match(w.about(), /List of unknown date/);
 });
 
 test('the nearest of two cameras ahead is the one shown', () => {
@@ -90,7 +128,7 @@ test('words: a speed camera says its limit when the map has one, and whether the
   assert.equal(C.words(null, 50), null);
 });
 
-test('builder: Toronto first, one entry per site, and no speed cameras in Ontario', () => {
+test('builder: Toronto first, one entry per site, no speed cameras where the law ended them, motorway marks', () => {
   const node = (id, lat, lon, tags) => ({ type: 'node', id, lat, lon, ...(tags ? { tags } : {}) });
   const rel = (id, enforcement, devices, tags = {}) => ({ type: 'relation', id, tags: { type: 'enforcement', enforcement, ...tags }, members: devices.map((ref) => ({ type: 'node', ref, role: 'device' })) });
   const toronto = [{ geometry: JSON.stringify({ type: 'Point', coordinates: [-79.5, 43.7] }) }, { geometry: 'broken' }];
@@ -105,18 +143,25 @@ test('builder: Toronto first, one entry per site, and no speed cameras in Ontari
     node(8, 46.0, -74.0), rel(108, 'maxweight', [8]),                               // not a camera this warns about
     node(9, 43.8, -79.2), rel(109, 'traffic_signals;maxspeed', [9]),                // both, in Ontario: a red light camera
   ];
+  toronto[0].street = 'LAKE SHORE BLVD W';
   const { items, counts } = B.combine(toronto, osm, new Set([1, 101, 2, 102, 3, 103, 6, 7, 9, 109]));
-  assert.deepEqual(items, [[43.65, -79.47, 'r'], [43.7, -79.5, 'r'], [43.8, -79.2, 'r'], [43.9, -79.4, 'r'], [45.5, -73.6, 's', 50], [45.6, -73.7, 's', 70]]);
-  assert.deepEqual(counts, { torontoRedLight: 1, osmRedLight: 3, osmSpeed: 2, ontarioSpeedLeftOut: 2, sameSite: 1, unusable: 1 });
+  assert.deepEqual(B.pack(items, items.map(() => false)), [[43.65, -79.47, 'r'], [43.7, -79.5, 'r'], [43.8, -79.2, 'r'], [43.9, -79.4, 'r'], [45.5, -73.6, 's', 50], [45.6, -73.7, 's', 70]]);
+  assert.deepEqual(counts, { torontoRedLight: 1, osmRedLight: 3, osmSpeed: 2, speedLeftOutByLaw: 2, sameSite: 1, unusable: 1 });
+  // Beside a motorway: marked, and named when the City gives the street.
+  assert.deepEqual(B.pack(items, items.map((it, i) => i === 1 || i === 4 || i === 3)).filter((it) => it.length > 4), [[43.7, -79.5, 'r', 0, 1, 'Lake Shore'], [43.9, -79.4, 'r', 0, 1], [45.5, -73.6, 's', 50, 1]]);
+  assert.deepEqual(['LAKE SHORE BLVD W', 'AVENUE RD', 'THE QUEENSWAY', 'STEELES AVE E', ''].map(B.shortStreet), ['Lake Shore', 'Avenue Rd', 'The Queensway', 'Steeles', '']);
 });
 
-test('the shipped list: well formed, recent, and the warning runs on it', () => {
+test('the shipped list: well formed, and the warning runs on it', () => {
   const file = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'cameras.json'), 'utf8'));
   assert.match(file.made, /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(file.items.length > 300 && file.items.length < 20000, String(file.items.length));
   assert.equal(C.index(file).count, file.items.length);                            // every entry is usable
   assert.ok(file.items.filter((i) => i[2] === 'r').length >= 250);                 // Toronto alone has about 300
-  assert.ok(file.sources.length === 2 && file.rules.length === 2);
+  assert.ok(file.sources.length === 2 && file.rules.length === 4);
+  assert.deepEqual(file.redLightOnly, ['Ontario', 'Alberta']);
+  const marked = file.items.filter((i) => i[4] === 1);
+  assert.ok(marked.length >= 20 && marked.some((i) => i[5] === 'Lake Shore'), String(marked.length));   // the Gardiner runs over Lake Shore
   // Approaching the first camera in the list from 300 m south, heading north.
   const [lat, lon] = file.items[0], clock = { t: T0 }, w = new C.Watch({ now: () => clock.t });
   w.load(file);
