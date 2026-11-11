@@ -115,7 +115,7 @@ window.HomeShell=(()=>{
     return false;
   }
   function init(){
-    for(const button of document.querySelectorAll('[data-section]'))button.addEventListener('click',()=>selectTab({work:'now',review:'review',drive:'drive'}[button.dataset.section]));
+    for(const button of document.querySelectorAll('[data-section]'))button.addEventListener('click',e=>selectTab({work:'now',review:'review',drive:'drive'}[button.dataset.section],false,e.isTrusted));
     by('reviewEnter').addEventListener('click',focusReview);by('driveReveal').addEventListener('click',reveal);
     by('driveInfoButton').addEventListener('click',openDriveInfo);by('driveInfoClose').addEventListener('click',()=>closeDriveInfo());
     document.addEventListener('studio-parked-change',()=>{

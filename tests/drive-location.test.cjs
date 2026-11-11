@@ -32,7 +32,7 @@ function harness(permission='granted') {
   return {feed,p,watches,clears,states,tasks,advance(ms,wallMs=ms){mono+=ms;wall+=wallMs;for(const [id,t] of [...tasks])if(t.at<=mono){tasks.delete(id);t.fn();}},get wall(){return wall;}};
 }
 test('entry does not request location or prompt',()=>{const h=harness();h.feed.setVisible(true);assert.equal(h.watches.length,0);});
-test('explicit enable creates one high accuracy watch with no cached fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();assert.equal(h.watches.length,1);assert.deepEqual(h.watches[0].options,{enableHighAccuracy:true,maximumAge:0,timeout:10000});});
+test('explicit enable creates one high accuracy watch with no cached fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();assert.equal(h.watches.length,1);assert.deepEqual(h.watches[0].options,{enableHighAccuracy:true,maximumAge:0,timeout:30000});});
 test('accepted fix expires at five seconds without incoming updates',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(4999);assert.equal(h.feed.snapshot().speed,36);h.advance(1);assert.equal(h.feed.snapshot().status,'stale');assert.equal(h.feed.snapshot().speed,null);});
 test('cached fix expires from acquisition rather than arrival',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(10,now-4000));h.advance(1000);assert.equal(h.feed.snapshot().status,'stale');});
 test('clock rollback cannot prolong a reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(5000,0);assert.equal(h.feed.snapshot().speed,null);});
@@ -242,4 +242,18 @@ test('when watch registration throws, first visible gesture falls back to one cu
   h.advance(MAX_AGE_MS);
   assert.equal(probes.length,1);
   assert.equal(h.feed.snapshot().speed,null);
+});
+
+test('late one-shot can deliver a newly acquired fix in the same visit, never an old error or hidden fix',async()=>{
+ const h=harness('granted'),probes=[];
+ h.feed.geo.getCurrentPosition=(ok,fail,options)=>probes.push({ok,fail,options});
+ h.feed.setVisible(true,{autoStart:true});await Promise.resolve();h.watches[0].fail({code:3});h.advance(0);
+ assert.equal(probes.length,1);
+ assert.equal(h.watches[0].options.timeout,30000);
+ h.advance(RESPONSE_NOTICE_MS+1000);
+ probes[0].ok({...fix(7,h.wall),coords:{speed:7,accuracy:4,latitude:43,longitude:-79}});
+ assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.report().positions,1);
+ probes[0].fail({code:1});assert.equal(h.feed.snapshot().status,'live');
+ h.advance(4000);assert.equal(probes.length,2);
+ h.feed.setVisible(false);probes[1].ok(fix(12,h.wall));assert.equal(h.feed.snapshot().speed,null);
 });

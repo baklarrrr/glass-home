@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 42; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 44; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
 // (Apps) and games kept apart from them (Games).
@@ -1122,12 +1122,13 @@ function paintDriveDetails() {
   };
   $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';
 }
-function syncDriveFeed() {
+function syncDriveFeed(gesture=false) {
   const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
   if(visible!==driveFeed.visible)resetDriveReport();
   const pref=drivePreference();
   if(!visible&&driveFeed.visible)driveGuide?.clearMotion?.();
-  driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied'});
+  const fromWearer=visible && gesture===true && !driveStopped && pref!=='0' && pref!=='denied';
+  driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied',gesture:fromWearer});
   drivePhone.setVisible(visible);
   if(visible)scheduleDriveReport();
   if(visible)loadDriveCameras();
@@ -1559,11 +1560,11 @@ const TABS = ['review', 'now', 'work', 'watch', 'route', 'drive', 'apps', 'games
 // Sections that show the pairing screen instead while these glasses aren't paired: both need the PC.
 const NEEDS_PC = ['now', 'work'];
 
-function showPane(id) {
+function showPane(id,driveGesture=false) {
   const before = PANES.find((p) => !$(p).hidden);
   for (const p of PANES) $(p).hidden = p !== id;
   clearTimeout(S.renderStatusTimer);
-  syncDriveFeed(); if (id === 'drive') applyDriveLight();
+  syncDriveFeed(driveGesture); if (id === 'drive') applyDriveLight();
   if (id === 'now') renderNow();
   if (!CALM_PANES.includes(id)) wakeUp();
   const listView = ['now', 'work', 'watch', 'route', 'drive', 'apps', 'games', 'pair'].includes(id);
@@ -1624,7 +1625,7 @@ function focusFirst(pane) {
   (first || document.querySelector(`.tab[data-tab="${S.tab}"]`)).focus();
 }
 
-function selectTab(tab, focusTab) {
+function selectTab(tab, focusTab, driveGesture=false) {
   if (S.tab==='watch' && tab !== 'watch') cancelWatch();
   if (S.view !== 'list') return; // Native Back preserves the current draft and bounds shared history.
   if (!HomeShell.canEnterRoute(tab, focusTab) || !HomeShell.canLeaveReview(tab)) return;
@@ -1632,7 +1633,7 @@ function selectTab(tab, focusTab) {
   S.view = 'list';
   history.replaceState({ v: 'list', tab }, '');
   if (S.pairing && NEEDS_PC.includes(tab)) showPane('pair');
-  else showPane(tab);
+  else showPane(tab,driveGesture);
   if (tab === 'review') HomeShell.focusReview();
   else if (focusTab) document.querySelector(`.tab[data-tab="${tab}"]`).focus();
   else focusFirst(NEEDS_PC.includes(tab) && S.pairing ? 'pair' : tab);
@@ -2041,7 +2042,7 @@ function onKey(e) {
     const next = tabs[(i + (k === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     e.preventDefault();
     S.slide = k === 'ArrowRight' ? 1 : -1;
-    selectTab(next, Boolean(e.target.closest('.tabs')));
+    selectTab(next, Boolean(e.target.closest('.tabs')),e.isTrusted);
     return;
   }
   if ((e.target === $('dResult') || e.target === $('cQuote')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
@@ -2070,17 +2071,27 @@ function onKey(e) {
 // ---- start -----------------------------------------------------------------------------------------
 
 function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
-  try { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}); } catch (e) { /* optional */ }
+  if(!('serviceWorker' in navigator))return;
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+    let lastCheck=0;
+    const check=()=>{
+      if(document.hidden||Date.now()-lastCheck<60000)return;
+      lastCheck=Date.now();reg.update().catch(()=>{});
+    };
+    window.addEventListener('pageshow',check);
+    document.addEventListener('visibilitychange',check);
+    if(navigator.serviceWorker.controller)check();
+  }).catch(()=>{});
 }
 
 async function main() {
   const buildLabel=document.createElement('small');
   buildLabel.id='runningBuild';buildLabel.textContent='v'+APP_BUILD;
+  Object.assign(buildLabel.style,{fontSize:'19px',fontWeight:'650',color:'var(--ink, #e6eee8)'});
   buildLabel.setAttribute('aria-label','Bakar Home build '+APP_BUILD);
   const context=$('appContext');
   if(context)context.before(buildLabel);else ($('appIdentity')||document.querySelector('header')||document.body).append(buildLabel);
-  for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => selectTab(t.dataset.tab, true));
+  for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', e => selectTab(t.dataset.tab,true,e.isTrusted));
   $('newTask').addEventListener('click', () => startCompose({ mode: 'new' }));
   $('cSend').addEventListener('click', review);
   $('cGo').addEventListener('click', go);

@@ -16,9 +16,11 @@ const server = http.createServer(async (req,res)=>{
 async function fixture(context) {
   await context.addInitScript(()=>{
     const watchers=new Map(), perm={state:'prompt',onchange:null};
-    window.gpsTest={count:0,clears:0,perm,watchers,pressCount:0};
+    window.gpsTest={count:0,clears:0,perm,watchers,pressCount:0,insideClick:false,gesture:false};
+    window.addEventListener('click',e=>{gpsTest.insideClick=e.isTrusted;},{capture:true});
+    window.addEventListener('click',()=>{gpsTest.insideClick=false;});
     const fake={
-      watchPosition(ok,fail){const id=++gpsTest.count;watchers.set(id,{ok,fail});return id;},
+      watchPosition(ok,fail){gpsTest.gesture=gpsTest.insideClick;const id=++gpsTest.count;watchers.set(id,{ok,fail});return id;},
       clearWatch(id){watchers.delete(id);gpsTest.clears++;},
     };
     Object.defineProperty(navigator,'geolocation',{value:fake});
@@ -32,13 +34,21 @@ async function run(){
  const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({executablePath:process.env.CHROME_PATH,args:['--disable-background-networking']});
  try{
-  for(const route of ['home','standalone','home-link']){
+  for(const route of ['home','standalone','home-link','home-previously-asked']){
    const ctx=await browser.newContext({viewport:{width:600,height:600},serviceWorkers:'block'});
    await ctx.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
    await ctx.routeWebSocket(/.*/,s=>s.close());await fixture(ctx);
    const page=await ctx.newPage();
    const home=route!=='standalone',url=origin+'/glass-home/'+(home?(route==='home-link'?'#tab=drive':''):'drive/');
    await page.goto(url);
+   if(route==='home-previously-asked'){
+    await page.evaluate(()=>{localStorage.setItem('bakar.drive.gps','asked');selectTab('drive');});
+    await page.waitForFunction(()=>driveFeed.facts.permission==='prompt');
+    assert.equal(await page.evaluate(()=>gpsTest.count),0,'Restoring a previous request does not prompt');
+    await page.evaluate(()=>selectTab('work'));
+    await page.click('#section-drive');
+    assert.equal(await page.evaluate(()=>gpsTest.gesture),true,'A real Drive selection requests location in the same gesture');
+   }
    if(route==='home'){
     await page.click('#section-work');
     assert.equal(await page.evaluate(()=>gpsTest.count),0,'Opening Work must not request location');
