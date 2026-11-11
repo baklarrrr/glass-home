@@ -51,6 +51,13 @@
     return [(lon - lon0) * Math.cos(lat0 * Math.PI / 180) * 111320, (lat - lat0) * 110540];
   }
 
+  // Words cut to a length without cutting inside a word: "Rd 124" must never become "Rd 12". The cut is marked.
+  function clip(text, max) {
+    if (text.length <= max) return text;
+    const cut = text.slice(0, max + 1), space = cut.lastIndexOf(' ');
+    return (space > max / 2 ? cut.slice(0, space) : text.slice(0, max)).replace(/[\s·,]+$/, '') + '…';
+  }
+
   // A route from the PC, checked. `gl` is the outline as [latitude, longitude] pairs; `gs` the turns as
   // [metres from the start, words]. Anything malformed gives null and the screen simply has no guidance.
   function prepare(route, nowS) {
@@ -71,7 +78,7 @@
     const steps = [];
     for (const g of route.gs) {
       if (!Array.isArray(g) || !finite(g[0]) || g[0] < 0 || typeof g[1] !== 'string') return null;
-      steps.push({ s: Math.min(total, g[0] * total / said), t: g[1].slice(0, 48) });
+      steps.push({ s: Math.min(total, g[0] * total / said), t: clip(g[1], 80) });
     }
     steps.sort((a, b) => a.s - b.s);
     return { id: route.id, ti: typeof route.ti === 'string' ? route.ti.slice(0, 40) : '', line, total, steps };
@@ -79,8 +86,8 @@
 
   // Where a fix sits on the outline: metres along it and metres away from it. `near` (metres along) keeps the answer
   // close to where the last fix was when the route passes the same place twice.
-  function project(r, lat, lon, near) {
-    let best = null, local = null;
+  function project(r, lat, lon, near, heading, limit) {
+    let best = null, local = null, agree = null;
     for (let i = 1; i < r.line.length; i++) {
       const a = r.line[i - 1], b = r.line[i];
       const [ax, ay] = flat(lat, lon, a.lat, a.lon), [bx, by] = flat(lat, lon, b.lat, b.lon);
@@ -89,12 +96,37 @@
       const hit = { s: a.s + t * (b.s - a.s), away: Math.hypot(ax + t * vx, ay + t * vy), bearing: norm(Math.atan2(vx, vy) * 180 / Math.PI) };
       if (!best || hit.away < best.away) best = hit;
       if (finite(near) && hit.s >= near - LOOK_BACK_M && hit.s <= near + LOOK_AHEAD_M && (!local || hit.away < local.away)) local = hit;
+      // On the line here and running the way the car moves: the leg the car is really on. Where two legs share a road
+      // (out and back), the one nearest ahead of the last place wins.
+      if (finite(heading) && hit.away <= limit && Math.abs(((heading - hit.bearing + 540) % 360) - 180) <= WITH_DEG) {
+        const gap = finite(near) ? (hit.s >= near - LOOK_BACK_M ? hit.s - near : Infinity) : hit.away;
+        if (gap !== Infinity && (!agree || gap < agree.gap)) agree = { ...hit, gap };
+      }
     }
-    return { best, local };
+    return { best, local, agree };
   }
 
   class Guide {
-    constructor({ now = Date.now } = {}) { this.now = now; this.route = null; this.reset(); }
+    constructor({ now = Date.now } = {}) { this.now = now; this.route = null; this.anchor = null; this.moved = null; this.reset(); }
+    // The way the car is moving, for a runtime whose location gives no heading: the bearing between two fixes at least
+    // 12 m apart (more when the fix is rough). The earlier fix is held in page memory for this only and replaced as the car
+    // moves; a reported heading always wins. Nothing here needs a route.
+    track(c, at) {
+      const a = this.anchor;
+      if (a && at - a.at <= 15000 && at >= a.at) {
+        const [dx, dy] = flat(a.lat, a.lon, c.latitude, c.longitude), far = Math.hypot(dx, dy);
+        if (far < Math.max(12, c.accuracy)) return;
+        if (far < 400) this.moved = { deg: norm(Math.atan2(dx, dy) * 180 / Math.PI), at };
+      }
+      this.anchor = { lat: c.latitude, lon: c.longitude, at };
+    }
+    // The course to show or steer by right now, or null: reported by the device, else worked out from movement, and
+    // never older than the speed's own limit.
+    course(c) {
+      if (c && finite(c.heading) && c.heading >= 0 && c.heading < 360 && finite(c.speed) && c.speed >= 2) return c.heading;
+      if (c && finite(c.speed) && c.speed < 2) return null;                   // the device says stopped
+      return this.moved && this.now() - this.moved.at < FIX_MAX_AGE_MS && this.now() >= this.moved.at ? this.moved.deg : null;
+    }
     reset() { this.joined = false; this.s = null; this.away = null; this.at = 0; this.offCount = 0; this.offSince = 0; this.done = false; this.doneAt = 0;
       this.onCount = 0; this.againstCount = 0; }
     // Stop for good on this route: arrived and left, or driving it backwards. A new route starts fresh.
@@ -110,19 +142,21 @@
     // One location fix, straight from the browser. Only numbers derived from it are kept.
     fix(position) {
       const r = this.route, c = position && position.coords, at = position && position.timestamp, now = this.now();
-      if (!r || this.over || !c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
+      if (!c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
       if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
+      this.track(c, at);
+      if (!r || this.over) return;
       const limit = OFF_BASE_M + c.accuracy;
-      const { best, local } = project(r, c.latitude, c.longitude, this.joined ? this.s : NaN);
-      const hit = local && local.away <= limit ? local : best;
+      // The way the car is moving. No course (slow or stopped) says nothing either way.
+      const heading = this.course(c), moving = heading !== null;
+      const { best, local, agree } = project(r, c.latitude, c.longitude, this.joined ? this.s : NaN, moving ? heading : NaN, limit);
+      const hit = agree || (local && local.away <= limit ? local : best);
       if (this.done) {                                // arrived: said for a while, gone once the wearer leaves
         const end = r.line[r.line.length - 1], [ex, ey] = flat(c.latitude, c.longitude, end.lat, end.lon);
         if (Math.hypot(ex, ey) > ARRIVED_LEAVE_M) this.end();
         return;
       }
-      // The way the car is moving against the way the road runs here. No course (slow or stopped) says nothing either way.
-      const moving = finite(c.heading) && c.heading >= 0 && c.heading < 360 && finite(c.speed) && c.speed >= 2;
-      const turn = moving ? Math.abs(((c.heading - hit.bearing + 540) % 360) - 180) : NaN;
+      const turn = moving ? Math.abs(((heading - hit.bearing + 540) % 360) - 180) : NaN;
       if (!this.joined) {
         // Not guiding yet. Crossing the route, or driving it the other way, must not start it: only several fixes in a
         // row on the line and going its way do.
@@ -177,7 +211,7 @@
     }
   }
 
-  const api = Object.freeze({ tape, prepare, project, Guide, metres, words, POINTS,
+  const api = Object.freeze({ tape, prepare, project, clip, Guide, metres, words, POINTS,
     FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M,
     JOIN_FIXES, AGAINST_FIXES, ARRIVED_SHOW_MS, ARRIVED_LEAVE_M });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveGuide = api;

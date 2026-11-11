@@ -22,11 +22,10 @@
 
   // What backs the glasses' own GPS up, in words. "Compare", not "accept": the wearer taps Yes on the phone only when the
   // number it asks about is the one the glasses show (the Journal's own rule), and Studio Drive already says it this way.
-  // "When parked": nobody should pair a phone while driving.
   function backup(link) {
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
-      case 'none': return 'pair your phone when parked';
+      case 'none': return 'pair your phone';
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';

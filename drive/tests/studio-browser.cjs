@@ -117,7 +117,7 @@ async function run(browser, height, tag) {
 
   const seen = [];          // [name, measure] of every screen below, for the common checks
   await page.evaluate(() => window.__deny());
-  seen.push(['s1-unpaired-denied', await shot('s1-unpaired-denied', { text: 'Glasses location not allowed\nPair your phone when parked', level: 'warn', speed: '—' })]);
+  seen.push(['s1-unpaired-denied', await shot('s1-unpaired-denied', { text: 'Glasses location not allowed\nPair your phone', level: 'warn', speed: '—' })]);
   await phone('ready');
   seen.push(['s2-paired-denied-calm', await shot('s2-paired-denied-calm', { text: 'Phone linked · waiting for GPS', level: 'ok', speed: '—' })]);
   await phone('live', { gps: { kmh: 62, hdg: 90 }, ageMs: 300 });
@@ -136,11 +136,11 @@ async function run(browser, height, tag) {
   await page.evaluate(() => window.__drive(16.1, 47));
   seen.push(['s7-glasses-speed', await shot('s7-glasses-speed', { text: 'App location · GPS estimate', level: 'ok', speed: '58' })]);
   await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
-  seen.push(['s8-glasses-speed-lost', await shot('s8-glasses-speed-lost', { text: 'GPS speed lost\nPair your phone when parked', level: 'warn', speed: '—' })]);
+  seen.push(['s8-glasses-speed-lost', await shot('s8-glasses-speed-lost', { text: 'GPS speed lost\nPair your phone', level: 'warn', speed: '—' })]);
   // the day look (the brightest, for sunlight) and the night look of the same line
   for (const look of ['day', 'night']) {
     await page.evaluate((l) => { document.getElementById('driveHud').dataset.light = l; }, look);
-    seen.push([`s9-lost-${look}`, await shot(`s9-lost-${look}`, { text: 'GPS speed lost\nPair your phone when parked', level: 'warn', speed: '—' })]);
+    seen.push([`s9-lost-${look}`, await shot(`s9-lost-${look}`, { text: 'GPS speed lost\nPair your phone', level: 'warn', speed: '—' })]);
   }
   await page.evaluate(() => { delete document.getElementById('driveHud').dataset.light; });
 
@@ -183,7 +183,7 @@ async function run(browser, height, tag) {
     return { shown: getComputedStyle(t).visibility === 'visible', letters: [...t.querySelectorAll('text')].map((x) => x.textContent).join(' '), heading: document.getElementById('driveHeading').textContent, sideOpacity: Math.min(...[...t.querySelectorAll('text:not(.readout)')].map((x) => +x.getAttribute('opacity'))), lettersPx: parseFloat(getComputedStyle(t.querySelector('text') || t).fontSize), tapeH: r.height, turnLines: Math.round(document.getElementById('driveTurn').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('driveTurn')).lineHeight)), ticks: t.querySelectorAll('line').length,
       label: t.getAttribute('aria-label'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, unitBottom: u.bottom,
       turn: document.getElementById('driveTurn').hidden ? '' : document.getElementById('driveTurn').textContent, turnLevel: document.getElementById('driveTurn').dataset.level,
-      turnBox: document.getElementById('driveTurn').getBoundingClientRect().toJSON(), note: document.getElementById('driveAge').textContent,
+      turnBox: document.getElementById('driveTurn').getBoundingClientRect().toJSON(), turnCut: document.getElementById('driveTurn').scrollWidth > document.getElementById('driveTurn').clientWidth && getComputedStyle(document.getElementById('driveTurn')).textOverflow === 'ellipsis', note: document.getElementById('driveAge').textContent,
       noteBottom: document.getElementById('driveAge').getBoundingClientRect().bottom, revealTop: document.getElementById('driveReveal').getBoundingClientRect().top }; });
   await unpaired();
   await page.evaluate((rt) => { S.snap = { ...(S.snap || {}), rt }; driveFeed.enable(); }, saved);
@@ -212,10 +212,10 @@ async function run(browser, height, tag) {
   check(t.turn === '300 m · Arrive at Depot', `${tag}: back on the line after the turn, the destination is next, by name (${JSON.stringify(t.turn)})`);
   // A long street name is cut, never wrapped.
   await page.evaluate(([rt, lat, lon]) => { S.snap = { ...S.snap, rt }; for (let i = 0; i < 5; i++) window.__at(lat, lon + i * 0.0001, 13.9, 90); },
-    [{ ...saved, id: 'test-long', gs: [[0, 'Start'], [1000, 'Turn sharp left onto Regional Municipality Rd 124'], [1500, 'Arrive']] }, ...spot(300, 0)]);
+    [{ ...saved, id: 'test-long', gs: [[0, 'Start'], [1000, 'Turn sharp left onto Regional Municipality Road 124 North Service Rd'], [1500, 'Arrive']] }, ...spot(300, 0)]);
   await shot('s16-long-turn', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
   t = await tapeOf();
-  check(t.turn.includes('Regional Municipality Rd') && t.turnLines === 1 && t.turnBox.right <= 600 && t.turnBox.left >= 0, `${tag}: the longest turn stays on one line inside the screen (${Math.round(t.turnBox.left)}-${Math.round(t.turnBox.right)})`);
+  check(t.turn.endsWith('Regional Municipality Road 124 North Service Rd') && t.turnCut && t.turnLines === 1 && t.turnBox.right <= 600 && t.turnBox.left >= 0, `${tag}: the longest turn keeps its whole road number in the text, stays on one line and shows a visible … where it runs out of room (${Math.round(t.turnBox.left)}-${Math.round(t.turnBox.right)})`);
   // No fresh fix: the last turn must not sit there. A rough fix, then silence.
   await page.evaluate(([lat, lon]) => { window.__fix = null; }, spot(0, 0));
   await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
@@ -241,17 +241,18 @@ async function run(browser, height, tag) {
 
 // Location already allowed: opening Drive starts the speed by itself, with no press. Not allowed yet: nothing starts and nothing asks.
 async function autoStart(browser) {
-  for (const granted of [true, false, 'remembered']) {
+  for (const granted of [true, false, 'remembered', 'stopped']) {
     const ctx = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
     await ctx.route(/^(?!http:\/\/127\.0\.0\.1)/, (r) => r.abort());
-    await ctx.addInitScript(`window.__grantAtStart = ${granted === true}; ${granted === 'remembered' ? "try { localStorage.setItem('bakar.drive.gps', '1'); } catch (_) {}" : ''}`);
+    await ctx.addInitScript(`window.__grantAtStart = ${granted === true || granted === 'stopped'}; ${granted === 'stopped' ? "try { localStorage.setItem('bakar.drive.gps', '0'); } catch (_) {}" : ''} ${granted === 'remembered' ? "try { localStorage.setItem('bakar.drive.gps', '1'); } catch (_) {}" : ''}`);
     await ctx.addInitScript(FAKE_GEO);
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/glass-home/#tab=drive`);
     await page.waitForTimeout(700);
     if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(400); }
     const m = await page.evaluate(() => ({ enabled: driveFeed.enabled, text: document.getElementById('driveState').textContent, button: document.getElementById('driveGps').textContent }));
-    if (granted === 'remembered') check(m.enabled && m.button === 'Stop app GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
+    if (granted === 'stopped') check(!m.enabled && m.button === 'Start app GPS', `auto start: a deliberate Stop holds through a relaunch, even with location allowed (${m.enabled})`);
+    else if (granted === 'remembered') check(m.enabled && m.button === 'Stop app GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
     else if (granted) {
       check(m.enabled && m.button === 'Stop app GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
       await page.evaluate(() => window.__drive(20, 180)); await page.waitForTimeout(80);

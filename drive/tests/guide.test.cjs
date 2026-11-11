@@ -228,6 +228,50 @@ test('guide: a route that crosses itself keeps its place', () => {
   assert.equal(s.turn, 'Arrive at Depot'); assert.ok(Math.abs(s.left - 405) < 5);
 });
 
+test('guide: out and back along the same road: after the U-turn it follows the way back', () => {
+  // 1,000 m east, then back west along the same road to the start.
+  const h = guide(route({ gm: 2000, gl: [at(0, 0), at(1000, 0), at(0, 0)], gs: [[0, 'Start'], [1000, 'Make a U-turn'], [2000, 'Arrive']] }));
+  join(h, 700);
+  assert.equal(h.g.snapshot().turn, 'Make a U-turn');
+  go(h, 990, 0);
+  for (const e of [900, 800, 700]) go(h, e, 0, WEST);            // now westbound on the return leg, same road
+  const s = h.g.snapshot();
+  assert.equal(s.state, 'on'); assert.equal(s.turn, 'Arrive at Depot'); assert.ok(Math.abs(s.left - 700) < 5);
+});
+
+test('clip: a long turn is cut between words, never inside a road number, and the cut is marked', () => {
+  assert.equal(G.clip('Turn left onto King St W', 80), 'Turn left onto King St W');
+  const long = 'Turn sharp left onto Regional Municipality Road 124 toward the Northern Industrial Distribution Centre';
+  const cut = G.clip(long, 80);
+  assert.ok(cut.length <= 81 && cut.endsWith('…') && long.startsWith(cut.slice(0, -1)));
+  assert.ok(/ \S+…$/.test(cut) && long[cut.length - 1] === ' ', cut);          // ends on a whole word
+  assert.equal(G.prepare(route({ gs: [[1000, 'Turn sharp left onto Regional Municipality Rd 124']] }), T0 / 1000).steps[0].t, 'Turn sharp left onto Regional Municipality Rd 124');
+});
+
+test('course: with no heading from the device it is worked out from movement, and goes when the car stops', () => {
+  const h = guide(route({ id: 'none', gl: undefined }));          // no usable route: the course needs none
+  const bare = { heading: null, speed: null };
+  go(h, 0, 0, bare);
+  assert.equal(h.g.course(), null);
+  go(h, 14, 0, bare);
+  assert.ok(Math.abs(h.g.course() - 90) < 1);
+  go(h, 14, 14, bare);
+  assert.ok(Math.abs(h.g.course() - 0) < 1 || Math.abs(h.g.course() - 360) < 1);
+  go(h, 15, 15, bare);                                             // 1.4 m: scatter, not movement
+  assert.ok(h.g.course() !== null);
+  h.clock.t += G.FIX_MAX_AGE_MS;
+  assert.equal(h.g.course(), null);                                // no fresh movement: no course, never an old one
+  assert.equal(h.g.course({ heading: 200, speed: 10 }), 200);      // a reported heading always wins
+  assert.equal(h.g.course({ heading: null, speed: 0.5 }), null);   // the device says stopped
+});
+
+test('guide: starts and follows the route on a runtime that reports no heading or speed', () => {
+  const h = guide(), bare = { heading: null, speed: null };
+  for (const e of [600, 615, 630, 645, 660]) go(h, e, 0, bare);
+  const s = h.g.snapshot();
+  assert.equal(s.state, 'on'); assert.ok(Math.abs(s.toTurn - 340) < 3);
+});
+
 test('metres: rounded the way a driver reads them', () => {
   assert.deepEqual([4, 96, 194, 349, 960, 990, 1249, 9949, 12400].map(G.metres),
     ['10 m', '100 m', '190 m', '350 m', '950 m', '1.0 km', '1.2 km', '9.9 km', '12 km']);

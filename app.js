@@ -971,7 +971,8 @@ const DRIVE_STATUS_LABELS=Object.freeze({
   });
 function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
-  const course=pg?pg.hdg:reading.heading;
+  // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
+  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=7.2&&driveGuide?driveGuide.course():null;   // 7.2 km/h is the feed's own 2 m/s: slower than that there is no course
   if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
   let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
@@ -994,7 +995,7 @@ function paintDrive(reading) {
     $('driveTurn').hidden=!$('driveTurn').textContent;
   }
   paintDriveTape(course);
-  if(reading.status==='live'&&!pg)driveRemember(true); else if(reading.status==='denied')driveRemember(false);
+  if(reading.status==='live'&&!pg)driveRemember(true); else if(reading.status==='denied'&&!driveHeld())driveRemember(null);
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
@@ -1073,14 +1074,16 @@ function syncDriveFeed() {
   // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
   // Where the glasses cannot report the permission at all, a Start that worked before is remembered and simply made again:
   // at worst that is one system prompt the wearer has already answered.
-  if(visible&&!driveFeed.enabled&&!driveStopped){
+  if(visible&&!driveFeed.enabled&&!driveStopped&&!driveHeld()){
     if(driveRemembered())driveFeed.enable(); else {driveFeed.enabled=true;driveFeed.start();}
   }
 }
 let driveStopped=false;
 const DRIVE_REMEMBER='bakar.drive.gps';
 function driveRemembered(){try{return localStorage.getItem(DRIVE_REMEMBER)==='1';}catch(_){return false;}}
-function driveRemember(on){try{if(on)localStorage.setItem(DRIVE_REMEMBER,'1');else localStorage.removeItem(DRIVE_REMEMBER);}catch(_){}}
+// '1' a Start that worked; '0' a deliberate Stop, which holds through a relaunch until the next Start; nothing after a denial.
+function driveHeld(){try{return localStorage.getItem(DRIVE_REMEMBER)==='0';}catch(_){return false;}}
+function driveRemember(on){try{if(on===null)localStorage.removeItem(DRIVE_REMEMBER);else localStorage.setItem(DRIVE_REMEMBER,on?'1':'0');}catch(_){}}
 document.addEventListener('visibilitychange',syncDriveFeed);
 window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);
