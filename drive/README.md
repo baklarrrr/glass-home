@@ -24,6 +24,7 @@ played back to the page, because every frame has to answer one of the page's own
 | `index.html`, `style.css`, `app.js` | The screen, controls, GPS and the link to the phone |
 | `link-core.js` | Keys, sealing and the checks on every message from the phone (no DOM, no network) |
 | `speed-check.js` | The speed self-check: with no speed on screen, a plain two-line warning for a hard fault of the glasses' own location with nothing healthy behind it (no DOM, no timers; also loaded by Studio Drive) |
+| `guide.js` | Compass tape and saved-route guidance for Studio Drive (Home's Drive tab): no DOM, no timers, no network. See `../DRIVE.md`, "Compass and saved-route guidance" |
 | `sw.js` | Keeps this app's own files for a weak signal; handles nothing else |
 | `.well-known/meta-wearables-manifest.json`, `icon*.svg` | Name and icon in the glasses launcher |
 | `LINK.md` | The phone-to-glasses protocol, for the phone side |

@@ -528,7 +528,7 @@ function renderPanel() {
     help = 'Directions come from Bakar Drive on your phone through its glasses link. Open this app from the link the phone gives you once. Until then this shows phone GPS speed.';
   } else if (S.phone === 'pairing') {
     state = 'Your phone hasn\'t accepted these glasses yet.';
-    help = 'On your phone, open the glasses link and accept this code. Do it while parked.';
+    help = 'On your phone, open the glasses link and accept this code.';
   } else if (S.net === 'down') {
     state = 'No signal right now.';
     help = 'Directions come back on their own when the phone has signal.';

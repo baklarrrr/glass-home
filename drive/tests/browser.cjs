@@ -110,7 +110,7 @@ async function layoutOk(page, what) {
   check(!(await page.isVisible('#controls')), 'controls hide themselves after 8 s');
   // The 16.1 m/s reading is now old: no number from the past, a dash, and the amber line says why.
   let lost = await warn(page);
-  check((await page.textContent('#speed')) === '—' && lost.shown && lost.text === 'GPS speed lost\nPair your phone when parked' && lost.level === 'warn', `self-check: the speed stopped coming: a dash and the reason (${JSON.stringify(lost.text)})`);
+  check((await page.textContent('#speed')) === '—' && lost.shown && lost.text === 'GPS speed lost\nPair your phone' && lost.level === 'warn', `self-check: the speed stopped coming: a dash and the reason (${JSON.stringify(lost.text)})`);
   const lostDash = await dashAt(page);
   check(lostDash.speed === liveDash.speed && lostDash.unit === liveDash.unit, `self-check: the dash and unit do not move when the line appears (${JSON.stringify(liveDash)} -> ${JSON.stringify(lostDash)})`);
   await layoutOk(page, 'speed lost');
@@ -340,7 +340,7 @@ async function layoutOk(page, what) {
   let w = await warn(p5);
   const deniedDash = await dashAt(p5);
   check(deniedDash.speed === askingDash.speed && deniedDash.unit === askingDash.unit, `self-check: the dash and unit stay put when the refusal line appears (${JSON.stringify(askingDash)} -> ${JSON.stringify(deniedDash)})`);
-  check(w.shown && w.text === 'Glasses location not allowed\nPair your phone when parked' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
+  check(w.shown && w.text === 'Glasses location not allowed\nPair your phone' && w.level === 'warn', `self-check: refused location with no phone says what to do (${w.text})`);
   check((await p5.textContent('#speed')) === '—', 'self-check: the dash stays a dash');
   await layoutOk(p5, 'refused location, no phone');
   await shot5('11-refused-no-phone');

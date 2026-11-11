@@ -931,8 +931,33 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
   enabled:false,snapshot:()=>({state:'unavailable',configured:false,gps:null,nav:null,offer:false,code:''}),
   setup:async()=>false,setVisible(){},setEnabled(){},cancelChoice(){},acceptOffer:async()=>false,keepCurrent(){}
 };
+// Compass tape and saved-route guidance (drive/guide.js). The guide is handed each fix as it arrives and keeps only how far
+// along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
+const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
+const driveGeo = driveGuide&&navigator.geolocation?{
+  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(p);},fail,options),
+  clearWatch:id=>navigator.geolocation.clearWatch(id)
+}:navigator.geolocation;
+let driveTapeShown='';
+function paintDriveTape(course) {
+  const svg=$('driveTape'); if(!svg?.style)return;
+  const t=driveGuide?DriveGuide.tape(Number.isFinite(course)?course:NaN):null,key=t?String(Math.round(course*2)/2):'';
+  svg.style.visibility=t?'visible':'hidden';
+  svg.setAttribute('aria-label',t?`Compass: heading ${t.point}, ${t.deg} degrees`:'Compass: no heading while stopped');
+  if(key===driveTapeShown)return;
+  driveTapeShown=key; svg.textContent='';
+  if(!t)return;
+  const make=(name,attrs,text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const k in attrs)n.setAttribute(k,attrs[k]);if(text)n.textContent=text;svg.append(n);};
+  for(const k of t.ticks){
+    const x=(k.x*150).toFixed(1),fade=k.north?1:(1-Math.abs(k.x)*.35).toFixed(2);   // the edges dim a little; north never does
+    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.north?'major north':k.major?'major':'',opacity:fade});
+    if(k.label&&Math.abs(k.x)>.36)make('text',{x,y:40,class:k.north?'north':'',opacity:fade},k.label);   // the middle belongs to the readout
+  }
+  make('path',{d:'M-6 0H6L0 8Z',class:'needle'});
+  make('text',{x:0,y:41,class:'readout'},t.readout);
+}
 const driveFeed = new StudioDriveLocation.Feed({
-  geo:navigator.geolocation, permissions:navigator.permissions,
+  geo:driveGeo, permissions:navigator.permissions,
   change:paintDrive
 });
 const driveCheck = typeof SpeedCheck!=='undefined'?SpeedCheck:null;
@@ -946,14 +971,31 @@ const DRIVE_STATUS_LABELS=Object.freeze({
   });
 function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
-  const course=pg?pg.hdg:reading.heading;
-  if($('driveHeading'))$('driveHeading').textContent=Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
+  // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
+  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=7.2&&driveGuide?driveGuide.course():null;   // 7.2 km/h is the feed's own 2 m/s: slower than that there is no course
+  if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
+  let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
   if($('driveTurn')){
     const route=nav&&['OnRoute','OffRoute','RouteRebuilding','RouteNeedsRebuild','RouteNotStarted'].includes(nav.ss);
-    $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],words[nav.turn],nav.toTurn,nav.next||nav.street].filter(Boolean).join(' · '):'';
+    $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],nav.toTurn,words[nav.turn],nav.next||nav.street].filter(Boolean).join(' · '):'';
+    // No directions from a phone: the next turn along the route the PC saved, if the glasses are on it (drive/guide.js).
+    driveGuide?.setRoute(S.snap&&S.snap.rt);
+    // Only beside a live reading. Without one the last turn must not sit there: it says paused, or nothing once GPS is off.
+    const seen=!route&&driveGuide?driveGuide.snapshot():null;
+    guide=seen?DriveGuide.words(reading.status==='live'||seen.state==='none'?seen:{state:driveFeed.enabled?'paused':'none'}):null;
+    if(guide?.turn){
+      const line=$('driveTurn');line.textContent=guide.turn;
+      if(guide.dist&&line.replaceChildren){   // the distance is the part that changes: it gets its own weight, larger when the turn is close
+        const dist=document.createElement('span');dist.className=guide.near?'dist near':'dist';dist.textContent=guide.dist;
+        line.replaceChildren(dist,guide.turn.slice(guide.dist.length));
+      }
+    }
+    $('driveTurn').dataset.level=guide?.turn?guide.level:'ok';
     $('driveTurn').hidden=!$('driveTurn').textContent;
   }
+  paintDriveTape(course);
+  if(reading.status==='live'&&!pg)driveRemember(true); else if(reading.status==='denied'&&!driveHeld())driveRemember(null);
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
@@ -965,7 +1007,7 @@ function paintDrive(reading) {
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   const age=pg?phone.ageMs:reading.ageMs;
-  $('driveAge').textContent=live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'';
+  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
   $('driveGps').disabled=reading.status==='unsupported';
@@ -978,7 +1020,8 @@ function paintDrive(reading) {
 }
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
-  if(driveFeed.enabled)driveFeed.stop(); else driveFeed.enable();
+  driveStopped=driveFeed.enabled;
+  if(driveFeed.enabled){driveRemember(false);driveFeed.stop();} else driveFeed.enable();
 }
 function retryDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden||$('driveRetry').hidden)return;
@@ -1026,7 +1069,21 @@ function paintDriveDetails() {
 function syncDriveFeed() {
   const visible=S.tab==='drive'&&S.view==='list'&&!$('drive').hidden&&!document.hidden;
   driveFeed.setVisible(visible);drivePhone.setVisible(visible);
+  // Opening Drive starts the speed by itself when location is already allowed (Bakar, 11 Nov 2026: no unnecessary
+  // presses). This is the feed's own resume path: it asks the browser first and goes on only with an existing grant, so
+  // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
+  // Where the glasses cannot report the permission at all, a Start that worked before is remembered and simply made again:
+  // at worst that is one system prompt the wearer has already answered.
+  if(visible&&!driveFeed.enabled&&!driveStopped&&!driveHeld()){
+    if(driveRemembered())driveFeed.enable(); else {driveFeed.enabled=true;driveFeed.start();}
+  }
 }
+let driveStopped=false;
+const DRIVE_REMEMBER='bakar.drive.gps';
+function driveRemembered(){try{return localStorage.getItem(DRIVE_REMEMBER)==='1';}catch(_){return false;}}
+// '1' a Start that worked; '0' a deliberate Stop, which holds through a relaunch until the next Start; nothing after a denial.
+function driveHeld(){try{return localStorage.getItem(DRIVE_REMEMBER)==='0';}catch(_){return false;}}
+function driveRemember(on){try{if(on===null)localStorage.removeItem(DRIVE_REMEMBER);else localStorage.setItem(DRIVE_REMEMBER,on?'1':'0');}catch(_){}}
 document.addEventListener('visibilitychange',syncDriveFeed);
 window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);
