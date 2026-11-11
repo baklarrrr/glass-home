@@ -33,7 +33,7 @@
     for (const it of items) {
       if (!Array.isArray(it) || !finite(it[0]) || !finite(it[1]) || Math.abs(it[0]) > 90 || Math.abs(it[1]) > 180 || !KINDS[it[2]]) continue;
       const cam = { lat: it[0], lon: it[1], kind: it[2], limit: finite(it[3]) && it[3] >= 10 && it[3] <= 150 ? it[3] : 0,
-        motorway: it[4] === 1, street: typeof it[5] === 'string' ? it[5].slice(0, 18) : '' };
+        motorway: it[4] === 1 && it[2] === 'r', street: typeof it[5] === 'string' ? it[5].slice(0, 18) : '' };
       const key = cell(cam.lat, cam.lon);
       if (!grid.has(key)) grid.set(key, []);
       grid.get(key).push(cam); count++;

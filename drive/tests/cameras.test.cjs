@@ -82,6 +82,10 @@ test('a camera marked as beside a motorway warns on the street, names the street
   assert.ok(go(slowing, 0, 0, 90, 14));
   assert.equal(go(slowing, 30, 0, 90, 25), null);                // back up to motorway speed: dropped
   assert.equal(C.words(go(watch([cam(300, 0)]), 0, 0), 50).text, 'Red light camera · 300 m');    // unmarked: no street
+  // A speed camera on the motorway itself warns at motorway speed, even if a list wrongly carries the mark.
+  const highway = watch([[...at(700, 0), 's', 100, 1, 'Autoroute']]);
+  const seenAt110 = go(highway, 0, 0, 90, 30.6);
+  assert.deepEqual(C.words(seenAt110, 110), { text: 'Speed camera · limit 100 · 700 m', kind: 's', limit: 100, over: true });
 });
 
 test('a rough fix widens the lane by 15 m at most', () => {
@@ -159,8 +163,12 @@ test('builder: Toronto first, one entry per site, no speed cameras where the law
   assert.deepEqual(B.pack(items, items.map(() => false)), [[43.65, -79.47, 'r'], [43.7, -79.5, 'r'], [43.8, -79.2, 'r'], [43.9, -79.4, 'r'], [45.5, -73.6, 's', 50], [45.6, -73.7, 's', 70]]);
   assert.deepEqual(counts, { torontoRedLight: 1, osmRedLight: 3, osmSpeed: 2, speedLeftOutByLaw: 2, sameSite: 1, unusable: 1 });
   // Beside a motorway: marked, and named when the City gives the street.
-  assert.deepEqual(B.pack(items, items.map((it, i) => i === 1 || i === 4 || i === 3)).filter((it) => it.length > 4), [[43.7, -79.5, 'r', 0, 1, 'Lake Shore'], [43.9, -79.4, 'r', 0, 1], [45.5, -73.6, 's', 50, 1]]);
-  assert.deepEqual(['LAKE SHORE BLVD W', 'AVENUE RD', 'THE QUEENSWAY', 'STEELES AVE E', ''].map(B.shortStreet), ['Lake Shore', 'Avenue Rd', 'The Queensway', 'Steeles', '']);
+  // Beside a motorway: a red light camera is marked, and named when the City gives the street. A speed camera never is:
+  // it watches the motorway and must warn at motorway speed.
+  const packed = B.pack(items, items.map((it, i) => i === 1 || i === 4 || i === 3));
+  assert.deepEqual(packed.filter((it) => it.length > 4), [[43.7, -79.5, 'r', 0, 1, 'Lake Shore'], [43.9, -79.4, 'r', 0, 1]]);
+  assert.deepEqual(packed[4], [45.5, -73.6, 's', 50]);
+  assert.deepEqual(['LAKE SHORE BLVD W', 'AVENUE RD', 'THE QUEENSWAY', 'STEELES AVE E', 'MCCOWAN RD', ''].map(B.shortStreet), ['Lake Shore', 'Avenue Rd', 'The Queensway', 'Steeles', 'McCowan', '']);
 });
 
 test('the shipped list: well formed, and the warning runs on it', () => {
@@ -173,6 +181,7 @@ test('the shipped list: well formed, and the warning runs on it', () => {
   assert.deepEqual(file.redLightOnly, ['Ontario', 'Alberta']);
   const marked = file.items.filter((i) => i[4] === 1);
   assert.ok(marked.length >= 20 && marked.some((i) => i[5] === 'Lake Shore'), String(marked.length));   // the Gardiner runs over Lake Shore
+  assert.ok(marked.every((i) => i[2] === 'r'));                                     // never a speed camera
   // Approaching the first camera in the list from 300 m south, heading north.
   const [lat, lon] = file.items[0], clock = { t: T0 }, w = new C.Watch({ now: () => clock.t });
   w.load(file);

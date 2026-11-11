@@ -937,11 +937,14 @@ const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
 // Fixed-camera warning (drive/cameras.js): a red light or speed camera on the road ahead, from a public list shipped with
 // the app (drive/cameras.json). Worked out here from each fix; nothing about the position is kept or sent.
 const driveCams = typeof DriveCameras!=='undefined'?new DriveCameras.Watch():null;
-let driveCamsAsked=false;
+let driveCamsAsked=false,driveCamsFailed=false;
+// What the Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
+function driveCamsNote(){return !driveCams?'':driveCamsFailed&&!driveCams.count?'no camera list':driveCams.staleNote().replace(/^C/,'c');}
 function loadDriveCameras() {
   if(!driveCams||driveCamsAsked)return;
   driveCamsAsked=true;
-  fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>driveCams.load(file)).catch(()=>{driveCamsAsked=false;});   // a miss is tried again next time Drive opens
+  fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{driveCams.load(file);driveCamsFailed=!driveCams.count;})
+    .catch(()=>{driveCamsAsked=false;driveCamsFailed=true;});   // a miss is tried again next time Drive opens, and the face says there is no list
 }
 const driveGeo = driveGuide&&navigator.geolocation?{
   watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{
@@ -1026,8 +1029,9 @@ function paintDrive(reading) {
   $('driveHud').dataset.camera=camera?(camera.over?'over':'ahead'):'none';
   const age=pg?phone.ageMs:reading.ageMs;
   // An old camera list says so here, in amber, until a fresh one is published: a quiet screen must not look like a clear road.
-  const oldList=!guide?.note&&live&&driveCams?driveCams.staleNote():'';
-  $('driveAge').textContent=guide?.note||oldList||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
+  // The fix's own age stays; the list's trouble is added after it.
+  const oldList=!guide?.note&&live?driveCamsNote():'';
+  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago')+(oldList?' · '+oldList:''):'');
   $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
@@ -1070,7 +1074,7 @@ function paintDriveDetails() {
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix,
-    driveCams?driveCams.about():'Cameras: not available',
+    driveCams?(driveCamsFailed&&!driveCams.count?'Cameras: the list could not be loaded':driveCams.about()):'Cameras: not available',
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')

@@ -15,8 +15,9 @@
 //   school, playground and construction zones, which no list has.
 // A speed camera mapped in those provinces is therefore left out; red light cameras there stay.
 //
-// A camera within 80 m of a motorway is marked (and, from the Toronto list, named by its street): it is almost always on
-// the street beside or under the motorway, and Drive must not warn a driver up on the motorway about it.
+// A red light camera within 80 m of a motorway is marked (and, from the Toronto list, named by its street): it is on the
+// street beside or under the motorway, and Drive must not warn a driver up on the motorway about it. A speed camera
+// near a motorway is left unmarked: it is watching the motorway.
 //
 // What is NOT here, because no open source has it: mobile radar, police positions, temporary cameras.
 const fs = require('node:fs'), path = require('node:path');
@@ -50,7 +51,7 @@ function shortStreet(name) {
   const TYPE = /^(n|s|e|w|rd|st|ave|av|blvd|dr|cres|crt|ct|pkwy|hwy|way|ln|pl|terr|trl|gdns|sq|cir|rdwy)\.?$/i;
   // "Avenue Rd" stays whole: without its last word it would not be a name.
   while (words.length > 1 && TYPE.test(words[words.length - 1]) && !(words.length === 2 && /^(avenue|the|park|high|main)$/i.test(words[0]))) words.pop();
-  return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ').slice(0, 18);
+  return words.map((w) => (w[0].toUpperCase() + w.slice(1).toLowerCase()).replace(/^Mc([a-z])/, (m, c) => 'Mc' + c.toUpperCase())).join(' ').slice(0, 18);
 }
 
 // Pure, so the test can run it on saved answers: (Toronto records, OSM Canada elements, set of OSM ids in the provinces
@@ -103,7 +104,9 @@ function combine(toronto, osm, ontarioIds) {
 function pack(items, nearMotorway) {
   return items.map((it, i) => {
     const out = [it[0], it[1], it[2]];
-    if (nearMotorway[i]) out.push(it[3] || 0, 1, it[4] || '');
+    // Only a red light camera gets the mark: it belongs to a junction, so it is on the street. A speed camera near a
+    // motorway is watching the motorway itself and must warn at motorway speed.
+    if (nearMotorway[i] && it[2] === 'r') out.push(it[3] || 0, 1, it[4] || '');
     else if (it[3]) out.push(it[3]);
     while (out.length > 3 && (out[out.length - 1] === '' || out[out.length - 1] === 0)) out.pop();
     return out;
@@ -138,13 +141,13 @@ async function main() {
   const geometryAt = toronto.fields.findIndex((f) => f.id === 'geometry'), streetAt = toronto.fields.findIndex((f) => f.id === 'MAIN');
   const made0 = combine(toronto.records.map((r) => ({ geometry: r[geometryAt], street: r[streetAt] })), canada.elements, new Set(ontario.elements.map((e) => e.id)));
   const counts = made0.counts, near = await motorwayNear(made0.items), items = pack(made0.items, near);
-  counts.nearMotorway = near.filter(Boolean).length;
+  counts.redLightNearMotorway = items.filter((it) => it[4] === 1).length;
   const made = new Date().toISOString().slice(0, 10);
   const file = { made, osmAsOf: (canada.osm3s && canada.osm3s.timestamp_osm_base) || '', region: 'Canada', redLightOnly: Object.values(NO_SPEED_CAMERAS).map(([name]) => name),
     kinds: { r: 'Red light camera', s: 'Speed camera' },
     sources: ['City of Toronto Open Data: Red Light Cameras (Open Government Licence - Toronto)', 'OpenStreetMap contributors (ODbL), via Overpass'],
     rules: [...Object.values(NO_SPEED_CAMERAS).map(([name, why]) => `${name}: speed cameras left out (${why}); red light cameras kept`),
-      `A site within ${MOTORWAY_M} m of a motorway is marked: it warns only below motorway speed`, 'No mobile radar, police positions or temporary cameras: no open source has them'],
+      `A red light camera within ${MOTORWAY_M} m of a motorway is marked: it is on the street, so it warns only below motorway speed`, 'No mobile radar, police positions or temporary cameras: no open source has them'],
     counts, items };
   let before = null;
   try { before = JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch (_) { /* first build */ }

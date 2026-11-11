@@ -279,7 +279,9 @@ async function run(browser, height, tag) {
   c = await cameraOf();
   const note = await page.evaluate(() => ({ text: document.getElementById('driveAge').textContent, colour: getComputedStyle(document.getElementById('driveAge')).color }));
   check(c.lines === 1 && c.left >= 0 && c.right <= 600, `${tag}: the longer line with a street still fits on one line (${Math.round(c.left)}-${Math.round(c.right)})`);
-  check(/^Camera list (39|40|41) days old$/.test(note.text) && note.colour === 'rgb(255, 193, 94)', `${tag}: a list over 30 days old says so on the face in amber (${JSON.stringify(note.text)}, ${note.colour})`);
+  check(/^Just now · camera list (39|40|41) days old$/.test(note.text) && note.colour === 'rgb(255, 193, 94)', `${tag}: a list over 30 days old says so on the face in amber, beside the fix's own age (${JSON.stringify(note.text)}, ${note.colour})`);
+  const missing = await page.evaluate(() => { const kept = driveCams.ix; driveCamsFailed = true; driveCams.load({ items: [] }); paintDrive(driveFeed.snapshot()); const text = document.getElementById('driveAge').textContent; driveCamsFailed = false; driveCams.ix = kept; paintDrive(driveFeed.snapshot()); return text; });
+  check(missing === 'Just now · no camera list', `${tag}: a list that could not be loaded is said on the face too, never a quiet screen (${JSON.stringify(missing)})`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 27, 90), spot(2150, 0));
   c = await cameraOf();
   check(c.mark === 'none', `${tag}: at motorway speed a camera marked as beside the motorway says nothing (${c.mark})`);
