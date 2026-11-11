@@ -949,11 +949,12 @@ function paintDriveTape(course) {
   if(!t)return;
   const make=(name,attrs,text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const k in attrs)n.setAttribute(k,attrs[k]);if(text)n.textContent=text;svg.append(n);};
   for(const k of t.ticks){
-    const x=(k.x*150).toFixed(1),fade=(1-Math.abs(k.x)*.75).toFixed(2);   // the edges dim, so the eye lands on the middle
-    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.major?'major':'',opacity:fade});
-    if(k.label)make('text',{x,y:36,class:k.north?'north':'',opacity:fade},k.label);
+    const x=(k.x*150).toFixed(1),fade=k.north?1:(1-Math.abs(k.x)*.35).toFixed(2);   // the edges dim a little; north never does
+    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.north?'major north':k.major?'major':'',opacity:fade});
+    if(k.label&&Math.abs(k.x)>.36)make('text',{x,y:40,class:k.north?'north':'',opacity:fade},k.label);   // the middle belongs to the readout
   }
   make('path',{d:'M-6 0H6L0 8Z',class:'needle'});
+  make('text',{x:0,y:41,class:'readout'},t.readout);
 }
 const driveFeed = new StudioDriveLocation.Feed({
   geo:driveGeo, permissions:navigator.permissions,
@@ -971,20 +972,29 @@ const DRIVE_STATUS_LABELS=Object.freeze({
 function paintDrive(reading) {
   const phone=drivePhone.snapshot(),pg=phone.gps;
   const course=pg?pg.hdg:reading.heading;
-  if($('driveHeading'))$('driveHeading').textContent=Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
+  if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
   let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
   if($('driveTurn')){
     const route=nav&&['OnRoute','OffRoute','RouteRebuilding','RouteNeedsRebuild','RouteNotStarted'].includes(nav.ss);
-    $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],words[nav.turn],nav.toTurn,nav.next||nav.street].filter(Boolean).join(' · '):'';
+    $('driveTurn').textContent=route?[nav.sim?'Preview':null,({OffRoute:'Off route',RouteRebuilding:'Rerouting',RouteNeedsRebuild:'Rerouting',RouteNotStarted:'Route ready'})[nav.ss],nav.toTurn,words[nav.turn],nav.next||nav.street].filter(Boolean).join(' · '):'';
     // No directions from a phone: the next turn along the route the PC saved, if the glasses are on it (drive/guide.js).
     driveGuide?.setRoute(S.snap&&S.snap.rt);
-    guide=!route&&driveGuide?DriveGuide.words(driveGuide.snapshot()):null;
-    if(guide?.turn)$('driveTurn').textContent=guide.turn;
+    // Only beside a live reading. Without one the last turn must not sit there: it says paused, or nothing once GPS is off.
+    const seen=!route&&driveGuide?driveGuide.snapshot():null;
+    guide=seen?DriveGuide.words(reading.status==='live'||seen.state==='none'?seen:{state:driveFeed.enabled?'paused':'none'}):null;
+    if(guide?.turn){
+      const line=$('driveTurn');line.textContent=guide.turn;
+      if(guide.dist&&line.replaceChildren){   // the distance is the part that changes: it gets its own weight, larger when the turn is close
+        const dist=document.createElement('span');dist.className=guide.near?'dist near':'dist';dist.textContent=guide.dist;
+        line.replaceChildren(dist,guide.turn.slice(guide.dist.length));
+      }
+    }
     $('driveTurn').dataset.level=guide?.turn?guide.level:'ok';
     $('driveTurn').hidden=!$('driveTurn').textContent;
   }
   paintDriveTape(course);
+  if(reading.status==='live'&&!pg)driveRemember(true); else if(reading.status==='denied')driveRemember(false);
   const live=Boolean(pg)||reading.status==='live';
   $('driveSpeed').textContent=pg?String(pg.kmh):reading.status==='live'?String(Math.round(reading.speed)):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
@@ -1010,7 +1020,7 @@ function paintDrive(reading) {
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
   driveStopped=driveFeed.enabled;
-  if(driveFeed.enabled)driveFeed.stop(); else driveFeed.enable();
+  if(driveFeed.enabled){driveRemember(false);driveFeed.stop();} else driveFeed.enable();
 }
 function retryDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden||$('driveRetry').hidden)return;
@@ -1061,9 +1071,16 @@ function syncDriveFeed() {
   // Opening Drive starts the speed by itself when location is already allowed (Bakar, 11 Nov 2026: no unnecessary
   // presses). This is the feed's own resume path: it asks the browser first and goes on only with an existing grant, so
   // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
-  if(visible&&!driveFeed.enabled&&!driveStopped){driveFeed.enabled=true;driveFeed.start();}
+  // Where the glasses cannot report the permission at all, a Start that worked before is remembered and simply made again:
+  // at worst that is one system prompt the wearer has already answered.
+  if(visible&&!driveFeed.enabled&&!driveStopped){
+    if(driveRemembered())driveFeed.enable(); else {driveFeed.enabled=true;driveFeed.start();}
+  }
 }
 let driveStopped=false;
+const DRIVE_REMEMBER='bakar.drive.gps';
+function driveRemembered(){try{return localStorage.getItem(DRIVE_REMEMBER)==='1';}catch(_){return false;}}
+function driveRemember(on){try{if(on)localStorage.setItem(DRIVE_REMEMBER,'1');else localStorage.removeItem(DRIVE_REMEMBER);}catch(_){}}
 document.addEventListener('visibilitychange',syncDriveFeed);
 window.addEventListener('pagehide',()=>{driveFeed.setVisible(false);drivePhone.setVisible(false);});
 window.addEventListener('pageshow',syncDriveFeed);

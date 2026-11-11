@@ -180,7 +180,7 @@ async function run(browser, height, tag) {
   const saved = { id: 'test-route', ti: 'Depot', km: 1.5, min: 3, at: Math.floor(Date.now() / 1000) - 60, pts: [[0, 1000], [1000, 1000], [1000, 500]], steps: [],
     gm: 1500, gl: [spot(0, 0), spot(500, 0), spot(1000, 0), spot(1000, 500)], gs: [[0, 'Start on First St'], [1000, 'Turn left onto Second Ave'], [1500, 'Arrive']] };
   const tapeOf = () => page.evaluate(() => { const t = document.getElementById('driveTape'), r = t.getBoundingClientRect(), u = document.querySelector('.gps-unit').getBoundingClientRect();
-    return { shown: getComputedStyle(t).visibility === 'visible', letters: [...t.querySelectorAll('text')].map((x) => x.textContent).join(' '), ticks: t.querySelectorAll('line').length,
+    return { shown: getComputedStyle(t).visibility === 'visible', letters: [...t.querySelectorAll('text')].map((x) => x.textContent).join(' '), heading: document.getElementById('driveHeading').textContent, sideOpacity: Math.min(...[...t.querySelectorAll('text:not(.readout)')].map((x) => +x.getAttribute('opacity'))), lettersPx: parseFloat(getComputedStyle(t.querySelector('text') || t).fontSize), tapeH: r.height, turnLines: Math.round(document.getElementById('driveTurn').getBoundingClientRect().height / parseFloat(getComputedStyle(document.getElementById('driveTurn')).lineHeight)), ticks: t.querySelectorAll('line').length,
       label: t.getAttribute('aria-label'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, unitBottom: u.bottom,
       turn: document.getElementById('driveTurn').hidden ? '' : document.getElementById('driveTurn').textContent, turnLevel: document.getElementById('driveTurn').dataset.level,
       turnBox: document.getElementById('driveTurn').getBoundingClientRect().toJSON(), note: document.getElementById('driveAge').textContent,
@@ -188,25 +188,44 @@ async function run(browser, height, tag) {
   await unpaired();
   await page.evaluate((rt) => { S.snap = { ...(S.snap || {}), rt }; driveFeed.enable(); }, saved);
   await page.waitForTimeout(50);
+  for (const east of [630, 640]) { await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(east, 0)); await page.waitForTimeout(30); }
+  check((await tapeOf()).turn === '', `${tag}: two fixes on the saved route are not enough to start guidance`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(650, 4));
   const onRoute = await shot('s13-saved-route', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
   let t = await tapeOf();
-  check(t.shown && t.letters === 'NE E SE' && t.ticks === 7 && t.label === 'Compass: heading E, 90 degrees', `${tag}: heading east, the tape shows NE E SE around the needle (${t.letters}; ${t.ticks} ticks; ${t.label})`);
+  check(t.shown && t.letters === 'NE SE E 090°' && t.ticks === 7 && t.label === 'Compass: heading E, 90 degrees' && t.heading === '', `${tag}: heading east, the tape shows NE and SE either side of one readout, E 090°, and the letter beside km/h is gone (${t.letters}; ${t.ticks} ticks; ${t.label})`);
   check(t.top >= t.unitBottom && t.left >= 0 && t.right <= 600, `${tag}: the tape sits under the unit line, inside the screen (${Math.round(t.top)} px, unit ends ${Math.round(t.unitBottom)} px)`);
-  check(t.turn === '350 m · Turn left onto Second Ave' && t.turnLevel === 'ok', `${tag}: on the saved route the turn line gives the distance and the turn (${JSON.stringify(t.turn)})`);
-  check(t.note === 'Saved route · no traffic · 850 m left', `${tag}: and the line under it says what this guidance is (${JSON.stringify(t.note)})`);
+  check(t.sideOpacity >= 0.6 && t.lettersPx >= 18 && Math.abs(t.tapeH - 44) < 0.5, `${tag}: the side letters stay readable and the tape is full size (opacity ${t.sideOpacity}, ${t.lettersPx} px letters, ${t.tapeH} px tall)`);
+  check(t.turn === '350 m · Turn left · Second Ave' && t.turnLevel === 'ok' && t.turnLines === 1, `${tag}: on the saved route the turn line gives the distance and the turn (${JSON.stringify(t.turn)})`);
+  check(t.note === 'Saved route · not live · 850 m to go', `${tag}: and the line under it says what this guidance is (${JSON.stringify(t.note)})`);
   check(t.turnBox.left >= 0 && t.turnBox.right <= 600 && t.turnBox.top >= t.bottom - 0.5 && t.noteBottom <= t.revealTop + 0.5 && !onRoute.scroll, `${tag}: turn and note fit between the tape and the Controls button without scrolling`);
   check(Math.abs(onRoute.unitTop - onRoute.speedTop - (start.unitTop - start.speedTop)) < 0.5, `${tag}: the speed and its unit keep their spacing with the tape up`);
   for (let i = 0; i < 3; i++) { await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 0), spot(700, 300 + i * 10)); await page.waitForTimeout(30); }
   await shot('s14-off-saved-route', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
   t = await tapeOf();
   check(t.turn === 'Off the saved route' && t.turnLevel === 'warn' && /m from it · no rerouting$/.test(t.note), `${tag}: three fixes off the line and it says so in amber, with no rerouting promised (${JSON.stringify(t.turn)}, ${JSON.stringify(t.note)})`);
-  check(t.letters === 'NW N NE', `${tag}: heading north, the tape wraps through N (${t.letters})`);
+  check(t.letters === 'NW NE N 000°', `${tag}: heading north, the tape wraps through N (${t.letters})`);
   await page.evaluate(([lat, lon]) => window.__at(lat, lon, 0.4, null), spot(1000, 200));
   await shot('s15-stopped-no-course', { text: 'App location · GPS estimate', level: 'ok', speed: '1' });
   t = await tapeOf();
   check(!t.shown && t.ticks === 0 && t.label === 'Compass: no heading while stopped', `${tag}: stopped, there is no course and no tape, never an old one (${t.shown}, ${t.ticks})`);
-  check(t.turn === '300 m · Arrive', `${tag}: back on the line after the turn, the arrival is next (${JSON.stringify(t.turn)})`);
+  check(t.turn === '300 m · Arrive at Depot', `${tag}: back on the line after the turn, the destination is next, by name (${JSON.stringify(t.turn)})`);
+  // A long street name is cut, never wrapped.
+  await page.evaluate(([rt, lat, lon]) => { S.snap = { ...S.snap, rt }; for (let i = 0; i < 5; i++) window.__at(lat, lon + i * 0.0001, 13.9, 90); },
+    [{ ...saved, id: 'test-long', gs: [[0, 'Start'], [1000, 'Turn sharp left onto Regional Municipality Rd 124'], [1500, 'Arrive']] }, ...spot(300, 0)]);
+  await shot('s16-long-turn', { text: 'App location · GPS estimate', level: 'ok', speed: '50' });
+  t = await tapeOf();
+  check(t.turn.includes('Regional Municipality Rd') && t.turnLines === 1 && t.turnBox.right <= 600 && t.turnBox.left >= 0, `${tag}: the longest turn stays on one line inside the screen (${Math.round(t.turnBox.left)}-${Math.round(t.turnBox.right)})`);
+  // No fresh fix: the last turn must not sit there. A rough fix, then silence.
+  await page.evaluate(([lat, lon]) => { window.__fix = null; }, spot(0, 0));
+  await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
+  t = await tapeOf();
+  check(t.turn === 'Saved route paused' && t.note === 'Waiting for location' && !t.shown, `${tag}: with no fresh fix the turn is replaced by "paused" and the tape is gone (${JSON.stringify(t.turn)}, ${JSON.stringify(t.note)}, tape ${t.shown})`);
+  await page.screenshot({ path: path.join(OUT, `s17-saved-route-paused${height === 600 ? '' : '-' + height}.png`) });
+  await page.evaluate(() => { driveStopped = true; driveFeed.stop(); });
+  t = await tapeOf();
+  check(t.turn === '', `${tag}: and once GPS is stopped there is no turn line at all (${JSON.stringify(t.turn)})`);
+  await page.evaluate(() => { driveStopped = false; driveFeed.enable(); });
   await phone('live', { nav: NAV, gps: { kmh: 62, hdg: 90 }, ageMs: 300 });
   t = await tapeOf();
   check(t.turn.includes('King St W') && !t.note.startsWith('Saved route'), `${tag}: directions from a phone win over the saved route (${JSON.stringify(t.turn)})`);
@@ -222,20 +241,22 @@ async function run(browser, height, tag) {
 
 // Location already allowed: opening Drive starts the speed by itself, with no press. Not allowed yet: nothing starts and nothing asks.
 async function autoStart(browser) {
-  for (const granted of [true, false]) {
+  for (const granted of [true, false, 'remembered']) {
     const ctx = await browser.newContext({ viewport: { width: 600, height: 600 }, deviceScaleFactor: 1, colorScheme: 'dark' });
     await ctx.route(/^(?!http:\/\/127\.0\.0\.1)/, (r) => r.abort());
-    await ctx.addInitScript(`window.__grantAtStart = ${granted}; window.__watches = 0;`);
+    await ctx.addInitScript(`window.__grantAtStart = ${granted === true}; ${granted === 'remembered' ? "try { localStorage.setItem('bakar.drive.gps', '1'); } catch (_) {}" : ''}`);
     await ctx.addInitScript(FAKE_GEO);
     const page = await ctx.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/glass-home/#tab=drive`);
     await page.waitForTimeout(700);
     if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(400); }
     const m = await page.evaluate(() => ({ enabled: driveFeed.enabled, text: document.getElementById('driveState').textContent, button: document.getElementById('driveGps').textContent }));
-    if (granted) {
+    if (granted === 'remembered') check(m.enabled && m.button === 'Stop app GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
+    else if (granted) {
       check(m.enabled && m.button === 'Stop app GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
       await page.evaluate(() => window.__drive(20, 180)); await page.waitForTimeout(80);
       check((await page.textContent('#driveSpeed')) === '72', 'auto start: and the speed arrives with no press at all');
+      check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
     } else check(!m.enabled && m.text === 'GPS not started in this app' && m.button === 'Start app GPS', `auto start: not allowed yet, nothing starts and nothing asks (${m.enabled}, ${JSON.stringify(m.text)})`);

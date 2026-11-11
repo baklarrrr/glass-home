@@ -18,6 +18,12 @@
   const GIVE_UP_M = 2500;            // this far off, or
   const GIVE_UP_MS = 5 * 60 * 1000;  // this long off: the wearer is going somewhere else, so guidance stops quietly
   const ARRIVE_M = 40;
+  const JOIN_FIXES = 3;              // this many fixes in a row on the line and going its way before guidance starts
+  const WITH_DEG = 60;               // "going its way": the GPS course within this of the road's direction there
+  const AGAINST_DEG = 120;           // and this far from it is going the other way
+  const AGAINST_FIXES = 3;           // that many in a row: the wearer is on the way back, so guidance stops
+  const ARRIVED_SHOW_MS = 2 * 60 * 1000;   // "Arrived" is said for this long, or
+  const ARRIVED_LEAVE_M = 150;       // until the wearer is this far from the end
   const PASSED_M = 15;               // a turn this close behind or ahead counts as being made now
   const LOOK_BACK_M = 200, LOOK_AHEAD_M = 2000;   // where the next fix is expected, so a route that crosses itself keeps its place
 
@@ -35,7 +41,8 @@
       ticks.push({ x: (d - course) / halfSpan, label: at % 45 === 0 ? POINTS[at / 45] : '', major: at % 45 === 0, north: at === 0 });
     }
     const shown = Math.round(course) % 360;
-    return { deg: shown, text: String(shown).padStart(3, '0') + '°', point: POINTS[Math.round(course / 45) % 8], ticks };
+    const point = POINTS[Math.round(course / 45) % 8];
+    return { deg: shown, text: String(shown).padStart(3, '0') + '°', point, readout: `${point} ${String(shown).padStart(3, '0')}°`, ticks };
   }
 
   // Metres on the ground between two latitude/longitude pairs, flat-earth around the first: exact enough for the few
@@ -79,7 +86,7 @@
       const [ax, ay] = flat(lat, lon, a.lat, a.lon), [bx, by] = flat(lat, lon, b.lat, b.lon);
       const vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy;
       const t = len2 ? Math.max(0, Math.min(1, -(ax * vx + ay * vy) / len2)) : 0;
-      const hit = { s: a.s + t * (b.s - a.s), away: Math.hypot(ax + t * vx, ay + t * vy) };
+      const hit = { s: a.s + t * (b.s - a.s), away: Math.hypot(ax + t * vx, ay + t * vy), bearing: norm(Math.atan2(vx, vy) * 180 / Math.PI) };
       if (!best || hit.away < best.away) best = hit;
       if (finite(near) && hit.s >= near - LOOK_BACK_M && hit.s <= near + LOOK_AHEAD_M && (!local || hit.away < local.away)) local = hit;
     }
@@ -88,44 +95,64 @@
 
   class Guide {
     constructor({ now = Date.now } = {}) { this.now = now; this.route = null; this.reset(); }
-    reset() { this.joined = false; this.s = null; this.away = null; this.at = 0; this.offCount = 0; this.offSince = 0; this.done = false; }
+    reset() { this.joined = false; this.s = null; this.away = null; this.at = 0; this.offCount = 0; this.offSince = 0; this.done = false; this.doneAt = 0;
+      this.onCount = 0; this.againstCount = 0; }
+    // Stop for good on this route: arrived and left, or driving it backwards. A new route starts fresh.
+    end() { this.reset(); this.over = true; }
     // Give it the snapshot's route (or nothing). The same route again changes nothing, so a repaint does not lose the place.
     setRoute(route) {
       const id = route && route.id;
       if (this.route && id === this.route.id) return;
       this.route = prepare(route, this.now() / 1000);
-      this.reset();
+      this.savedAt = this.route ? route.at : 0;
+      this.reset(); this.over = false;
     }
     // One location fix, straight from the browser. Only numbers derived from it are kept.
     fix(position) {
       const r = this.route, c = position && position.coords, at = position && position.timestamp, now = this.now();
-      if (!r || this.done || !c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
+      if (!r || this.over || !c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
       if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
       const limit = OFF_BASE_M + c.accuracy;
       const { best, local } = project(r, c.latitude, c.longitude, this.joined ? this.s : NaN);
       const hit = local && local.away <= limit ? local : best;
+      if (this.done) {                                // arrived: said for a while, gone once the wearer leaves
+        const end = r.line[r.line.length - 1], [ex, ey] = flat(c.latitude, c.longitude, end.lat, end.lon);
+        if (Math.hypot(ex, ey) > ARRIVED_LEAVE_M) this.end();
+        return;
+      }
+      // The way the car is moving against the way the road runs here. No course (slow or stopped) says nothing either way.
+      const moving = finite(c.heading) && c.heading >= 0 && c.heading < 360 && finite(c.speed) && c.speed >= 2;
+      const turn = moving ? Math.abs(((c.heading - hit.bearing + 540) % 360) - 180) : NaN;
       if (!this.joined) {
-        if (hit.away > limit) return;                 // not on this route (yet): say nothing at all
+        // Not guiding yet. Crossing the route, or driving it the other way, must not start it: only several fixes in a
+        // row on the line and going its way do.
+        if (hit.away > limit || !(turn <= WITH_DEG)) { this.onCount = 0; return; }
+        if (++this.onCount < JOIN_FIXES) return;
         this.joined = true;
       }
+      if (hit.away <= limit && turn >= AGAINST_DEG) { if (++this.againstCount >= AGAINST_FIXES) { this.end(); return; } }
+      else if (moving) this.againstCount = 0;
       this.at = at; this.away = hit.away;
       if (hit.away <= limit) { this.s = hit.s; this.offCount = 0; this.offSince = 0; }
       else {
         if (!this.offCount++) this.offSince = now;
         if (hit.away > GIVE_UP_M || now - this.offSince > GIVE_UP_MS) { this.reset(); return; }
       }
-      if (r.total - this.s <= ARRIVE_M && hit.away <= limit) this.done = true;
+      if (r.total - this.s <= ARRIVE_M && hit.away <= limit) { this.done = true; this.doneAt = now; }
     }
     // What the screen may say right now. `state`: none (no usable route, or not on it), paused (on it, but the last fix
     // is too old to point anywhere), on, off, arrived.
     snapshot() {
       const r = this.route;
-      if (!r || !this.joined) return { state: 'none' };
-      if (this.done) return { state: 'arrived', title: r.ti };
+      if (!r || !this.joined || this.over) return { state: 'none' };
+      if (this.now() / 1000 - this.savedAt > ROUTE_MAX_AGE_S) return { state: 'none' };      // the route has gone old while open
+      if (this.done) return this.now() - this.doneAt < ARRIVED_SHOW_MS ? { state: 'arrived', title: r.ti } : { state: 'none' };
       if (this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at) return { state: 'paused', title: r.ti };
       if (this.offCount >= OFF_FIXES) return { state: 'off', title: r.ti, away: this.away };
       const next = r.steps.find((st) => st.s > this.s + PASSED_M) || null;
-      return { state: 'on', title: r.ti, left: r.total - this.s, toTurn: next ? next.s - this.s : r.total - this.s, turn: next ? next.t : 'Arrive' };
+      const last = !next || next.t === 'Arrive';      // the PC's last turn is the arrival
+      return { state: 'on', title: r.ti, left: r.total - this.s, toTurn: next ? next.s - this.s : r.total - this.s,
+        turn: last ? (r.ti ? `Arrive at ${r.ti}` : 'Destination') : next.t.replace(' onto ', ' · ') };
     }
   }
 
@@ -141,15 +168,17 @@
   // The two short lines for the screen: the turn, and under it what this guidance is.
   function words(snap) {
     switch (snap && snap.state) {
-      case 'on': return { turn: `${metres(snap.toTurn)} · ${snap.turn}`, note: `Saved route · no traffic · ${metres(snap.left)} left`, level: 'ok' };
-      case 'off': return { turn: 'Off the saved route', note: `${metres(snap.away)} from it · no rerouting`, level: 'warn' };
-      case 'paused': return { turn: 'Saved route paused', note: 'Waiting for location', level: 'ok' };
-      case 'arrived': return { turn: snap.title ? `Arrived · ${snap.title}` : 'Arrived', note: '', level: 'ok' };
-      default: return { turn: '', note: '', level: 'ok' };
+      // "not live": this route was worked out earlier. It knows nothing of traffic and does not reroute.
+      case 'on': return { dist: metres(snap.toTurn), near: snap.toTurn < 300, turn: `${metres(snap.toTurn)} · ${snap.turn}`, note: `Saved route · not live · ${metres(snap.left)} to go`, level: 'ok' };
+      case 'off': return { dist: '', near: false, turn: 'Off the saved route', note: `${metres(snap.away)} from it · no rerouting`, level: 'warn' };
+      case 'paused': return { dist: '', near: false, turn: 'Saved route paused', note: 'Waiting for location', level: 'ok' };
+      case 'arrived': return { dist: '', near: false, turn: snap.title ? `Arrived · ${snap.title}` : 'Arrived', note: '', level: 'ok' };
+      default: return { dist: '', near: false, turn: '', note: '', level: 'ok' };
     }
   }
 
   const api = Object.freeze({ tape, prepare, project, Guide, metres, words, POINTS,
-    FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M });
+    FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M,
+    JOIN_FIXES, AGAINST_FIXES, ARRIVED_SHOW_MS, ARRIVED_LEAVE_M });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveGuide = api;
 })(globalThis);

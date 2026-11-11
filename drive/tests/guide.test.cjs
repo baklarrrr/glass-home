@@ -10,8 +10,14 @@ const T0 = 1_800_000_000_000;
 const route = (over = {}) => ({ id: 'r1', ti: 'Depot', at: T0 / 1000 - 60, gm: 1500,
   gl: [at(0, 0), at(500, 0), at(1000, 0), at(1000, 500)],
   gs: [[0, 'Start on First St'], [1000, 'Turn left onto Second Ave'], [1500, 'Arrive']], ...over });
-const fix = (east, north, now, over = {}) => { const [latitude, longitude] = at(east, north); return { timestamp: now, coords: { latitude, longitude, accuracy: 8, ...over } }; };
-function guide() { const clock = { t: T0 }; const g = new G.Guide({ now: () => clock.t }); g.setRoute(route()); return { g, clock }; }
+// A fix: metres east and north of the start, moving at 50 km/h on `heading` (east unless said).
+const fix = (east, north, now, over = {}) => { const [latitude, longitude] = at(east, north); return { timestamp: now, coords: { latitude, longitude, accuracy: 8, speed: 13.9, heading: 90, ...over } }; };
+function guide(r = route()) { const clock = { t: T0 }; const g = new G.Guide({ now: () => clock.t }); g.setRoute(r); return { g, clock }; }
+// One fix a second later.
+const go = (h, east, north, over) => { h.clock.t += 1000; h.g.fix(fix(east, north, h.clock.t, over)); };
+// Guidance starts after three fixes in a row on the line and going its way: drive the 20 m up to the given spot.
+const join = (h, east, north = 0) => { for (let i = 2; i >= 0; i--) go(h, east - i * 10, north); };
+const NORTH = { heading: 0 }, WEST = { heading: 270 };
 
 test('tape: no course, no tape', () => {
   for (const bad of [null, undefined, NaN, -1, 360, '90']) assert.equal(G.tape(bad), null);
@@ -19,7 +25,7 @@ test('tape: no course, no tape', () => {
 
 test('tape: due east is centred on E with NE and SE either side', () => {
   const t = G.tape(90);
-  assert.equal(t.text, '090°'); assert.equal(t.point, 'E');
+  assert.equal(t.text, '090°'); assert.equal(t.point, 'E'); assert.equal(t.readout, 'E 090°');
   const labelled = t.ticks.filter((k) => k.label).map((k) => [k.label, Math.round(k.x * 100) / 100]);
   assert.deepEqual(labelled, [['NE', -0.9], ['E', 0], ['SE', 0.9]]);
   assert.ok(t.ticks.every((k) => k.x >= -1 && k.x <= 1));
@@ -54,111 +60,172 @@ test('prepare: scales the turns onto the thinned outline', () => {
   assert.ok(Math.abs(r.steps[0].s - 1000) < 2);
 });
 
-test('guide: silent until a fix lands on the route', () => {
-  const { g } = guide();
-  assert.equal(g.snapshot().state, 'none');
-  g.fix(fix(300, 900, T0));                      // 900 m north of First St: somewhere else
-  assert.equal(g.snapshot().state, 'none');
-  assert.deepEqual(G.words(g.snapshot()), { turn: '', note: '', level: 'ok' });
+test('guide: silent until the wearer is on the route', () => {
+  const h = guide();
+  assert.equal(h.g.snapshot().state, 'none');
+  for (let i = 0; i < 4; i++) go(h, 300 + i * 10, 900);          // 900 m north of First St: somewhere else
+  assert.equal(h.g.snapshot().state, 'none');
+  assert.equal(G.words(h.g.snapshot()).turn, '');
 });
 
-test('guide: next turn, distance to it and distance left', () => {
-  const { g } = guide();
-  g.fix(fix(650, 6, T0));
-  const s = g.snapshot();
-  assert.equal(s.state, 'on'); assert.equal(s.turn, 'Turn left onto Second Ave');
+test('guide: one or two fixes on the line do not start it; three going its way do', () => {
+  const h = guide();
+  go(h, 630, 0); go(h, 640, 0);
+  assert.equal(h.g.snapshot().state, 'none');
+  go(h, 650, 6);
+  assert.equal(h.g.snapshot().state, 'on');
+});
+
+test('guide: crossing the route does not start it', () => {
+  const h = guide();
+  for (const n of [-30, -10, 10, 30]) go(h, 400, n, NORTH);      // straight across First St
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: driving the route the other way does not start it', () => {
+  const h = guide();
+  for (const e of [700, 680, 660, 640, 620]) go(h, e, 0, WEST);
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: with no course (slow or stopped) it does not start', () => {
+  const h = guide();
+  for (let i = 0; i < 5; i++) go(h, 650, 0, { heading: null, speed: 0.3 });
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: next turn, distance to it and distance to go', () => {
+  const h = guide();
+  join(h, 650, 6);
+  const s = h.g.snapshot();
+  assert.equal(s.state, 'on'); assert.equal(s.turn, 'Turn left · Second Ave');
   assert.ok(Math.abs(s.toTurn - 350) < 3); assert.ok(Math.abs(s.left - 850) < 3);
-  assert.deepEqual(G.words(s), { turn: '350 m · Turn left onto Second Ave', note: 'Saved route · no traffic · 850 m left', level: 'ok' });
+  assert.deepEqual(G.words(s), { dist: '350 m', near: false, turn: '350 m · Turn left · Second Ave', note: 'Saved route · not live · 850 m to go', level: 'ok' });
+  go(h, 760, 0);
+  assert.equal(G.words(h.g.snapshot()).near, true);              // under 300 m the distance is drawn larger
 });
 
-test('guide: after the turn the next thing is the arrival', () => {
-  const { g, clock } = guide();
-  g.fix(fix(650, 0, T0));
-  clock.t += 1000; g.fix(fix(1003, 200, clock.t));
-  const s = g.snapshot();
-  assert.equal(s.turn, 'Arrive'); assert.ok(Math.abs(s.toTurn - 300) < 3);
+test('guide: after the turn the next thing is the destination, by name', () => {
+  const h = guide();
+  join(h, 650);
+  go(h, 1003, 200, NORTH);
+  const s = h.g.snapshot();
+  assert.equal(s.turn, 'Arrive at Depot'); assert.ok(Math.abs(s.toTurn - 300) < 3);
+  const nameless = guide(route({ ti: '' })); join(nameless, 650); go(nameless, 1003, 200, NORTH);
+  assert.equal(nameless.g.snapshot().turn, 'Destination');
 });
 
 test('guide: a fix that is old, in the future, inaccurate or malformed changes nothing', () => {
-  const { g, clock } = guide();
-  g.fix(fix(100, 0, T0));
-  const before = g.snapshot().toTurn;
-  g.fix(fix(600, 0, T0 - 6000));
-  g.fix(fix(600, 0, T0 + 5000));
-  g.fix(fix(600, 0, T0, { accuracy: 80 }));
-  g.fix(fix(600, 0, T0, { accuracy: NaN }));
-  g.fix(fix(600, 0, T0, { latitude: NaN }));
-  g.fix(null); g.fix({});
-  assert.equal(g.snapshot().toTurn, before);
-  assert.ok(clock.t === T0);
+  const h = guide();
+  join(h, 100);
+  const before = h.g.snapshot().toTurn, now = h.clock.t;
+  h.g.fix(fix(600, 0, now - 6000));
+  h.g.fix(fix(600, 0, now + 5000));
+  h.g.fix(fix(600, 0, now, { accuracy: 80 }));
+  h.g.fix(fix(600, 0, now, { accuracy: NaN }));
+  h.g.fix(fix(600, 0, now, { latitude: NaN }));
+  h.g.fix(null); h.g.fix({});
+  assert.equal(h.g.snapshot().toTurn, before);
 });
 
 test('guide: no arrow from a stale fix', () => {
-  const { g, clock } = guide();
-  g.fix(fix(100, 0, T0));
-  clock.t += G.FIX_MAX_AGE_MS;
-  assert.equal(g.snapshot().state, 'paused');
-  assert.equal(G.words(g.snapshot()).turn, 'Saved route paused');
-  clock.t += 1000; g.fix(fix(200, 0, clock.t));
-  assert.equal(g.snapshot().state, 'on');
+  const h = guide();
+  join(h, 100);
+  h.clock.t += G.FIX_MAX_AGE_MS;
+  assert.equal(h.g.snapshot().state, 'paused');
+  assert.equal(G.words(h.g.snapshot()).turn, 'Saved route paused');
+  go(h, 200, 0);
+  assert.equal(h.g.snapshot().state, 'on');
 });
 
 test('guide: off the route only after three fixes in a row, and back on at once', () => {
-  const { g, clock } = guide();
-  g.fix(fix(400, 0, T0));
-  for (let i = 0; i < 2; i++) { clock.t += 1000; g.fix(fix(420 + i * 10, 300, clock.t)); assert.equal(g.snapshot().state, 'on'); }
-  clock.t += 1000; g.fix(fix(440, 300, clock.t));
-  const s = g.snapshot();
+  const h = guide();
+  join(h, 400);
+  for (let i = 0; i < 2; i++) { go(h, 420 + i * 10, 300); assert.equal(h.g.snapshot().state, 'on'); }
+  go(h, 440, 300);
+  const s = h.g.snapshot();
   assert.equal(s.state, 'off'); assert.ok(Math.abs(s.away - 300) < 3);
-  assert.deepEqual(G.words(s), { turn: 'Off the saved route', note: '300 m from it · no rerouting', level: 'warn' });
-  clock.t += 1000; g.fix(fix(460, 5, clock.t));
-  assert.equal(g.snapshot().state, 'on');
+  assert.deepEqual(G.words(s), { dist: '', near: false, turn: 'Off the saved route', note: '300 m from it · no rerouting', level: 'warn' });
+  go(h, 460, 5);
+  assert.equal(h.g.snapshot().state, 'on');
 });
 
 test('guide: gives up quietly when far off or off for long', () => {
-  let { g, clock } = guide();
-  g.fix(fix(400, 0, T0));
-  clock.t += 1000; g.fix(fix(400, -(G.GIVE_UP_M + 100), clock.t));
-  assert.equal(g.snapshot().state, 'none');
-  ({ g, clock } = guide());
-  g.fix(fix(400, 0, T0));
-  clock.t += 1000; g.fix(fix(400, 400, clock.t));
-  clock.t += G.GIVE_UP_MS + 1000; g.fix(fix(400, 400, clock.t));
-  assert.equal(g.snapshot().state, 'none');
+  let h = guide();
+  join(h, 400);
+  go(h, 400, -(G.GIVE_UP_M + 100));
+  assert.equal(h.g.snapshot().state, 'none');
+  h = guide();
+  join(h, 400);
+  go(h, 400, 400);
+  h.clock.t += G.GIVE_UP_MS; go(h, 400, 400);
+  assert.equal(h.g.snapshot().state, 'none');
 });
 
-test('guide: arrival is said once and stays', () => {
-  const { g, clock } = guide();
-  g.fix(fix(1000, 300, T0));
-  clock.t += 1000; g.fix(fix(1000, 480, clock.t));
-  assert.equal(g.snapshot().state, 'arrived');
-  assert.equal(G.words(g.snapshot()).turn, 'Arrived · Depot');
-  clock.t += 60000; g.fix(fix(0, 0, clock.t));
-  assert.equal(g.snapshot().state, 'arrived');
+test('guide: turning back along the route stops it, and it stays stopped for this route', () => {
+  const h = guide();
+  join(h, 600);
+  go(h, 590, 0, WEST); go(h, 580, 0, WEST);
+  assert.equal(h.g.snapshot().state, 'on');                       // two fixes could be a U-turn in progress
+  go(h, 570, 0, WEST);
+  assert.equal(h.g.snapshot().state, 'none');
+  join(h, 650);                                                   // the same saved route does not start again by itself
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: arrival is said, then goes after two minutes', () => {
+  const h = guide();
+  join(h, 1000 - 0, 0); go(h, 1000, 300, NORTH);
+  go(h, 1000, 480, NORTH);
+  assert.equal(h.g.snapshot().state, 'arrived');
+  assert.equal(G.words(h.g.snapshot()).turn, 'Arrived · Depot');
+  go(h, 1000, 490, { heading: null, speed: 0 });                  // parked at the door: still arrived
+  assert.equal(h.g.snapshot().state, 'arrived');
+  h.clock.t += G.ARRIVED_SHOW_MS;
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: arrival goes as soon as the wearer drives away, and does not come back', () => {
+  const h = guide();
+  join(h, 1000, 0); go(h, 1000, 300, NORTH); go(h, 1000, 480, NORTH);
+  assert.equal(h.g.snapshot().state, 'arrived');
+  go(h, 1000 + G.ARRIVED_LEAVE_M + 20, 500);
+  assert.equal(h.g.snapshot().state, 'none');
+  join(h, 650);
+  assert.equal(h.g.snapshot().state, 'none');
+});
+
+test('guide: a route that goes old while the page is open stops guiding', () => {
+  const h = guide();
+  join(h, 650);
+  h.clock.t += G.ROUTE_MAX_AGE_S * 1000;
+  go(h, 660, 0);
+  assert.equal(h.g.snapshot().state, 'none');
 });
 
 test('guide: the same route again keeps the place; a new one starts fresh', () => {
-  const { g } = guide();
-  g.fix(fix(650, 0, T0));
-  g.setRoute(route());
-  assert.equal(g.snapshot().state, 'on');
-  g.setRoute(route({ id: 'r2' }));
-  assert.equal(g.snapshot().state, 'none');
-  g.setRoute(null);
-  assert.equal(g.snapshot().state, 'none');
+  const h = guide();
+  join(h, 650);
+  h.g.setRoute(route());
+  assert.equal(h.g.snapshot().state, 'on');
+  h.g.setRoute(route({ id: 'r2' }));
+  assert.equal(h.g.snapshot().state, 'none');
+  join(h, 700);
+  assert.equal(h.g.snapshot().state, 'on');
+  h.g.setRoute(null);
+  assert.equal(h.g.snapshot().state, 'none');
 });
 
 test('guide: a route that crosses itself keeps its place', () => {
   // Out 1,000 m east, loop north and back west, then south across the first leg at 500 m east.
-  const clock = { t: T0 }, g = new G.Guide({ now: () => clock.t });
-  g.setRoute(route({ gm: 2700, gl: [at(0, 0), at(1000, 0), at(1000, 400), at(500, 400), at(500, -400)],
+  const h = guide(route({ gm: 2700, gl: [at(0, 0), at(1000, 0), at(1000, 400), at(500, 400), at(500, -400)],
     gs: [[1000, 'Turn left'], [1400, 'Turn left'], [1900, 'Turn left onto Cross St'], [2700, 'Arrive']] }));
-  g.fix(fix(450, 0, T0));
-  assert.ok(Math.abs(g.snapshot().toTurn - 550) < 3);          // first pass through the crossing: still heading east
-  for (const [e, n] of [[1000, 200], [750, 400], [500, 200]]) { clock.t += 1000; g.fix(fix(e, n, clock.t)); }
-  clock.t += 1000; g.fix(fix(500, 5, clock.t));                // second pass, now southbound
-  const s = g.snapshot();
-  assert.equal(s.turn, 'Arrive'); assert.ok(Math.abs(s.left - 405) < 5);
+  join(h, 450);
+  assert.ok(Math.abs(h.g.snapshot().toTurn - 550) < 3);          // first pass through the crossing: still heading east
+  go(h, 1000, 200, NORTH); go(h, 750, 400, WEST); go(h, 500, 200, { heading: 180 });
+  go(h, 500, 5, { heading: 180 });                               // second pass, now southbound
+  const s = h.g.snapshot();
+  assert.equal(s.turn, 'Arrive at Depot'); assert.ok(Math.abs(s.left - 405) < 5);
 });
 
 test('metres: rounded the way a driver reads them', () => {
