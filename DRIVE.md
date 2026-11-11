@@ -37,6 +37,20 @@ Bakar, 11 Nov 2026: "I also want to be able to navigate, have a compass, have a 
 - **Checks:** `node --test drive/tests/guide.test.cjs` (28 cases) and the auto-start and saved-route sections of `node drive/tests/studio-browser.cjs [outDir]` (frames `s13` to `s17`). Not checked: real optics, real GPS on the glasses, a real drive.
 - **Limits:** a route is made on the PC (`route.py "Place"`, or the AIs' `glasses_route` tool) before setting off. Picking a destination from the car or rerouting needs an iPhone-side sender; that is not built.
 
+## Fixed-camera warning (11 Nov 2026)
+
+Bakar, 11 Nov 2026: "radarbot functionality for when i am near speed cameras or any areas where i need to be cautious or watch my speed" and "No bullshit, though."
+
+- **What it does** (`drive/cameras.js`): when a fixed camera is on the road ahead, the top line of Drive says what and how far in amber: "Red light camera · 300 m", "Speed camera · limit 50 · 300 m". Over a speed camera's posted limit, the speed number itself turns amber. It takes the same room as the calm line, so the speed does not move.
+- **"Ahead on this road":** in front of the car, within 25 seconds of travel (never under 400 m, never over 1 km), and no more than 60 m to the side of the line of travel plus the fix's own doubt. A camera on a parallel street, down a side street or behind says nothing. It goes when the camera is passed (25 m). Stopped at the light with no course, the warning stays unless the camera falls 40 m behind where it was. No fresh fix, no warning.
+- **The list** (`drive/cameras.json`, built by `node tools/build-cameras.cjs`): the City of Toronto's own red light cameras (open data, refreshed daily by the City) plus the cameras mapped in OpenStreetMap for Canada. 848 sites on 11 Nov 2026: 504 red light, 344 speed. One site per place and kind.
+- **Ontario:** municipal speed cameras were banned from 14 November 2025 (Bill 56), so speed cameras mapped in Ontario are left out (64 on 11 Nov 2026); red light cameras stay. This is one switch in the builder.
+- **What it does not know, and never claims:** mobile radar, police positions, temporary cameras, and any camera nobody mapped. No open source has them. A quiet screen is not a promise. The OpenStreetMap part is volunteer-mapped and can be incomplete or out of date.
+- **Fresh list:** run the builder and publish; it refuses to write a list much shorter than the last one. GPS details shows the number of sites and the list's date. It is not refreshed automatically yet.
+- **Privacy:** worked out on the glasses from each fix. Only the camera being warned about and the last distance to it are held, in page memory. The builder asks its sources for whole regions only.
+- **Checks:** `node --test drive/tests/cameras.test.cjs` (11 cases, including the builder on saved answers and the shipped list) and the camera section of `node drive/tests/studio-browser.cjs [outDir]` (frames `s18`, `s19`). Not checked: the real glasses, a real drive past a real camera.
+- **Licences:** contains information licensed under the Open Government Licence - Toronto; map data (c) OpenStreetMap contributors, ODbL.
+
 Sources:
 - [Meta glasses device guidance](https://github.com/meta/meta-wearables-webapp/blob/main/plugins/meta-wearables-webapp/skills/ai-glasses-webapp-device/SKILL.md)
 - [W3C Geolocation](https://www.w3.org/TR/geolocation/)

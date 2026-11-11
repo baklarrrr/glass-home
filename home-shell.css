@@ -35,6 +35,8 @@
 .gps-tape .needle { fill:#fff; }
 .gps-hud[data-status=live] .gps-state { color:#dbe7df; }
 .gps-hud[data-level=warn] .gps-state { color:#ffc15e; font-size:26px; font-weight:700; line-height:1.3; white-space:pre-line; height:28.35px; display:flex; flex-direction:column; justify-content:center; }   /* two lines: what is wrong, then what to do; amber, heavy and large enough to read in a glance. The box stays one line high (21px x 1.35) and the two lines spill evenly above and below, so the dash never moves */
+.gps-hud[data-camera=ahead] .gps-state, .gps-hud[data-camera=over] .gps-state { color:#ffc15e; font-size:26px; font-weight:700; line-height:1.3; height:28.35px; display:flex; flex-direction:column; justify-content:center; white-space:nowrap; }   /* a fixed camera ahead: the same room as the calm line, so the speed does not move */
+.gps-hud[data-camera=over] .gps-speed { color:#ffc15e; }   /* over the camera's posted limit: the number itself says so */
 .gps-hud[data-light=night] { opacity:.7; }
 .drive-controls { align-self:stretch; display:flex; flex-direction:column; gap:8px; }
 .drive-controls .driverun { min-height:42px; font-size:20px; }
@@ -54,4 +56,4 @@
 .quiet-reveal span { display:block; margin-top:4px; font-size:16px; color:var(--soft); }
 .drive-quiet .app-identity { font-size:20px; color:var(--soft); }
 .drive-quiet .app-identity svg { width:18px; height:18px; }
-@media (max-height:500px) { #drive {gap:6px;} .gps-tape {margin-top:6px;} .gps-tape text.readout {font-size:17px;} #driveTurn {font-size:20px;} #driveTurn .dist {font-size:23px;} #driveTurn .dist.near {font-size:26px;} #driveTurn[data-level=warn] {font-size:24px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .gps-hud[data-level=warn] .gps-state {font-size:22px; height:24.3px;} .drive-controls .driverun {min-height:34px;} }
+@media (max-height:500px) { #drive {gap:6px;} .gps-hud[data-camera=ahead] .gps-state, .gps-hud[data-camera=over] .gps-state {font-size:22px; height:24.3px;} .gps-tape {margin-top:6px;} .gps-tape text.readout {font-size:17px;} #driveTurn {font-size:20px;} #driveTurn .dist {font-size:23px;} #driveTurn .dist.near {font-size:26px;} #driveTurn[data-level=warn] {font-size:24px;} .gps-speed {font-size:80px;} .gps-state {font-size:18px;} .gps-hud[data-level=warn] .gps-state {font-size:22px; height:24.3px;} .drive-controls .driverun {min-height:34px;} }

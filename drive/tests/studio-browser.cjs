@@ -87,6 +87,11 @@ async function run(browser, height, tag) {
   await page.waitForTimeout(600);
   if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(300); }
   check(await page.isVisible('#driveHud'), `${tag}: the Drive screen is up`);
+  // The shipped camera list loads by itself when Drive opens. The screens below then run with an empty list, so a real
+  // camera near the made-up test place can never change them; the camera section at the end brings its own.
+  await page.waitForFunction(() => typeof driveCams !== 'undefined' && driveCams && driveCams.count > 300, null, { timeout: 8000 }).catch(() => {});
+  check(await page.evaluate(() => driveCams.count > 300 && /^\d{4}-\d{2}-\d{2}$/.test(driveCams.made)), `${tag}: the shipped camera list loads when Drive opens (${await page.evaluate(() => driveCams.count + ' sites, ' + driveCams.made)})`);
+  await page.evaluate(() => driveCams.load({ made: '2026-11-11', items: [] }));
 
   // The Journal link, played by the test: replace the snapshot the page reads and repaint.
   const phone = (state, over = {}) => page.evaluate(([st, o]) => {
@@ -234,6 +239,38 @@ async function run(browser, height, tag) {
   t = await tapeOf();
   check(t.turn === '', `${tag}: no saved route, no turn line (${JSON.stringify(t.turn)})`);
   check(await page.evaluate(() => !document.getElementById('parkedGate') && StudioParked.confirmed() && StudioParked.controlsAllowed() && !StudioParked.isOpen()), `${tag}: there is no parked check: no dialog in the page and nothing held back`);
+
+  // Fixed-camera warning (drive/cameras.js): a red light camera 600 m east of the start and a speed camera (limit 50) 2 km east.
+  await unpaired();
+  await page.evaluate(([red, speed]) => { S.snap = { ...(S.snap || {}), rt: {} }; driveCams.load({ made: '2026-11-11', items: [[...red, 'r'], [...speed, 's', 50]] }); driveStopped = false; if (!driveFeed.enabled) driveFeed.enable(); }, [spot(600, 3), spot(2000, 0)]);
+  await page.waitForTimeout(50);
+  const cameraOf = () => page.evaluate(() => { const h = document.getElementById('driveHud'), st = document.getElementById('driveState'), r = document.createRange(); r.selectNodeContents(st); const b = r.getBoundingClientRect();
+    return { mark: h.dataset.camera, colour: getComputedStyle(st).color, speedColour: getComputedStyle(document.getElementById('driveSpeed')).color, left: b.left, right: b.right,
+      lines: new Set([...r.getClientRects()].filter((x) => x.width > 0).map((x) => Math.round(x.top))).size }; });
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(300, 0));
+  const red = await shot('s18-red-light-camera', { text: 'Red light camera · 300 m', level: 'ok', speed: '50' });
+  let c = await cameraOf();
+  check(c.mark === 'ahead' && c.colour === 'rgb(255, 193, 94)' && c.lines === 1 && c.left >= 0 && c.right <= 600, `${tag}: a red light camera ahead takes the top line in amber, on one line inside the screen (${c.mark}, ${c.colour}, ${Math.round(c.left)}-${Math.round(c.right)})`);
+  check(c.speedColour === 'rgb(255, 255, 255)', `${tag}: the speed stays white: a red light camera has no limit to be over (${c.speedColour})`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 0.2, null), spot(560, 0));
+  c = await cameraOf();
+  check(c.mark === 'ahead' && (await page.textContent('#driveState')) === 'Red light camera · 40 m', `${tag}: stopped at the light, the warning stays (${await page.textContent('#driveState')})`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.9, 90), spot(700, 0));
+  c = await cameraOf();
+  check(c.mark === 'none' && (await page.textContent('#driveState')) === 'App location · GPS estimate' && c.colour !== 'rgb(255, 193, 94)', `${tag}: past the camera, the calm line is back (${c.mark}, ${await page.textContent('#driveState')})`);
+  const calm = await measure(page);
+  check(Math.abs(red.speedTop - calm.speedTop) < 0.5 && Math.abs(red.unitTop - calm.unitTop) < 0.5 && !red.scroll, `${tag}: the speed and unit do not move when the warning comes and goes (${Math.round(red.speedTop)} px, calm ${Math.round(calm.speedTop)} px)`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 17.5, 90), spot(1700, 0));
+  await shot('s19-speed-camera-over', { text: 'Speed camera · limit 50 · 300 m', level: 'ok', speed: '63' });
+  c = await cameraOf();
+  check(c.mark === 'over' && c.speedColour === 'rgb(255, 193, 94)', `${tag}: over a speed camera's posted limit, the speed itself turns amber (${c.mark}, ${c.speedColour})`);
+  await page.evaluate(([lat, lon]) => window.__at(lat, lon, 13.3, 90), spot(1800, 0));
+  c = await cameraOf();
+  check(c.mark === 'ahead' && c.speedColour === 'rgb(255, 255, 255)' && (await page.textContent('#driveState')) === 'Speed camera · limit 50 · 200 m', `${tag}: at 48 the speed is white again and the warning still counts down (${c.mark}, ${await page.textContent('#driveState')})`);
+  await page.evaluate(() => { window.__fix = null; });
+  await page.waitForFunction(() => document.getElementById('driveSpeed').textContent === '—', null, { timeout: 9000 });
+  c = await cameraOf();
+  check(c.mark === 'none' && !(await page.textContent('#driveState')).includes('camera'), `${tag}: with no fresh fix there is no camera warning, never an old one (${c.mark}, ${JSON.stringify(await page.textContent('#driveState'))})`);
 
   check(errors.length === 0, `${tag}: no script errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await ctx.close();

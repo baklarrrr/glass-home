@@ -934,8 +934,22 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
 // Compass tape and saved-route guidance (drive/guide.js). The guide is handed each fix as it arrives and keeps only how far
 // along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
 const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
+// Fixed-camera warning (drive/cameras.js): a red light or speed camera on the road ahead, from a public list shipped with
+// the app (drive/cameras.json). Worked out here from each fix; nothing about the position is kept or sent.
+const driveCams = typeof DriveCameras!=='undefined'?new DriveCameras.Watch():null;
+let driveCamsAsked=false;
+function loadDriveCameras() {
+  if(!driveCams||driveCamsAsked)return;
+  driveCamsAsked=true;
+  fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>driveCams.load(file)).catch(()=>{driveCamsAsked=false;});   // a miss is tried again next time Drive opens
+}
 const driveGeo = driveGuide&&navigator.geolocation?{
-  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(driveGuide.fill(p));},fail,options),   // fill: a speed from positions where the device reports none
+  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{
+    driveGuide.fix(p);
+    const seen=driveGuide.fill(p);   // fill: a speed from positions where the device reports none
+    driveCams?.fix(p,driveGuide.course(seen.coords),seen.coords.speed);
+    ok(seen);
+  },fail,options),
   clearWatch:id=>navigator.geolocation.clearWatch(id)
 }:navigator.geolocation;
 let driveTapeShown='';
@@ -1006,6 +1020,10 @@ function paintDrive(reading) {
     check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
+  // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.
+  const camera=driveCams&&reading.status==='live'&&!pg?DriveCameras.words(driveCams.snapshot(),reading.speed):null;
+  if(camera)$('driveState').textContent=camera.text;
+  $('driveHud').dataset.camera=camera?(camera.over?'over':'ahead'):'none';
   const age=pg?phone.ageMs:reading.ageMs;
   $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
   $('driveHud').dataset.status=live?'live':reading.status;
@@ -1049,6 +1067,7 @@ function paintDriveDetails() {
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fix callbacks this page: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix,
+    'Cameras: '+(driveCams?.count?driveCams.count+' fixed sites, list of '+driveCams.made+'. No mobile radar or police.':'list not loaded'),
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
@@ -1074,6 +1093,7 @@ function syncDriveFeed() {
   // no permission prompt can appear from just looking at Drive. A deliberate Stop holds until the next Start.
   // Where the glasses cannot report the permission at all, a Start that worked before is remembered and simply made again:
   // at worst that is one system prompt the wearer has already answered.
+  if(visible)loadDriveCameras();
   if(visible&&!driveFeed.enabled&&!driveStopped&&!driveHeld()){
     if(driveRemembered())driveFeed.enable(); else {driveFeed.enabled=true;driveFeed.start();}
   }
