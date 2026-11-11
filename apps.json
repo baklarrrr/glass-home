@@ -1,11 +1,11 @@
 {
-  "about": "The Studio Home Apps menu, in display order. Games stay in the Games tab. Pairing fragments are forwarded only to the matching first-party app.",
+  "about": "The Bakar Home Apps menu, in display order. Games stay in the Games tab. Pairing fragments are forwarded only to the matching first-party app.",
   "apps": [
-    {"group": "Studio", "name": "Studio Glass", "url": "https://baklarrrr.github.io/studio-glass/", "why": "Review pictures and renders from your PC", "icon": "studio-glass/icon-mono.svg", "pass": "sg"},
-    {"group": "Faith", "name": "Quran", "url": "https://baklarrrr.github.io/quran-glass/", "why": "Read or follow a recitation word by word", "icon": "quran-glass/icon-mono.svg"},
-    {"group": "Listening", "name": "Tidal", "url": "https://baklarrrr.github.io/tidal-glass/", "why": "Music from your iPhone through the glasses", "icon": "tidal-glass/icon-mono.svg", "pass": "tg"},
+    {"group": "Studio", "name": "Bakar Studio", "url": "https://baklarrrr.github.io/studio-glass/", "why": "Review pictures and check render progress", "icon": "studio-glass/icon-mono.svg", "pass": "sg"},
+    {"group": "Faith", "name": "Quran Glass", "url": "https://baklarrrr.github.io/quran-glass/", "why": "Read or follow a recitation word by word", "icon": "quran-glass/icon-mono.svg"},
+    {"group": "Listening", "name": "Tidal Glass", "url": "https://baklarrrr.github.io/tidal-glass/", "why": "Music from your iPhone through the glasses", "icon": "tidal-glass/icon-mono.svg", "pass": "tg"},
     {"group": "Listening", "name": "Sound Lab", "url": "https://baklarrrr.github.io/tidal-glass/sound/", "why": "Check the audio output on your iPhone", "icon": "tidal-glass/sound/icon-mono.svg", "pass": "tg"},
-    {"group": "Driving", "name": "Bakar Drive", "url": "https://baklarrrr.github.io/glass-home/drive/", "why": "Phone GPS and paired turn directions", "icon": "glass-home/drive/icon-mono.svg", "pass": "drive"},
+    {"group": "Driving", "name": "Bakar Drive", "url": "https://baklarrrr.github.io/glass-home/drive/", "why": "GPS speed, heading and linked directions", "icon": "glass-home/drive/icon-mono.svg", "pass": "drive"},
     {"group": "Utilities", "name": "Battery", "url": "https://baklarrrr.github.io/battery-glass/", "why": "Check the charge on your glasses", "icon": "battery-glass/icon-mono.svg", "pass": "tg"},
     {"group": "Activities", "name": "Gulzar", "url": "https://baklarrrr.github.io/gulzar/", "why": "Guided cooking, crafts and drawing", "icon": "gulzar/icon-mono.svg"}
   ],

@@ -3,15 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="application-name" content="Bakar Studio">
-  <meta name="description" content="Bakar Studio: work, picture review and Drive in one glasses app.">
+  <meta name="application-name" content="Bakar Home">
+  <meta name="description" content="Open your glasses apps, check studio work and review pictures from your PC.">
   <meta name="mrbd-web-app-capable" content="yes">
   <meta name="robots" content="noindex, nofollow">
   <!-- YouTube's embedded player needs this page's origin as the referrer of its request (error 153 without it). -->
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#000000">
-  <title>Bakar Studio</title>
+  <title>Bakar Home</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta property="og:title" content="Bakar Home">
+  <meta property="og:description" content="Open your glasses apps, check studio work and review pictures from your PC.">
+  <meta property="og:image" content="https://baklarrrr.github.io/glass-home/icon-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:image:alt" content="A pale blue house on a slate tile.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="home-shell.css">
   <link rel="stylesheet" href="readable.css">
@@ -19,7 +28,7 @@
 <body>
   <div id="glance" class="glance">
   <header class="top">
-    <p id="appIdentity" class="app-identity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h3v3H3zm6 0h12v3H9zM3 11h3v3H3zm6 0h12v3H9zM3 17h3v3H3zm6 0h12v3H9z"/></svg>Studio Home <span id="appContext">Work</span></p>
+    <p id="appIdentity" class="app-identity"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="currentColor"><path d="M11 29 32 11l21 18M17 25v26h11V38h8v13h11V25" fill="none" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/></g></svg>Bakar Home <span id="appContext">Work</span></p>
     <nav class="sections" aria-label="Studio sections"><button id="section-work" data-section="work">Work</button><button id="section-review" data-section="review">Review</button><button id="section-drive" data-section="drive">Drive</button></nav>
     <nav class="tabs" role="tablist" aria-label="Section views">
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>

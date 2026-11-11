@@ -4,7 +4,7 @@
 // (Apps) and games kept apart from them (Games).
 //
 // The link: three free public MQTT brokers at once (EMQX, HiveMQ, and shiftr.io on port 443), the same link Tidal
-// Glass and Studio Glass use. No account, no daily cap, and any broker can be down without anything stopping. From
+// Glass and Bakar Studio use. No account, no daily cap, and any broker can be down without anything stopping. From
 // Bakar's home network only shiftr.io answers reliably, so none of them waits for another. The PC keeps the latest
 // session list retained there, so the list shows the moment a broker connects.
 //
@@ -37,11 +37,11 @@ const SITE = 'https://baklarrrr.github.io/';
 // The Apps and Games lists live in apps.json so another session can add an app or a game without touching this
 // code. These are used when it can't be read.
 let APPS = [
-  { group: 'Studio', name: 'Studio Glass', url: SITE + 'studio-glass/', why: 'Review pictures and renders from your PC', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
-  { group: 'Faith', name: 'Quran', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
-  { group: 'Listening', name: 'Tidal', url: SITE + 'tidal-glass/', why: 'Music from your iPhone through the glasses', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
+  { group: 'Studio', name: 'Bakar Studio', url: SITE + 'studio-glass/', why: 'Review pictures and check render progress', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
+  { group: 'Faith', name: 'Quran Glass', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
+  { group: 'Listening', name: 'Tidal Glass', url: SITE + 'tidal-glass/', why: 'Music from your iPhone through the glasses', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
   { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Check the audio output on your iPhone', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
-  { group: 'Driving', name: 'Bakar Drive', url: SITE + 'glass-home/drive/', why: 'Phone GPS and paired turn directions', icon: 'glass-home/drive/icon-mono.svg', pass: 'drive' },
+  { group: 'Driving', name: 'Bakar Drive', url: SITE + 'glass-home/drive/', why: 'GPS speed, heading and linked directions', icon: 'glass-home/drive/icon-mono.svg', pass: 'drive' },
   { group: 'Utilities', name: 'Battery', url: SITE + 'battery-glass/', why: 'Check the charge on your glasses', icon: 'battery-glass/icon-mono.svg', pass: 'tg' },
   { group: 'Activities', name: 'Gulzar', url: SITE + 'gulzar/', why: 'Guided cooking, crafts and drawing', icon: 'gulzar/icon-mono.svg' },
 ];
@@ -612,7 +612,7 @@ function renderWork() {
   const sum = $('summary');
   sum.textContent = '';
   if (!S.kUp) {
-    sum.textContent = 'Open Bakar Studio from its existing link to see Claude and Codex.';
+    sum.textContent = 'Open Bakar Home from its existing link to see Claude and Codex.';
     return;
   }
   if (!s) {
@@ -823,7 +823,7 @@ function renderNow() {
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.now : '';
   list.textContent = '';
   const line = $('nowLine');
-  if (!S.kUp) { line.textContent = 'Open Bakar Studio from its existing link to see your studio.'; return; }
+  if (!S.kUp) { line.textContent = 'Open Bakar Home from its existing link to see your studio.'; return; }
   if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
   const cards = nowCards();
   const calm = !cards.length || cards[0].rank >= 2;

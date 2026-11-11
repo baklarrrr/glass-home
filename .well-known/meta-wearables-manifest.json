@@ -1,12 +1,18 @@
 {
   "version": 1,
-  "name": "Bakar Studio",
-  "description": "Work, picture review and parked Drive controls in one existing app.",
+  "name": "Bakar Home",
+  "description": "Open your glasses apps, check studio work and review pictures from your PC.",
   "appearance": {
     "theme_color": "#AFC4FF",
     "icon_background": {
-      "colors": ["#2E3546", "#0C0E13"],
-      "stops": [0.0, 1.0],
+      "colors": [
+        "#2E3546",
+        "#0C0E13"
+      ],
+      "stops": [
+        0.0,
+        1.0
+      ],
       "inner_glow_color": "#DCE5FF"
     },
     "icon": {
