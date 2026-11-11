@@ -59,6 +59,17 @@ test('the warning stays through the stop line and the junction, and goes once th
   assert.equal(go(late, 285, 0), null);                          // first seen 15 m away: too late to start on
 });
 
+test('holding a camera never hides a nearer one, and turning off the road drops it', () => {
+  const two = watch([cam(380, 0), cam(700, 0)]);
+  assert.ok(Math.abs(go(two, 0, 0).dist - 380) < 2);
+  assert.ok(Math.abs(go(two, 385, 0).dist - 5) < 2);             // in the first junction: the first is still the one shown
+  assert.ok(Math.abs(go(two, 400, 0).dist - 300) < 2);           // 20 m past it: the next one takes over at once
+  const turn = watch([cam(300, 0)]);
+  assert.ok(go(turn, 150, 0));
+  assert.equal(go(turn, 200, 60, 0), null);                      // turned north onto a side street: it is no longer ahead
+  assert.equal(go(turn, 200, 120, 0), null);
+});
+
 test('a camera marked as beside a motorway warns on the street, names the street, and is silent at motorway speed', () => {
   const marked = [...at(300, 20), 'r', 0, 1, 'Lake Shore'];
   const street = watch([marked]);

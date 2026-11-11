@@ -92,15 +92,14 @@
       // A camera marked as beside a motorway is on the street next to it or under it. At motorway speed the car is on the motorway.
       const onStreet = (cam) => !cam.motorway || !(speed >= MOTORWAY_MPS);
       let best = null;
-      // The camera already being warned about stays through the stop line and the junction, until it is behind.
-      if (this.target && onStreet(this.target)) {
-        const s = seen(c.latitude, c.longitude, course, this.target);
-        if (s.ahead > -BEHIND_M && s.side <= lane && s.dist <= FAR_M + 100) best = { cam: this.target, dist: s.dist };
-      }
-      if (!best) for (const cam of around(this.ix, c.latitude, c.longitude)) {
+      for (const cam of around(this.ix, c.latitude, c.longitude)) {
         const s = seen(c.latitude, c.longitude, course, cam);
-        // Ahead on this road: in front, within reach, and no farther to the side than a road is wide (plus a little of the fix's own doubt).
-        if (s.ahead <= PASSED_M || s.dist > reach || s.side > lane || !onStreet(cam)) continue;
+        // Ahead on this road: in front, within reach, and no farther to the side than a road is wide (plus a little of the
+        // fix's own doubt). The camera already being warned about is followed through the stop line and the junction until
+        // it is behind; a new one must still be properly ahead. The nearest that qualifies is the one shown, so a nearer
+        // camera takes over and turning off the road drops the old one.
+        const held = cam === this.target;
+        if (s.ahead <= (held ? -BEHIND_M : PASSED_M) || s.dist > (held ? Math.max(reach, this.dist + HOLD_M) : reach) || s.side > lane || !onStreet(cam)) continue;
         if (!best || s.dist < best.dist) best = { cam, dist: s.dist };
       }
       this.target = best ? best.cam : null;
