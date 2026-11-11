@@ -75,7 +75,7 @@ async function run() {
       const newBridge='future-topic~'+oldPhoneKey;
       await page.goto(home+'#androidBridge='+encodeURIComponent(newBridge));
       await page.click('#tab-apps');
-      const tidal=page.locator('#appRows .row').filter({has:page.getByText('Tidal Glass',{exact:true})});
+      const tidal=page.locator('#appRows .row').filter({has:page.getByText('TIDAL Glass',{exact:true})});
       await Promise.all([page.waitForURL(url=>url.pathname==='/tidal-glass/'),tidal.click()]);
       assert.deepEqual(Object.fromEntries(new URLSearchParams(new URL(page.url()).hash.slice(1))),
         {androidBridge:newBridge},'Only an explicitly provisioned future bridge is forwarded');
