@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 42; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 44; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -660,10 +660,13 @@ function tickClock() {
   buildLabel.id='runningBuild';
   buildLabel.textContent='v'+APP_BUILD;
   buildLabel.setAttribute('aria-label','Bakar Drive build '+APP_BUILD);
-  // The same label remains visible above the full-screen Directions panel.
-  Object.assign(buildLabel.style,{position:'fixed',right:'5vmin',bottom:'0.7vmin',zIndex:'3',
-    fontSize:'14px',lineHeight:'1.1',fontWeight:'500',color:'#99a69f',pointerEvents:'none'});
-  document.body.append(buildLabel);
+  // Keep the running build in the safe area alongside the clock. The full-screen
+  // directions panel has its own copy because it covers the entire header.
+  Object.assign(buildLabel.style,{fontSize:'19px',fontWeight:'650',color:'var(--soft, #d3ddd7)',flex:'none',marginLeft:'auto'});
+  $('clock').before(buildLabel);
+  const panelBuild=buildLabel.cloneNode(true);panelBuild.removeAttribute('id');panelBuild.style.float='right';
+  Object.assign(panelBuild.style,{position:'absolute',right:'6vmin',top:'5vmin'});
+  $('panelTitle').style.paddingInlineEnd='3rem';$('panel').prepend(panelBuild);
   document.addEventListener('visibilitychange', visible);
   window.addEventListener('pagehide', () => { motion?.clearMotion?.();feed.setVisible(false);closeLink(); });
   window.addEventListener('pageshow', visible);
@@ -676,7 +679,12 @@ function tickClock() {
   if (linked) openLink();
   render();
   if (S.offer) openPanel();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+    let lastCheck=0;
+    const check=()=>{if(!document.hidden&&Date.now()-lastCheck>=60000){lastCheck=Date.now();reg.update().catch(()=>{});}};
+    window.addEventListener('pageshow',check);document.addEventListener('visibilitychange',check);
+    if(navigator.serviceWorker.controller)check();
+  }).catch(()=>{});
 })();
 
 // For tests in a desktop browser: the same entry the brokers use.

@@ -21,7 +21,7 @@
     constructor({geo, permissions, transform=p=>p, now=Date.now, mono=()=>performance.now(),
       schedule=(fn,ms)=>setTimeout(fn,ms), cancel=id=>clearTimeout(id), change=()=>{}}) {
       Object.assign(this,{geo,permissions,transform,now,mono,schedule,cancel,change});
-      this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';
+      this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.gestureTried=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';
       this.hadGrant=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
       this.state={status:geo?'off':'unsupported',speed:null}; this.permission=null;
       // Page-local facts only: never copy the position object or its coordinates.
@@ -87,15 +87,23 @@
     // Explicit Start or Retry replaces the watch. Entering the same visible view keeps it.
     enable() { this.denied=false;this.enabled=true; if(this.visible)this.start(true); }
     stop() { this.observed='off';this.lastGood=null;this.pendingState=null;this.hadGrant=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
-    setVisible(visible, {autoStart=false, resumeOnly=false}={}) {
-      if(this.visible===visible)return;
+    setVisible(visible, {autoStart=false, resumeOnly=false, gesture=false}={}) {
+      if(this.visible===visible){
+        if(visible&&gesture&&!this.denied&&!this.hadGrant&&!this.gestureTried&&
+          (!this.enabled||['timeout','no-response'].includes(this.state.status))){
+          this.gestureTried=true;this.enable();
+        }
+        return;
+      }
       this.visible=visible;
       if(!visible){this.clear();this.publish({status:this.enabled?'paused':this.geo?'off':'unsupported',speed:null});}
       else if(autoStart && this.denied){this.publish({status:'denied',speed:null});}
       else if(autoStart){
         this.enabled=true;
         // First entry in Drive is the permission gesture. Waking/re-entering later only resumes a grant.
-        this.start(!resumeOnly && this.facts.attempts===0);
+        const request=gesture&&!this.gestureTried&&!this.denied;
+        if(request)this.gestureTried=true;
+        this.start(request||(!resumeOnly&&this.facts.attempts===0));
       } else if(this.enabled)this.start();
     }
     async start(deliberate=false) {
@@ -156,7 +164,7 @@
           this.observe({status:'no-response',speed:null});
       },RESPONSE_NOTICE_MS);
       // One native request for this visible visit. An incoming status or repaint cannot start another.
-      const options={enableHighAccuracy:true,maximumAge:0,timeout:10000};
+      const options={enableHighAccuracy:true,maximumAge:0,timeout:30000};
       const startedAt=this.mono();
       let lastWatchFix=-Infinity, probeExpired=false;
       const active=()=>epoch===this.epoch&&this.visible&&this.enabled;
@@ -211,6 +219,7 @@
         if(this.probeTimer!==null)this.cancel(this.probeTimer);
         this.probeTimer=this.schedule(probe,delay);
       };
+      let probeNumber=0;
       const probe=()=>{
         if(!active()||!this.geo.getCurrentPosition||this.probeDeadline!==null)return;
         if(this.probeTimer!==null){this.cancel(this.probeTimer);this.probeTimer=null;}
@@ -229,10 +238,24 @@
           if(mayPoll())finish(()=>{});
           else probeExpired=true; // A pending prompt can still produce a valid first callback.
         },RESPONSE_NOTICE_MS);
+        let nativeDone=false;
+        const success=p=>{
+          if(!active()||nativeDone)return;
+          nativeDone=true;
+          if(id===this.probeId){finish(()=>accept(p,false));return;}
+          // A timeout retires the request, not a freshly acquired sample from
+          // this still-visible visit. Never let an old request revoke permission.
+          const age=this.now()-p?.timestamp;
+          if(Number.isFinite(age)&&age>=0&&age<MAX_AGE_MS)accept(p,false);
+        };
         try {
-          this.geo.getCurrentPosition(p=>finish(()=>accept(p,false)),e=>finish(()=>{
-            if(e?.code===1||this.mono()-lastWatchFix>=MAX_AGE_MS)fail(e);
-          }),options);
+          const precise=this.watch===null||(++probeNumber%2===0);
+          this.geo.getCurrentPosition(success,e=>{
+            if(nativeDone)return;
+            nativeDone=true;finish(()=>{
+              if(e?.code===1||this.mono()-lastWatchFix>=MAX_AGE_MS)fail(e);
+            });
+          },{...options,enableHighAccuracy:precise,timeout:10000});
         }catch(e){finish(()=>{if(this.watch===null)fail(e);});}
       };
       const granted=()=>{

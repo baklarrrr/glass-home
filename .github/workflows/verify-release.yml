@@ -1,0 +1,20 @@
+name: Verify glasses release
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify executable versions, bundles, shells and workers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            node tools/prepare-release.cjs --check --base "$BASE_SHA"
+          else
+            node tools/prepare-release.cjs --check
+          fi

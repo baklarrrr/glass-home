@@ -2,16 +2,17 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v43-cameras';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'app.js','watch-phone.js','watch-library.js', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.js','home-shell.css','parked.js','drive-location.js','drive/link-core.js','drive-phone.js','drive/speed-check.js','drive/guide.js','drive/cameras.js','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
+const CACHE = 'glass-home-v44';
+const ENTRY = 'runtime/home-v44-911287865e532298.js';
+const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 
 self.addEventListener('install', (event) => {
-  // Normal activation waits for existing clients to close. Never force an open HUD to reload.
+  // New navigations can use the complete new shell. Existing documents keep running.
   // Review loads only on deliberate entry.
   // A new shell must not seed itself from a still-fresh HTTP cache for the prior release.
   const requests=PRECACHE.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'}));
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(requests)));
+  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(requests)).then(()=>self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -29,6 +30,13 @@ self.addEventListener('fetch', (event) => {
   if (!shellPaths.has(url.pathname)) return; // Never cache task/API/private-image responses.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
+    const entryURL=new URL(ENTRY,self.registration.scope);
+    const indexURL=new URL('index.html',self.registration.scope);
+    const rootURL=new URL('./',self.registration.scope);
+    if(url.pathname===entryURL.pathname||url.pathname===indexURL.pathname||url.pathname===rootURL.pathname){
+      const installed=await cache.match(url.origin+url.pathname,{ignoreSearch:true});
+      if(installed)return installed;
+    }
     try {
       const response = await Promise.race([
         // Revalidate only the allowlisted public shell. HTTP freshness may otherwise mix releases.
