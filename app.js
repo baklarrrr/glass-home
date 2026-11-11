@@ -937,6 +937,18 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
 // Compass tape and saved-route guidance (drive/guide.js). The guide is handed each fix as it arrives and keeps only how far
 // along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
 const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
+// Fixed-camera warning (drive/cameras.js): a red light or speed camera on the road ahead, from a public list shipped with
+// the app (drive/cameras.json). Worked out here from each fix; nothing about the position is kept or sent.
+const driveCams = typeof DriveCameras!=='undefined'?new DriveCameras.Watch():null;
+let driveCamsAsked=false,driveCamsFailed=false;
+// What the Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
+function driveCamsNote(){return !driveCams?'':driveCamsFailed&&!driveCams.count?'no camera list':driveCams.staleNote().replace(/^C/,'c');}
+function loadDriveCameras() {
+  if(!driveCams||driveCamsAsked)return;
+  driveCamsAsked=true;
+  fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{driveCams.load(file);driveCamsFailed=!driveCams.count;})
+    .catch(()=>{driveCamsAsked=false;driveCamsFailed=true;});   // a miss is tried again next time Drive opens, and the face says there is no list
+}
 let driveTapeShown='';
 function paintDriveTape(course) {
   const svg=$('driveTape'); if(!svg?.style)return;
@@ -957,7 +969,14 @@ function paintDriveTape(course) {
 }
 const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
-  transform:position=>{if(!driveGuide)return position;driveGuide.fix(position);return driveGuide.fill(position);},
+  // Each fix goes to the guide (course, saved route, a speed where the device reports none) and to the camera watch.
+  transform:position=>{
+    if(!driveGuide)return position;
+    driveGuide.fix(position);
+    const seen=driveGuide.fill(position);
+    driveCams?.fix(position,driveGuide.course(seen.coords),seen.coords.speed);
+    return seen;
+  },
   change:paintDrive
 });
 const driveCheck = typeof SpeedCheck!=='undefined'?SpeedCheck:null;
@@ -1032,8 +1051,16 @@ function paintDrive(reading) {
     (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHud').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
+  // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.
+  const camera=driveCams&&reading.status==='live'&&!pg?DriveCameras.words(driveCams.snapshot(),reading.speed):null;
+  if(camera)$('driveState').textContent=camera.text;
+  $('driveHud').dataset.camera=camera?(camera.over?'over':'ahead'):'none';
   const age=pg?phone.ageMs:reading.ageMs;
-  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago'):'');
+  // An old camera list says so here, in amber, until a fresh one is published: a quiet screen must not look like a clear road.
+  // The fix's own age stays; the list's trouble is added after it.
+  const oldList=!guide?.note&&live?driveCamsNote():'';
+  $('driveAge').textContent=guide?.note||(live?(age<1000?'Just now':Math.floor(age/1000)+' s ago')+(oldList?' · '+oldList:''):'');
+  $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
   $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
   $('driveGps').disabled=reading.status==='unsupported';
@@ -1077,6 +1104,7 @@ function paintDriveDetails() {
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
     'Fresh positions: '+f.positionFixes+' · callbacks: '+f.fixes+' · starts: '+f.attempts,
     'Last fix: '+fix+(last?' · position '+(sample.coordinates?'present':'missing'):''),
+    driveCams?(driveCamsFailed&&!driveCams.count?'Cameras: the list could not be loaded':driveCams.about()):'Cameras: not available',
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
@@ -1102,6 +1130,7 @@ function syncDriveFeed() {
   driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied'});
   drivePhone.setVisible(visible);
   if(visible)scheduleDriveReport();
+  if(visible)loadDriveCameras();
 }
 let driveStopped=false;
 const DRIVE_REMEMBER='bakar.drive.gps';

@@ -37,6 +37,29 @@ Bakar, 11 Nov 2026: "I also want to be able to navigate, have a compass, have a 
 - **Checks:** `node --test drive/tests/guide.test.cjs` (28 cases) and the auto-start and saved-route sections of `node drive/tests/studio-browser.cjs [outDir]` (frames `s13` to `s17`). Not checked: real optics, real GPS on the glasses, a real drive.
 - **Limits:** a route is made on the PC (`route.py "Place"`, or the AIs' `glasses_route` tool) before setting off. Picking a destination from the car or rerouting needs an iPhone-side sender; that is not built.
 
+## Fixed-camera warning (11 Nov 2026)
+
+Bakar, 11 Nov 2026: "radarbot functionality for when i am near speed cameras or any areas where i need to be cautious or watch my speed" and "No bullshit, though."
+
+- **What it does** (`drive/cameras.js`): when a fixed camera is on the road ahead, the top line of Drive says what and how far in amber: "Red light camera · 300 m", "Speed camera · limit 50 · 300 m". Over a speed camera's posted limit, the speed number itself turns amber. It takes the same room as the calm line, so the speed does not move. It is silent: no sound.
+- **"Ahead on this road":** in front of the car, within 25 seconds of travel (never under 400 m, never over 1 km), and no more than 60 m to the side of the line of travel (up to 15 m more for a rough fix). It starts only on a camera at least 25 m ahead, then stays through the stop line and the junction until the camera is 15 m behind. Stopped with no course, it stays unless the camera falls 40 m behind where it was. No fresh fix, no warning.
+- **The list** (`drive/cameras.json`, built by `node tools/build-cameras.cjs`): the City of Toronto's own red light cameras (open data, refreshed daily by the City) plus the cameras mapped in OpenStreetMap for Canada. 739 sites on 11 Nov 2026: 504 red light, 235 speed. One site per place and kind.
+- **Where the law ended speed cameras:** Ontario (municipal speed cameras banned from 14 November 2025, Bill 56) and Alberta (speed-on-green and highway photo radar ended 1 April 2025). Speed cameras mapped there are left out (183 on 11 Nov 2026); red light cameras stay. So in Ontario this warns about red light cameras only. One table in the builder.
+- **Beside a motorway:** a red light camera within 80 m of a motorway (40 on 11 Nov 2026; the Lake Shore cameras under the Gardiner are the case) is marked. A speed camera near a motorway is never marked: it watches the motorway and warns at any speed. It warns only below 70 km/h and names its street where the City gives one ("Red light camera on Lake Shore · 300 m"), so a driver on the motorway is not told about the street below.
+- **Where it warns when it should not, or late. Known and not fixed:**
+  - The City publishes the junction, not the approach: every approach to a camera junction warns, including ones the camera does not watch.
+  - The other side of a divided road warns too, and so does a parallel street closer than about 60 m.
+  - Crawling under 70 km/h on a motorway beside a marked camera still warns; the street name is what tells them apart.
+  - Stopped just past the camera point (inside the junction), it still shows the last few metres until the car moves on.
+  - Above 70 km/h on the street itself beside a motorway (Lake Shore under the Gardiner), a marked camera is silent.
+  - On a bend the camera can be outside the straight line of travel until the car has turned toward it, so the warning comes later.
+  - While speed comes from an Android phone link instead of the glasses' own location, there are no positions and so no camera warnings.
+- **What it does not know, and never claims:** mobile radar, police positions, temporary cameras, and any camera nobody mapped. No open source has them. Canada only: it is silent in the United States. Outside Toronto the list is volunteer-mapped and can be incomplete or out of date. A quiet screen is not a promise.
+- **Fresh list:** run the builder and publish; it refuses to write a list much shorter than the last one. GPS details says what the list covers, its date, and its age once that passes 14 days. Past 30 days the Drive face itself adds "camera list N days old" in amber after "Just now", and "no camera list" if the list could not be loaded. Nothing refreshes it automatically yet.
+- **Privacy:** worked out on the glasses from each fix. Only the camera being warned about and the last distance to it are held, in page memory. The builder asks its sources for whole regions and for the camera sites themselves, never for where anyone is.
+- **Checks:** `node --test drive/tests/cameras.test.cjs` (15 cases, with the builder on saved answers and the shipped list) and the camera section of `node drive/tests/studio-browser.cjs [outDir]` (frames `s18` to `s20`). A played drive on the shipped list toward Toronto's Dixon Rd / Carlingview camera warned from 400 m. Not checked: the real glasses, a real drive past a real camera.
+- **Licences:** contains information licensed under the Open Government Licence - Toronto; map data (c) OpenStreetMap contributors, ODbL.
+
 Sources:
 - [Meta glasses device guidance](https://github.com/meta/meta-wearables-webapp/blob/main/plugins/meta-wearables-webapp/skills/ai-glasses-webapp-device/SKILL.md)
 - [W3C Geolocation](https://www.w3.org/TR/geolocation/)
