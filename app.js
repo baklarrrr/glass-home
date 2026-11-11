@@ -935,7 +935,7 @@ const drivePhone = typeof StudioDrivePhone!=='undefined'?new StudioDrivePhone.Ph
 // along the saved route it is; the position is not stored and nothing is sent. A missing module leaves Drive as it was.
 const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
 const driveGeo = driveGuide&&navigator.geolocation?{
-  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(p);},fail,options),
+  watchPosition:(ok,fail,options)=>navigator.geolocation.watchPosition(p=>{driveGuide.fix(p);ok(driveGuide.fill(p));},fail,options),   // fill: a speed from positions where the device reports none
   clearWatch:id=>navigator.geolocation.clearWatch(id)
 }:navigator.geolocation;
 let driveTapeShown='';
