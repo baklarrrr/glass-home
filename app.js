@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 47; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 48; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
