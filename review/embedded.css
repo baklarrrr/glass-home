@@ -8,9 +8,16 @@ body { padding:6px; }
 #glance { gap:8px; padding:4px 8px 8px; }
 /* Renders: the whole glance (headline, renders, AI at work, AI use, glasses) fits the space under the menu. */
 body.renders-place .headline { font-size:30px; }
-body.renders-place .head { padding:9px 16px 10px; }
 body.renders-place .pair .value { font-size:20px; }
-body.renders-place .pair .block { padding:8px 14px 9px; }
+body.renders-place .pair .block { padding:6px 14px 7px; }
+/* Room for the renders themselves: three jobs and a reason, as the Studio screen showed. */
+body.renders-place #glance { gap:6px; }
+body.renders-place .label { line-height:1.2; margin-bottom:2px; }
+body.renders-place .head { padding:6px 16px 8px; }
+body.renders-place .block.renders { padding:8px 16px 8px; }
+body.renders-place .items { gap:3px; }
+body.renders-place .items li { line-height:1.25; }
+body.renders-place .block.line { min-block-size:40px; padding:6px 16px 7px; }
 
 /* The picture, one short caption and its exit stay on the same glasses screen. */
 .picture-caption { margin:0; flex:none; color:var(--ink); }

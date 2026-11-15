@@ -155,6 +155,24 @@ async function mergedStudio(browser) {
     }
     assert.equal(await frame.locator('#headCard').isVisible(),true,name+': render progress shows');
     assert.equal(await frame.locator('#state').count(),1);
+    // The Renders card shows as many jobs as fit, and a job that needs a look, with its reason, before any "+N more".
+    const studio=page.frame({url:/review\/index\.html/});
+    const card=jobs=>studio.evaluate(jobs=>{
+      const items=jobs.map((st,i)=>({ti:'TEST job '+i,st,pct:st==='running'?10+i:undefined,why:st==='attention'?'TEST reason '+i:''}));
+      acceptSummary({t:'studio',at:Date.now()+jobs.length,head:'Needs your eyes',renders:{ok:true,running:items.length-1,attention:1,items},ai:{},cost:{},glasses:{}});
+      const block=document.getElementById('rendersBlock').getBoundingClientRect();
+      const rows=[...document.querySelectorAll('#renderList li')];
+      return {names:rows.map(li=>li.querySelector('.ti').textContent),why:rows.map(li=>li.querySelector('.why')?.textContent).filter(Boolean),
+        inside:rows.every(li=>{const b=li.getBoundingClientRect();return b.top>=block.top&&b.bottom<=block.bottom;})};
+    },jobs);
+    const three=await card(['running','running','attention']);
+    assert.deepEqual(three,{names:['TEST job 0','TEST job 1','TEST job 2'],why:['TEST reason 2'],inside:true},'three jobs and the reason all show');
+    const many=await card(['running','running','running','running','running','attention']);
+    assert.equal(many.inside,true,'nothing is cut off at the card edge');
+    assert.ok(many.names.includes('TEST job 5')&&many.why.includes('TEST reason 5'),'the job that needs a look stays, with its reason');
+    const listed=many.names.filter(name=>name.startsWith('TEST job')).length;
+    assert.ok(listed>=3,'as many jobs as fit ('+listed+')');
+    assert.equal(many.names.at(-1),'+'+(6-listed)+' more','the rest are counted, after the job that needs a look');
     assert.equal(await frame.locator('#pictureList').isVisible(),false);
     // Up from Renders leads back to the menu, and the menu still leaves the section.
     await frame.locator('#studioTab').focus();
@@ -167,7 +185,7 @@ async function mergedStudio(browser) {
     await page.waitForFunction(()=>document.getElementById('appContext').textContent==='Renders'&&!document.getElementById('review').hidden);
     assert.deepEqual(errors,[]);
     await context.close();
-    console.log('Merged Studio: '+name+' passed pairing reuse, Renders by arrows, way out and Now card.');
+    console.log('Merged Studio: '+name+' passed pairing reuse, Renders by arrows, the Renders card, way out and Now card.');
   }
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});
