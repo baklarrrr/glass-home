@@ -1,7 +1,6 @@
 {
-  "about": "The Bakar Home Apps menu, in display order. Games stay in the Games tab. Pairing fragments are forwarded only to the matching first-party app.",
+  "about": "The Bakar Home Apps menu, in display order. Games stay in the Games tab. Bakar Studio is no longer a separate app: its pictures, feedback and render progress are the Review section of Bakar Home. Pairing fragments are forwarded only to the matching first-party app.",
   "apps": [
-    {"group": "Studio", "name": "Bakar Studio", "url": "https://baklarrrr.github.io/studio-glass/", "why": "Review pictures and check render progress", "icon": "studio-glass/icon-mono.svg", "pass": "sg"},
     {"group": "Faith", "name": "Quran Glass", "url": "https://baklarrrr.github.io/quran-glass/", "why": "Read or follow a recitation word by word", "icon": "quran-glass/icon-mono.svg"},
     {"group": "Listening", "name": "TIDAL Glass", "url": "https://baklarrrr.github.io/tidal-glass/", "why": "Music from your iPhone through the glasses", "icon": "tidal-glass/icon-mono.svg", "pass": "tg"},
     {"group": "Listening", "name": "Sound Lab", "url": "https://baklarrrr.github.io/tidal-glass/sound/", "why": "Check the audio output on your iPhone", "icon": "tidal-glass/sound/icon-mono.svg", "pass": "tg"},

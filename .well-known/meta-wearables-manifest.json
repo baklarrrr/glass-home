@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Bakar Home",
-  "description": "Open your glasses apps, check studio work and review pictures from your PC.",
+  "description": "Your studio on your glasses: chats, pictures, render progress, Drive and your apps.",
   "appearance": {
     "theme_color": "#AFC4FF",
     "icon_background": {

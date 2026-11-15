@@ -1,18 +1,24 @@
 'use strict';
-// One existing app registration. Pairings stay in this app's browser storage and URL fragments.
+// One app: Bakar Home. Review holds what used to be the separate Bakar Studio app (Pictures, Feedback, Renders).
+// Pairings stay in this origin's browser storage and URL fragments.
 window.HomeShell=(()=>{
   const by=id=>document.getElementById(id);
   const groups={now:'work',work:'work',watch:'work',apps:'work',games:'work',review:'review',route:'drive',drive:'drive'};
-  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0,locationPending=false,pendingReview=false;
+  let shown=false,wayOut=false,idle=0,lastDrive='driveGps',depth=0,frameReady=false,pendingTab='',returnTimer=0,locationPending=false,pendingReview=false,place='pictures',wantedPlace='';
+  const PLACES={pictures:'Pictures',feedback:'Feedback',renders:'Renders'};
   const frame=()=>by('reviewFrame');
   function tell(message){if(frameReady)frame().contentWindow.postMessage(message,location.origin);}
   function activateReview(active){
     const allowed=!!active&&!document.hidden,inside=document.activeElement===frame();
     frame().hidden=!allowed||!frameReady;
     frame().inert=!allowed;
-    by('reviewEnter').hidden=false;
-    by('reviewEnter').textContent=allowed?'Focus review':'Open pictures';
+    // Once Review is open and ready, its own places are the next row down; the entry button would only cost a row
+    // of the display. It stays for the moments the frame cannot take focus (loading, paused).
+    const enter=by('reviewEnter'),onEnter=document.activeElement===enter;
+    enter.hidden=allowed&&frameReady;
+    enter.textContent='Open Review';
     tell({type:'studio-review-visible',active:allowed});
+    if(onEnter&&enter.hidden){frame().focus();tell({type:'studio-review-focus'});}
     if(inside&&!allowed&&!StudioParked.isOpen())by('reviewEnter').focus({preventScroll:true}); // A closing frame must not take focus with it.
   }
   function quiet(focus=true){
@@ -52,15 +58,15 @@ window.HomeShell=(()=>{
   function ensureReview(){
     if(frame().getAttribute('src')){activateReview(true);return;}
     const pair=passPairing('sg');
-    if(!pair){by('reviewState').textContent='This app has no existing picture-review connection. Keep the current Studio app until its connection can be brought across.';return;}
+    if(!pair){by('reviewState').textContent='Review is not linked to your studio PC yet. Open the Bakar Studio link from your PC on the phone paired with your glasses.';return;}
     const url=new URL('review/index.html',location.href);
     url.hash=new URLSearchParams({t:pair.t,k:pair.k}).toString();
     frame().src=url.href; // Fragment never goes to a web server; no new pairing is requested.
-    by('reviewState').textContent='Opening existing picture review.';
+    by('reviewState').textContent='Opening Review.';
   }
   function paint(){
     const group=groups[S.tab]||'work';
-    by('appContext').textContent=S.view==='compose'?'Message':S.view==='detail'?'Chat':group==='review'?'Pictures':S.tab==='watch'?'Watch':group==='drive'?'Drive':S.tab==='apps'?'Apps':S.tab==='games'?'Games':'Work';
+    by('appContext').textContent=S.view==='compose'?'Message':S.view==='detail'?'Chat':group==='review'?PLACES[place]:S.tab==='watch'?'Watch':S.tab==='route'?'Route':group==='drive'?'Drive':S.tab==='apps'?'Apps':S.tab==='games'?'Games':S.tab==='work'?'Chats':'Now';
     for(const button of document.querySelectorAll('[data-section]')){button.setAttribute('aria-current',button.dataset.section===group?'page':'false');button.disabled=S.view!=='list';button.title=button.disabled?'Use Back to return before changing sections.':'';}
     for(const button of document.querySelectorAll('.tab')){button.hidden=groups[button.dataset.tab]!==group;button.disabled=S.view!=='list';}
     document.querySelector('.tabs').hidden=group==='review';
@@ -83,6 +89,11 @@ window.HomeShell=(()=>{
     returnTimer=setTimeout(()=>{pendingTab='';by('reviewState').hidden=false;by('reviewState').textContent='Use Back to return to the picture list before changing sections.';},2500);
     return false;
   }
+  // Render progress from anywhere in the app (the Now cards, an old Bakar Studio address): Review, on Renders.
+  function openRenders(){
+    if(frameReady)tell({type:'studio-review-place',peer:'studio'});else wantedPlace='studio';
+    if(S.tab!=='review')selectTab('review');
+  }
   function focusReview(){
     ensureReview();
     if(frameReady){frame().focus();tell({type:'studio-review-focus'});}
@@ -92,10 +103,12 @@ window.HomeShell=(()=>{
     if(event.origin!==location.origin||event.source!==frame()?.contentWindow||!event.data)return;
     const m=event.data;
     if(m.type==='studio-review-ready'){
-      frameReady=true;frame().hidden=false;by('reviewEnter').hidden=false;by('reviewState').hidden=true;activateReview(S.tab==='review');
+      frameReady=true;frame().hidden=false;by('reviewState').hidden=true;activateReview(S.tab==='review');
+      if(wantedPlace){tell({type:'studio-review-place',peer:wantedPlace});wantedPlace='';}
     }
     if(m.type==='studio-review-depth'&&Number.isInteger(m.depth)&&m.depth>=0&&m.depth<=4){
       depth=m.depth;
+      if(Object.hasOwn(PLACES,m.place)&&m.place!==place){place=m.place;paint();}
       if(depth===0&&pendingReview){pendingReview=false;clearTimeout(returnTimer);if(S.tab==='review'&&!document.hidden)focusReview();}
       if(depth===0&&pendingTab){const tab=pendingTab;pendingTab='';clearTimeout(returnTimer);selectTab(tab);}
     }
@@ -116,6 +129,7 @@ window.HomeShell=(()=>{
   }
   function init(){
     for(const button of document.querySelectorAll('[data-section]'))button.addEventListener('click',e=>selectTab({work:'now',review:'review',drive:'drive'}[button.dataset.section],false,e.isTrusted));
+    if(S.fragment?.get('view')==='renders')wantedPlace='studio'; // where an old Bakar Studio address lands
     by('reviewEnter').addEventListener('click',focusReview);by('driveReveal').addEventListener('click',reveal);
     by('driveInfoButton').addEventListener('click',openDriveInfo);by('driveInfoClose').addEventListener('click',()=>closeDriveInfo());
     document.addEventListener('studio-parked-change',()=>{
@@ -133,7 +147,7 @@ window.HomeShell=(()=>{
     });
     window.addEventListener('pagehide',()=>{pendingReview=false;pendingTab='';clearTimeout(idle);idle=0;clearTimeout(returnTimer);activateReview(false);if(S.tab==='drive'&&by('driveInfo').hidden)quiet(false);});
   }
-  return Object.freeze({init,onPane,canEnterRoute,canLeaveReview,focusReview,handleKey,setLocationPending,driveQuiet:()=>S.tab==='drive'&&!shown,
+  return Object.freeze({init,onPane,canEnterRoute,canLeaveReview,focusReview,openRenders,handleKey,setLocationPending,driveQuiet:()=>S.tab==='drive'&&!shown,
     tabsForInput(target){return target.closest('.sections')?['now','review','drive']:Object.keys(groups).filter(key=>groups[key]===groups[S.tab]);}
   });
 })();

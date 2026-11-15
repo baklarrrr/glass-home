@@ -1,7 +1,7 @@
 {
   "name": "Bakar Home",
   "short_name": "Bakar Home",
-  "description": "Open your glasses apps, check studio work and review pictures from your PC.",
+  "description": "Your studio on your glasses: chats, pictures, render progress, Drive and your apps.",
   "scope": "./",
   "display": "standalone",
   "background_color": "#000000",

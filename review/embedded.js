@@ -10,7 +10,14 @@ window.addEventListener('message',event=>{
     document.body.inert=!m.active;
     if(typeof onVisibility==='function')onVisibility();
   }
-  if(m.type==='studio-review-root'&&typeof choosePeer==='function'&&navigation.route)choosePeer('pictures');
+  // Leaving the section returns to the top of the place he was in, not to another place.
+  if(m.type==='studio-review-root'&&typeof choosePeer==='function'&&navigation.route)choosePeer(navigation.rootPeer||'pictures');
+  if(m.type==='studio-review-place'&&['studio','pictures','feedback'].includes(m.peer)&&typeof choosePeer==='function'&&navigation.route){
+    choosePeer(m.peer);
+    // Its content may not be here yet (the PC has not answered): rest on the place's own tab, not on another place's.
+    const a=document.activeElement;
+    if(!a||a===document.body||a.dataset.peer)document.getElementById(m.peer+'Tab')?.focus({preventScroll:true});
+  }
   if(m.type==='studio-review-focus'&&typeof visibleControls==='function'){
     const here=document.activeElement;
     (here!==document.body&&here?.getClientRects().length?here:window.reviewRows()[0]?.[0])?.focus({preventScroll:true});

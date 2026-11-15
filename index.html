@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="application-name" content="Bakar Home">
-  <meta name="description" content="Open your glasses apps, check studio work and review pictures from your PC.">
+  <meta name="description" content="Your studio on your glasses: chats, pictures, render progress, Drive and your apps.">
   <meta name="mrbd-web-app-capable" content="yes">
   <meta name="robots" content="noindex, nofollow">
   <!-- YouTube's embedded player needs this page's origin as the referrer of its request (error 153 without it). -->
@@ -13,7 +13,7 @@
   <title>Bakar Home</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <meta property="og:title" content="Bakar Home">
-  <meta property="og:description" content="Open your glasses apps, check studio work and review pictures from your PC.">
+  <meta property="og:description" content="Your studio on your glasses: chats, pictures, render progress, Drive and your apps.">
   <meta property="og:image" content="https://baklarrrr.github.io/glass-home/icon-512.png">
   <meta property="og:image:width" content="512">
   <meta property="og:image:height" content="512">
@@ -28,11 +28,11 @@
 <body>
   <div id="glance" class="glance">
   <header class="top">
-    <p id="appIdentity" class="app-identity"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="currentColor"><path d="M11 29 32 11l21 18M17 25v26h11V38h8v13h11V25" fill="none" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/></g></svg>Bakar Home <span id="appContext">Work</span></p>
-    <nav class="sections" aria-label="Studio sections"><button id="section-work" data-section="work">Work</button><button id="section-review" data-section="review">Review</button><button id="section-drive" data-section="drive">Drive</button></nav>
-    <nav class="tabs" role="tablist" aria-label="Section views">
+    <p id="appIdentity" class="app-identity"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="currentColor"><path d="M11 29 32 11l21 18M17 25v26h11V38h8v13h11V25" fill="none" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/></g></svg>Bakar Home <span id="appContext">Now</span></p>
+    <nav class="sections" aria-label="Main menu"><button id="section-work" data-section="work">Home</button><button id="section-review" data-section="review">Review</button><button id="section-drive" data-section="drive">Drive</button></nav>
+    <nav class="tabs" role="tablist" aria-label="Places in this section">
       <button class="tab" role="tab" id="tab-now" data-tab="now" aria-controls="now">Now</button>
-      <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Work</button>
+      <button class="tab" role="tab" id="tab-work" data-tab="work" aria-controls="work">Chats</button>
       <button class="tab" role="tab" id="tab-watch" data-tab="watch" aria-controls="watch">Watch</button>
       <button class="tab" role="tab" id="tab-route" data-tab="route" aria-controls="route">Route</button>
       <button class="tab" role="tab" id="tab-drive" data-tab="drive" aria-controls="drive">Drive</button>
@@ -139,7 +139,7 @@
         <h2>Speed connection</h2>
         <p id="drivePhoneState" class="note"></p>
         <p id="drivePhoneCode" class="note"></p>
-        <p class="note">Journal → Review → ••• → Directions to glasses. Use the existing link and compare the codes. Speed is blank until a fresh reading arrives.</p>
+        <p class="note">Speed comes from location, sent by your phone. Nothing else needs setting up. If a phone app is linked, its code shows here to compare. Speed is blank until a fresh reading arrives.</p>
         <button id="drivePhoneToggle" class="row driverun">Stop phone link</button>
         <button id="drivePhoneUse" class="row driverun" hidden>Use offered phone</button>
         <button id="drivePhoneKeep" class="row driverun" hidden>Keep current phone</button>
@@ -150,7 +150,7 @@
       </div>
     </section>
 
-    <section id="review" class="pane" aria-labelledby="section-review" hidden><p id="reviewState" class="note">Connecting picture review.</p><button id="reviewEnter" class="btn" hidden>Enter pictures</button><iframe id="reviewFrame" title="Pictures and saved feedback" referrerpolicy="no-referrer" hidden></iframe></section>
+    <section id="review" class="pane" aria-labelledby="section-review" hidden><p id="reviewState" class="note">Opening Review.</p><button id="reviewEnter" class="btn" hidden>Open Review</button><iframe id="reviewFrame" title="Pictures, feedback and render progress" referrerpolicy="no-referrer" hidden></iframe></section>
 
     <section id="play" class="pane" hidden aria-label="Video">
       <div id="ytWrap" class="ytwrap"><div id="ytPlayer"></div></div>
@@ -188,7 +188,7 @@
   </div>
   <script src="vendor/mqtt.min.js"></script>
   <!-- app-entry -->
-  <script src="runtime/home-v46-563ad056cce906c7.js"></script>
+  <script src="runtime/home-v47-88fa1dffce177470.js"></script>
   <!-- end-app-entry -->
 </body>
 </html>

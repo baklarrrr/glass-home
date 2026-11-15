@@ -132,3 +132,21 @@ test('without the self-check module the old wording stays and nothing breaks',()
   const h=harness('granted',{noCheck:true});h.reveal();h.feed.enable();h.error(1);
   assert.equal(h.element('driveHealthDetail').textContent,'Location permission not granted');assert.equal(h.element('driveHealthDetail').dataset.level,'ok');
 });
+test('a position without a speed is enough to remember that location works, so a visit that opens on Drive restarts by itself',()=>{
+  const h=harness(),kept=new Map();
+  h.context.localStorage={getItem:k=>kept.has(k)?kept.get(k):null,setItem:(k,v)=>kept.set(k,String(v))};
+  h.reveal();h.feed.enable();kept.set('bakar.drive.gps','asked');
+  h.watches.at(-1).ok({timestamp:1700000000000,coords:{speed:null,accuracy:80}}); // rough, no speed: nothing to show yet
+  assert.equal(h.element('driveSpeed').textContent,'—');
+  assert.equal(kept.get('bakar.drive.gps'),'1');
+  kept.set('bakar.drive.gps','0');h.fix(null);
+  assert.equal(kept.get('bakar.drive.gps'),'0','a wearer who stopped GPS stays stopped');
+});
+test('Speed details read plainly for a phone with no linked app',()=>{
+  const h=harness();h.reveal();h.details();
+  h.phone('unpaired',{configured:false,enabled:false});
+  assert.equal(h.element('drivePhoneState').textContent,'No phone app is linked');
+  const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8'),html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const drive=app.slice(app.indexOf('const DRIVE_PHONE_LABELS='),app.indexOf('// Light: the display'))+html.slice(html.indexOf('id="drive"'),html.indexOf('id="review"'));
+  assert.doesNotMatch(drive,/Android|Journal/);
+});
