@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 45; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 46; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -168,6 +168,9 @@ function onGps(reading) {
   S.gps = reading;
   if(reading.status==='waiting'&&!local('bd.gps'))local('bd.gps','asked');
   if(reading.status==='live'&&local('bd.gps')!=='on')local('bd.gps','on');
+  // A position came back, so location is allowed here even if no speed could be shown yet (rough or too few fixes).
+  // Remember that, so the next visit starts by itself where the runtime cannot report the permission.
+  if(feed.hadGrant&&local('bd.gps')==='asked')local('bd.gps','on');
   if(reading.status==='denied')local('bd.gps','denied');
   if (phoneSpeed()) { render(); return; }          // the phone's speed is on screen and in the trip already
   if (reading.status === 'live') addTrip(reading.speed); else S.trip.lastAt = 0;
@@ -510,7 +513,13 @@ function render() {
     $('arriveTime').textContent = '';
     $('arriveLeft').textContent = '';
   }
-  $('status').textContent=guide?topLine(view):selection.label;
+  // No speed: one short reason on the top line and what happens next under the unit, never a bare "unavailable".
+  // The glasses' own location is the story unless a linked phone has answered and is about to send its speed.
+  const linkedSoon=!live&&Boolean(S.addr)&&['live','ready'].includes(checkLink(view));
+  const why=live?selection.label:linkedSoon?'Waiting for speed from phone':selection.why;
+  const next=live?'':linkedSoon?'It shows when the phone sends it':selection.next;
+  $('status').textContent=guide?topLine(view):why;
+  $('speedNext').textContent=guide?'':next;
   $('clock').textContent = clockText(new Date());
   if (S.panel) renderPanel();
 }
@@ -530,8 +539,8 @@ function renderPanel() {
     state = 'This link is for a different phone.';
     help = 'These glasses get directions from another phone now. Use this phone switches to the new one, with a new code to accept on it. Back keeps the phone you have.';
   } else if (!S.addr) {
-    state = 'No linked source.';
-    help = 'App location can provide speed independently. A linked source can also supply speed and directions.';
+    state = 'No phone app is linked.';
+    help = 'Speed comes from location, sent by your phone. Nothing else needs setting up.';
   } else if (S.phone === 'pairing') {
     state = 'Your phone hasn\'t accepted these glasses yet.';
     help = 'On your phone, open the glasses link and accept this code.';

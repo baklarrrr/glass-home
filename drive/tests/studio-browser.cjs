@@ -108,7 +108,8 @@ async function run(browser, height, tag) {
     const details=await page.locator('#driveHealthDetail').textContent();
     const source=await page.locator('#driveHud').getAttribute('data-source');
     const isCamera=await page.locator('#driveHud').getAttribute('data-camera')!=='none';
-    const labels={none:'Speed unavailable',linked:'Linked speed',location:'Location speed',estimated:'Estimated speed'};
+    const labels={none:await page.evaluate(()=>StudioDriveLocation.display(null,{status:driveFeed.snapshot().status}).label),linked:'Linked speed',location:'Location speed',estimated:'Estimated speed'};
+    if(source==='none')check(labels.none!=='Speed unavailable'&&labels.none.includes(' · '),tag+' '+name+': a dash carries its reason and next step ('+labels.none+')');
     const expected=isCamera?want.text:labels[source];
     const b=await bands(page,Math.ceil(m.headerBottom)+1,Math.floor(m.unitTop));
     m.ink={dash:b[b.length-1],above:b.length>1?b[b.length-2]:null,count:b.length};
@@ -323,7 +324,7 @@ async function autoStart(browser) {
       check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
-    } else check(m.enabled && m.text === 'Speed unavailable' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
+    } else check(m.enabled && m.text === 'Waiting for location · it comes from your phone' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
     await ctx.close();
   }
 }
