@@ -396,3 +396,22 @@ test('a fix stamped up to two seconds ahead of the glasses\' clock is used; clea
   h.g.fix(fix(0, 0, h.clock.t + 2000)); assert.equal(h.g.trail.length, 1);
   h.g.fix(fix(10, 0, h.clock.t + 2001)); assert.equal(h.g.trail.length, 1, 'more than two seconds ahead: rejected');
 });
+
+test('compass painter: one drawing for both faces, hidden with its room kept when there is no course, redrawn only when it moved', () => {
+  const made = [];
+  const node = () => ({ attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, textContent: '' });
+  const svg = { style: {}, attrs: {}, kids: [], setAttribute(k, v) { this.attrs[k] = v; }, append(n) { this.kids.push(n); },
+    set textContent(v) { this.kids = []; }, ownerDocument: { createElementNS(ns, name) { const n = node(); n.name = name; made.push(n); return n; } } };
+  const { paintTape } = require('../guide.js');
+  paintTape(svg, 92);
+  assert.equal(svg.style.visibility, 'visible');
+  assert.equal(svg.attrs['aria-label'], 'Compass: heading E, 92 degrees');
+  assert.equal(svg.kids.find((n) => n.attrs.class === 'readout').textContent, 'E 092°');
+  const drawn = made.length;
+  paintTape(svg, 92.1); assert.equal(made.length, drawn, 'a tenth of a degree is not a redraw');
+  paintTape(svg, 95); assert.ok(made.length > drawn);
+  paintTape(svg, null);
+  assert.equal(svg.style.visibility, 'hidden'); assert.equal(svg.kids.length, 0);
+  assert.equal(svg.attrs['aria-label'], 'Compass: no heading while stopped');
+  paintTape(null, 10); paintTape({}, 10);   // nothing to draw into: no throw
+});

@@ -1,6 +1,7 @@
 'use strict';
-// Compass tape and saved-route guidance for the Drive screens. No DOM, no timers and no network here, so Node runs this
-// same code in drive/tests/guide.test.cjs.
+// Compass tape and saved-route guidance for the Drive screens. No timers and no network here, so Node runs this same
+// code in drive/tests/guide.test.cjs. The one piece that touches the page is paintTape, which draws into an SVG it is
+// handed: both Drive faces (Bakar Home's Drive tab and Bakar Drive) call it, so the compass is one piece of code.
 //
 // Compass: the GPS course over the ground as a sliding tape. It is the way the car is moving, not the way the wearer
 // looks. There is no course below about 7 km/h (the feed leaves it out), and then there is no tape: never an old one.
@@ -49,6 +50,27 @@
     const shown = Math.round(course) % 360;
     const point = POINTS[Math.round(course / 45) % 8];
     return { deg: shown, text: String(shown).padStart(3, '0') + '°', point, readout: `${point} ${String(shown).padStart(3, '0')}°`, ticks };
+  }
+
+  // Draws the tape into an <svg viewBox="-160 0 320 44">, or hides it (keeping its room) when there is no course. Redraws
+  // only when the course moved half a degree. Styling is drive/tape.css, shared by both faces.
+  const painted = new WeakMap();
+  function paintTape(svg, course) {
+    if (!svg || !svg.style) return;
+    const t = tape(finite(course) ? course : NaN), key = t ? String(Math.round(course * 2) / 2) : '';
+    svg.style.visibility = t ? 'visible' : 'hidden';
+    svg.setAttribute('aria-label', t ? `Compass: heading ${t.point}, ${t.deg} degrees` : 'Compass: no heading while stopped');
+    if (painted.get(svg) === key) return;
+    painted.set(svg, key); svg.textContent = '';
+    if (!t) return;
+    const make = (name, attrs, text) => { const n = (svg.ownerDocument || document).createElementNS('http://www.w3.org/2000/svg', name); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; svg.append(n); };
+    for (const k of t.ticks) {
+      const x = (k.x * 150).toFixed(1), fade = k.north ? 1 : (1 - Math.abs(k.x) * .35).toFixed(2);   // the edges dim a little; north never does
+      make('line', { x1: x, x2: x, y1: 9, y2: k.major ? 19 : 15, class: k.north ? 'major north' : k.major ? 'major' : '', opacity: fade });
+      if (k.label && Math.abs(k.x) > .36) make('text', { x, y: 40, class: k.north ? 'north' : '', opacity: fade }, k.label);   // the middle belongs to the readout
+    }
+    make('path', { d: 'M-6 0H6L0 8Z', class: 'needle' });
+    make('text', { x: 0, y: 41, class: 'readout' }, t.readout);
   }
 
   // Metres on the ground between two latitude/longitude pairs, flat-earth around the first: exact enough for the few
@@ -300,7 +322,7 @@
     }
   }
 
-  const api = Object.freeze({ tape, prepare, project, clip, Guide, metres, words, POINTS,
+  const api = Object.freeze({ tape, paintTape, prepare, project, clip, Guide, metres, words, POINTS,
     FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M,
     JOIN_FIXES, AGAINST_FIXES, ARRIVED_SHOW_MS, ARRIVED_LEAVE_M });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveGuide = api;

@@ -127,8 +127,23 @@ button { font: inherit; color: inherit; }
   .turn { transition: opacity 300ms ease; }
 }
 
+/* The compass tape (tape.css, shared with Bakar Home's Drive tab) replaces the heading letters on the speed screen. Beside
+   directions from the phone the corner is small: letters there, no tape. */
+.hud[data-mode="speed"] .heading { display: none; }
+.hud[data-mode="guide"] .gps-tape, .hud[data-mode="pair"] .gps-tape { display: none; }
+.hud[data-light="night"] .gps-tape { filter: none; }
+
 /* Connection faults and pairing details appear only in the explicit panel. */
 #hud .status { color:var(--soft);font-weight:500; }
 #hud .status .dot { display:none; }
 #panel { overflow-y:auto; }
 #speedWarn { white-space:pre-line; }   /* two lines: what is wrong, then what to do */
+/* A fixed camera on the road ahead takes the top line in amber, as on Bakar Home's Drive tab; over its posted limit the number says so. */
+/* On the speed screen it sits above the number across the whole width (the top line shares its row with the clock), out of
+   the flow so the number does not move. Beside directions from the phone it takes the top line. */
+.camline { position: absolute; inset-block-end: 100%; inset-inline-start: 50%; transform: translateX(-50%); inline-size: 90vmin; margin: 0 0 2vmin; text-align: center;
+  font-size: clamp(16px, 4.6vmin, 28px); line-height: 1.25; font-weight: 700; color: var(--alert); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud[data-mode="guide"] .camline, .hud[data-mode="pair"] .camline { display: none; }
+#hud[data-mode="guide"][data-camera="ahead"] .status, #hud[data-mode="guide"][data-camera="over"] .status { color: var(--alert); font-weight: 700; }
+#hud[data-camera="over"] .speed { color: var(--alert); }
+.speednext[data-level="warn"] { color: var(--alert); }

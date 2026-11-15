@@ -125,3 +125,21 @@ Sources:
 - [Meta glasses device guidance](https://github.com/meta/meta-wearables-webapp/blob/main/plugins/meta-wearables-webapp/skills/ai-glasses-webapp-device/SKILL.md)
 - [W3C Geolocation](https://www.w3.org/TR/geolocation/)
 - [Meta Sensors and location](https://wearables.developer.meta.com/docs/develop/webapps/build/sensors-and-location/)
+
+## One compass and one camera watch for both faces (15 Nov 2026, build 50, round 2)
+
+Bakar Drive (drive/) now shows the same compass tape and the same fixed-camera warning as Bakar Home's Drive tab, from the
+same code: `DriveGuide.paintTape` (drive/guide.js) draws the tape for both, `drive/tape.css` styles it for both, and
+drive/cameras.js with drive/cameras.json is in Bakar Drive's bundle and offline cache. On Bakar Drive the camera line sits
+above the number across the whole width (the top line shares its row with the clock) and the number goes amber over the
+posted limit.
+
+Not shared: the next turn along the route saved by the PC. That route reaches the glasses inside Bakar Home's encrypted
+snapshot from the PC. Bakar Drive has no link to the PC and must not get one by copying Home's pairing and crypto code, and
+the route is deliberately not written to storage where another page could read it. Bakar Drive's turns come from the phone
+app link instead (LINK.md).
+
+Also in this round: a reading of 0 is never called "estimated" (from five seconds it is "Standing still"); the details
+words for "the phone sent nothing" are the same as on the face; the turn line on Home's Drive tab always keeps its room so
+the speed does not move; Speed details scrolls its words and keeps "Back to speed" on screen; "Open Studio Drive" is
+"Open Bakar Home".

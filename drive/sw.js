@@ -2,8 +2,8 @@
 // Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Network first, so an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
 const CACHE = 'bakar-drive-v50';
-const ENTRY = 'runtime/drive-v50-c8f9c014ea00db22.js';
-const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
+const ENTRY = 'runtime/drive-v50-12c90f811d6e7c30.js';
+const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css', 'tape.css', 'cameras.json', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
 const LATER = ['../vendor/mqtt.min.js'];   // kept once it has been fetched, only when the phone link is set up
 
 // Report the active worker identity on request. It never relabels or reloads a document.

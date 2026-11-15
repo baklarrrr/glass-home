@@ -20,6 +20,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="stylesheet" href="tape.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -43,8 +44,10 @@
     </section>
 
     <section id="speedBox" class="speedbox" aria-label="GPS speed">
+      <p id="camLine" class="camline" hidden></p>
       <p id="speed" class="speed">—</p>
       <p class="unit"><span>km/h</span><span id="heading" class="heading"></span></p>
+      <svg id="tape" class="gps-tape" viewBox="-160 0 320 44" role="img" aria-label="Compass" focusable="false"></svg>
       <p id="speedNext" class="speednext"></p>
     </section>
 
@@ -70,13 +73,13 @@
       <p id="panelQuiet" class="phelp quiet">Your vehicle’s instruments are the reference for driving speed.</p>
       <div class="pbtns">
         <button id="panelUse" class="btn" hidden>Use this phone</button>
-        <button id="panelStudio" class="btn">Open Studio Drive</button>
+        <button id="panelStudio" class="btn">Open Bakar Home</button>
         <button id="panelBack" class="btn">Back</button>
       </div>
     </section>
   </main>
   <!-- app-entry -->
-  <script src="runtime/drive-v50-c8f9c014ea00db22.js"></script>
+  <script src="runtime/drive-v50-12c90f811d6e7c30.js"></script>
   <!-- end-app-entry -->
 </body>
 </html>

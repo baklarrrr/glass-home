@@ -32,7 +32,7 @@
   const STILL_KMH = 1;                        // a reading under this is standing still
   // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
   const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
-  const holdLimit=kmh=>kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;
+  const holdLimit=kmh=>kmh>=STILL_KMH&&kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;   // a 0 is not "estimated" past 5 s: it becomes Standing still
   // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
   const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
   const PROBE_MIN_MS = 4000, PROBE_MAX_MS = 15000, RELAXED_AGE_MS = 10000, WATCH_SILENT_MS = 30000;
@@ -820,7 +820,8 @@
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
       case 'none': return gpsStatus==='denied'?'allow location for this app':
-        gpsStatus==='unsupported'?'location API unavailable':'waiting for a new fix';
+        gpsStatus==='unsupported'?'location API unavailable':
+        gpsStatus==='stale'?'waiting for a new fix':'open Meta AI on your phone';   // the same words as the face (drive-location.js NO_SPEED)
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -839,8 +840,8 @@
     denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
-    timeout: ['GPS timed out'],
-    disconnected: ['No GPS fix'],
+    timeout: ['No location from your phone', 'No phone location'],
+    disconnected: ['No location from your phone', 'No phone location'],
   });
 
   // The state of Studio Drive's phone link (drive-phone.js snapshot) in the shared words.
@@ -890,8 +891,9 @@
 
 // drive/guide.js
 'use strict';
-// Compass tape and saved-route guidance for the Drive screens. No DOM, no timers and no network here, so Node runs this
-// same code in drive/tests/guide.test.cjs.
+// Compass tape and saved-route guidance for the Drive screens. No timers and no network here, so Node runs this same
+// code in drive/tests/guide.test.cjs. The one piece that touches the page is paintTape, which draws into an SVG it is
+// handed: both Drive faces (Bakar Home's Drive tab and Bakar Drive) call it, so the compass is one piece of code.
 //
 // Compass: the GPS course over the ground as a sliding tape. It is the way the car is moving, not the way the wearer
 // looks. There is no course below about 7 km/h (the feed leaves it out), and then there is no tape: never an old one.
@@ -940,6 +942,27 @@
     const shown = Math.round(course) % 360;
     const point = POINTS[Math.round(course / 45) % 8];
     return { deg: shown, text: String(shown).padStart(3, '0') + '°', point, readout: `${point} ${String(shown).padStart(3, '0')}°`, ticks };
+  }
+
+  // Draws the tape into an <svg viewBox="-160 0 320 44">, or hides it (keeping its room) when there is no course. Redraws
+  // only when the course moved half a degree. Styling is drive/tape.css, shared by both faces.
+  const painted = new WeakMap();
+  function paintTape(svg, course) {
+    if (!svg || !svg.style) return;
+    const t = tape(finite(course) ? course : NaN), key = t ? String(Math.round(course * 2) / 2) : '';
+    svg.style.visibility = t ? 'visible' : 'hidden';
+    svg.setAttribute('aria-label', t ? `Compass: heading ${t.point}, ${t.deg} degrees` : 'Compass: no heading while stopped');
+    if (painted.get(svg) === key) return;
+    painted.set(svg, key); svg.textContent = '';
+    if (!t) return;
+    const make = (name, attrs, text) => { const n = (svg.ownerDocument || document).createElementNS('http://www.w3.org/2000/svg', name); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; svg.append(n); };
+    for (const k of t.ticks) {
+      const x = (k.x * 150).toFixed(1), fade = k.north ? 1 : (1 - Math.abs(k.x) * .35).toFixed(2);   // the edges dim a little; north never does
+      make('line', { x1: x, x2: x, y1: 9, y2: k.major ? 19 : 15, class: k.north ? 'major north' : k.major ? 'major' : '', opacity: fade });
+      if (k.label && Math.abs(k.x) > .36) make('text', { x, y: 40, class: k.north ? 'north' : '', opacity: fade }, k.label);   // the middle belongs to the readout
+    }
+    make('path', { d: 'M-6 0H6L0 8Z', class: 'needle' });
+    make('text', { x: 0, y: 41, class: 'readout' }, t.readout);
   }
 
   // Metres on the ground between two latitude/longitude pairs, flat-earth around the first: exact enough for the few
@@ -1191,7 +1214,7 @@
     }
   }
 
-  const api = Object.freeze({ tape, prepare, project, clip, Guide, metres, words, POINTS,
+  const api = Object.freeze({ tape, paintTape, prepare, project, clip, Guide, metres, words, POINTS,
     FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M,
     JOIN_FIXES, AGAINST_FIXES, ARRIVED_SHOW_MS, ARRIVED_LEAVE_M });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveGuide = api;
@@ -1275,6 +1298,8 @@
       return `Cameras: ${this.ix.count} fixed sites, ${this.ix.region || 'region unknown'} only` + (only.length ? `. ${only.join(' and ')}: red light cameras only` : '') +
         `. List of ${this.ix.made || 'unknown date'}` + (age !== null && age > OLD_DAYS ? `, ${age} days old` : '') + '. No mobile radar or police.';
     }
+    // What a Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
+    faceNote(failed) { return failed && !this.ix.count ? 'no camera list' : this.staleNote().replace(/^C/, 'c'); }
     staleNote() { const age = this.ageDays(); return this.ix.count && age !== null && age > STALE_DAYS ? `Camera list ${age} days old` : ''; }
     // One location fix, with the course of travel in degrees (or null: stopped, or unknown) and the speed in metres a second.
     fix(position, course, speed) {
@@ -2536,32 +2561,15 @@ const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
 // the app (drive/cameras.json). Worked out here from each fix; nothing about the position is kept or sent.
 const driveCams = typeof DriveCameras!=='undefined'?new DriveCameras.Watch():null;
 let driveCamsAsked=false,driveCamsFailed=false;
-// What the Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
-function driveCamsNote(){return !driveCams?'':driveCamsFailed&&!driveCams.count?'no camera list':driveCams.staleNote().replace(/^C/,'c');}
+function driveCamsNote(){return driveCams?driveCams.faceNote(driveCamsFailed):'';}
 function loadDriveCameras() {
   if(!driveCams||driveCamsAsked)return;
   driveCamsAsked=true;
   fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{driveCams.load(file);driveCamsFailed=!driveCams.count;})
     .catch(()=>{driveCamsAsked=false;driveCamsFailed=true;});   // a miss is tried again next time Drive opens, and the face says there is no list
 }
-let driveTapeShown='';
-function paintDriveTape(course) {
-  const svg=$('driveTape'); if(!svg?.style)return;
-  const t=driveGuide?DriveGuide.tape(Number.isFinite(course)?course:NaN):null,key=t?String(Math.round(course*2)/2):'';
-  svg.style.visibility=t?'visible':'hidden';
-  svg.setAttribute('aria-label',t?`Compass: heading ${t.point}, ${t.deg} degrees`:'Compass: no heading while stopped');
-  if(key===driveTapeShown)return;
-  driveTapeShown=key; svg.textContent='';
-  if(!t)return;
-  const make=(name,attrs,text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const k in attrs)n.setAttribute(k,attrs[k]);if(text)n.textContent=text;svg.append(n);};
-  for(const k of t.ticks){
-    const x=(k.x*150).toFixed(1),fade=k.north?1:(1-Math.abs(k.x)*.35).toFixed(2);   // the edges dim a little; north never does
-    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.north?'major north':k.major?'major':'',opacity:fade});
-    if(k.label&&Math.abs(k.x)>.36)make('text',{x,y:40,class:k.north?'north':'',opacity:fade},k.label);   // the middle belongs to the readout
-  }
-  make('path',{d:'M-6 0H6L0 8Z',class:'needle'});
-  make('text',{x:0,y:41,class:'readout'},t.readout);
-}
+// The compass is drawn by the shared painter (drive/guide.js), the same one Bakar Drive uses.
+function paintDriveTape(course){if(driveGuide)DriveGuide.paintTape($('driveTape'),course);else if($('driveTape')?.style)$('driveTape').style.visibility='hidden';}
 const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
   // Each fix goes to the guide (course, saved route, a speed where the device reports none) and to the camera watch.
@@ -2649,7 +2657,8 @@ function paintDrive(reading) {
   const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
   const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
   $('driveHealthDetail').textContent=pg?'Linked speed':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
-    (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
+    (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state==='live'&&!pg?'no-sample':phone.state]||'Phone speed unavailable'):   // linked, but no fresh speed from it: never "speed from the phone" beside a dash
+    
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHealthDetail').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   $('driveState').textContent=selection.label;
@@ -2665,7 +2674,7 @@ function paintDrive(reading) {
   $('driveAge').textContent=guide?.note||oldList||'';
   $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
-  $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
+  $('driveGps').textContent=driveFeed.enabled?'Stop GPS':'Start GPS';
   $('driveGps').disabled=reading.status==='unsupported';
   const retry=$('driveRetry');
   const canRetry=driveFeed.enabled&&['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
@@ -2714,7 +2723,7 @@ function paintDriveDetails() {
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
   const help={
-    off:'Location has not been started here. Press Start app GPS. Speed comes from location, sent by your phone.',
+    off:'Location has not been started here. Press Start GPS. Speed comes from location, sent by your phone.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
     timeout:'Your phone did not send a position in time. The glasses have no GPS of their own: open the Meta AI app on your phone. This app keeps asking by itself.',
     'no-response':'Nothing has come back from your phone yet. Open the Meta AI app on your phone, and answer a location question if one is showing. This app keeps asking by itself.',
@@ -3584,7 +3593,7 @@ function rowsOfControls() {
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'drive' && HomeShell.driveQuiet()) add([$('driveReveal')]);
-    else if (pane === 'drive' && !$('driveInfo').hidden) add([$('drivePhoneToggle'),$('drivePhoneUse'),$('drivePhoneKeep'),$('driveInfoClose')]);
+    else if (pane === 'drive' && !$('driveInfo').hidden) { add([$('driveInfoBody')]); add([$('drivePhoneToggle'),$('drivePhoneUse'),$('drivePhoneKeep'),$('driveInfoClose')]); }
     else if (pane === 'drive') { add([$('driveGps'),$('driveRetry')]); add([$('driveLight'),$('driveInfoButton')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
@@ -3653,7 +3662,7 @@ function onKey(e) {
     selectTab(next, Boolean(e.target.closest('.tabs')),e.isTrusted);
     return;
   }
-  if ((e.target === $('dResult') || e.target === $('cQuote')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
+  if ((e.target === $('dResult') || e.target === $('cQuote') || e.target === $('driveInfoBody')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
     const r = e.target;
     const down = k === 'ArrowDown';
     const room = down ? r.scrollHeight - r.clientHeight - r.scrollTop : r.scrollTop;

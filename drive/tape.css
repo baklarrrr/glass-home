@@ -1,0 +1,9 @@
+/* The compass tape, shared by Bakar Home's Drive tab and Bakar Drive. Drawn by DriveGuide.paintTape (drive/guide.js). */
+.gps-tape { display:block; flex:none; width:320px; height:44px; margin:8px auto 0; overflow:visible; }   /* always takes its room, so the speed does not move when the course comes and goes */
+.gps-tape line { stroke:#8e9a93; stroke-width:2; stroke-linecap:round; }
+.gps-tape line.major { stroke:#cfd6d1; }
+.gps-tape text { fill:#cfd6d1; font-size:18px; font-weight:650; text-anchor:middle; letter-spacing:.04em; }
+.gps-tape text.north { fill:var(--accent, var(--mint)); }
+.gps-tape line.north { stroke:var(--accent, var(--mint)); }
+.gps-tape text.readout { fill:#dfe5e1; font-size:19px; font-weight:650; letter-spacing:.02em; font-variant-numeric:tabular-nums; }
+.gps-tape .needle { fill:#fff; }

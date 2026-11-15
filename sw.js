@@ -3,8 +3,8 @@
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
 const CACHE = 'glass-home-v50';
-const ENTRY = 'runtime/home-v50-e53683144b794f19.js';
-const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
+const ENTRY = 'runtime/home-v50-bb8dabe4b16b9f9e.js';
+const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/tape.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 
 // Report the active worker identity on request. It never relabels or reloads a document.

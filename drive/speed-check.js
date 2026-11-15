@@ -26,7 +26,8 @@
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
       case 'none': return gpsStatus==='denied'?'allow location for this app':
-        gpsStatus==='unsupported'?'location API unavailable':'waiting for a new fix';
+        gpsStatus==='unsupported'?'location API unavailable':
+        gpsStatus==='stale'?'waiting for a new fix':'open Meta AI on your phone';   // the same words as the face (drive-location.js NO_SPEED)
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -45,8 +46,8 @@
     denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
-    timeout: ['GPS timed out'],
-    disconnected: ['No GPS fix'],
+    timeout: ['No location from your phone', 'No phone location'],
+    disconnected: ['No location from your phone', 'No phone location'],
   });
 
   // The state of Studio Drive's phone link (drive-phone.js snapshot) in the shared words.

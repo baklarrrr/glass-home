@@ -115,7 +115,7 @@ async function run(browser, height, tag) {
     m.ink={dash:b[b.length-1],above:b.length>1?b[b.length-2]:null,count:b.length};
     await page.screenshot({path:path.join(OUT,name+(height===600?'':'-'+height)+'.png')});
     check(m.text===expected && m.speed===want.speed,tag+' '+name+': actual HUD '+m.text+' / '+m.speed);
-    if(!isCamera)check(details===want.text.replace('Phone link · GPS estimate','Linked speed'),tag+' '+name+': source and fault reason are accessible in Details');
+    if(!isCamera)check(details===want.text.replace('Phone link · GPS estimate','Linked speed'),tag+' '+name+': source and fault reason are accessible in Details ('+details+')');
     check(isCamera||m.level==='ok',tag+' '+name+': ordinary signal problems are not driving warnings');
     check(!(await page.locator('#driveHealthDetail').isVisible()),tag+' '+name+': troubleshooting stays off the HUD');
     return m;
@@ -178,7 +178,7 @@ async function run(browser, height, tag) {
   // Directions on screen: the turn line adds one line for every state alike, and the dash still stays put between calm and warning.
   await phone('live', { nav: NAV, gps: null });
   await page.evaluate(() => window.__deny());
-  const guideCalm = await shot('s10-guide-calm', { text: 'Phone GPS through Journal', level: 'ok', speed: '—' });
+  const guideCalm = await shot('s10-guide-calm', { text: 'Phone linked · no fresh GPS speed', level: 'ok', speed: '—' });
   await phone('stale', { nav: NAV });
   const guideDead = await shot('s11-guide-phone-speed-dead', { text: 'Phone speed expired', level: 'warn', speed: '—' });
   await phone('offline', { nav: NAV });
@@ -315,16 +315,16 @@ async function autoStart(browser) {
     await page.waitForTimeout(700);
     if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(400); }
     const m = await page.evaluate(() => ({ enabled: driveFeed.enabled, text: document.getElementById('driveState').textContent, button: document.getElementById('driveGps').textContent }));
-    if (granted === 'stopped') check(!m.enabled && m.button === 'Start app GPS', `auto start: a deliberate Stop holds through a relaunch, even with location allowed (${m.enabled})`);
-    else if (granted === 'remembered') check(m.enabled && m.button === 'Stop app GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
+    if (granted === 'stopped') check(!m.enabled && m.button === 'Start GPS', `auto start: a deliberate Stop holds through a relaunch, even with location allowed (${m.enabled})`);
+    else if (granted === 'remembered') check(m.enabled && m.button === 'Stop GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
     else if (granted) {
-      check(m.enabled && m.button === 'Stop app GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
+      check(m.enabled && m.button === 'Stop GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
       await page.evaluate(() => window.__drive(20, 180)); await page.waitForTimeout(80);
       check((await page.textContent('#driveSpeed')) === '72', 'auto start: and the speed arrives with no press at all');
       check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
-    } else check(m.enabled && m.text === 'Waiting for location · it comes from your phone' && m.button === 'Stop app GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
+    } else check(m.enabled && m.text === 'Waiting for location · it comes from your phone' && m.button === 'Stop GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
     await ctx.close();
   }
 }

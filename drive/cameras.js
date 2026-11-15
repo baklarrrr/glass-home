@@ -74,6 +74,8 @@
       return `Cameras: ${this.ix.count} fixed sites, ${this.ix.region || 'region unknown'} only` + (only.length ? `. ${only.join(' and ')}: red light cameras only` : '') +
         `. List of ${this.ix.made || 'unknown date'}` + (age !== null && age > OLD_DAYS ? `, ${age} days old` : '') + '. No mobile radar or police.';
     }
+    // What a Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
+    faceNote(failed) { return failed && !this.ix.count ? 'no camera list' : this.staleNote().replace(/^C/, 'c'); }
     staleNote() { const age = this.ageDays(); return this.ix.count && age !== null && age > STALE_DAYS ? `Camera list ${age} days old` : ''; }
     // One location fix, with the course of travel in degrees (or null: stopped, or unknown) and the speed in metres a second.
     fix(position, course, speed) {

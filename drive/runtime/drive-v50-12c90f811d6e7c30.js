@@ -13,7 +13,7 @@
   const STILL_KMH = 1;                        // a reading under this is standing still
   // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
   const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
-  const holdLimit=kmh=>kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;
+  const holdLimit=kmh=>kmh>=STILL_KMH&&kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;   // a 0 is not "estimated" past 5 s: it becomes Standing still
   // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
   const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
   const PROBE_MIN_MS = 4000, PROBE_MAX_MS = 15000, RELAXED_AGE_MS = 10000, WATCH_SILENT_MS = 30000;
@@ -616,7 +616,8 @@
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
       case 'none': return gpsStatus==='denied'?'allow location for this app':
-        gpsStatus==='unsupported'?'location API unavailable':'waiting for a new fix';
+        gpsStatus==='unsupported'?'location API unavailable':
+        gpsStatus==='stale'?'waiting for a new fix':'open Meta AI on your phone';   // the same words as the face (drive-location.js NO_SPEED)
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -635,8 +636,8 @@
     denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
-    timeout: ['GPS timed out'],
-    disconnected: ['No GPS fix'],
+    timeout: ['No location from your phone', 'No phone location'],
+    disconnected: ['No location from your phone', 'No phone location'],
   });
 
   // The state of Studio Drive's phone link (drive-phone.js snapshot) in the shared words.
@@ -686,8 +687,9 @@
 
 // guide.js
 'use strict';
-// Compass tape and saved-route guidance for the Drive screens. No DOM, no timers and no network here, so Node runs this
-// same code in drive/tests/guide.test.cjs.
+// Compass tape and saved-route guidance for the Drive screens. No timers and no network here, so Node runs this same
+// code in drive/tests/guide.test.cjs. The one piece that touches the page is paintTape, which draws into an SVG it is
+// handed: both Drive faces (Bakar Home's Drive tab and Bakar Drive) call it, so the compass is one piece of code.
 //
 // Compass: the GPS course over the ground as a sliding tape. It is the way the car is moving, not the way the wearer
 // looks. There is no course below about 7 km/h (the feed leaves it out), and then there is no tape: never an old one.
@@ -736,6 +738,27 @@
     const shown = Math.round(course) % 360;
     const point = POINTS[Math.round(course / 45) % 8];
     return { deg: shown, text: String(shown).padStart(3, '0') + '°', point, readout: `${point} ${String(shown).padStart(3, '0')}°`, ticks };
+  }
+
+  // Draws the tape into an <svg viewBox="-160 0 320 44">, or hides it (keeping its room) when there is no course. Redraws
+  // only when the course moved half a degree. Styling is drive/tape.css, shared by both faces.
+  const painted = new WeakMap();
+  function paintTape(svg, course) {
+    if (!svg || !svg.style) return;
+    const t = tape(finite(course) ? course : NaN), key = t ? String(Math.round(course * 2) / 2) : '';
+    svg.style.visibility = t ? 'visible' : 'hidden';
+    svg.setAttribute('aria-label', t ? `Compass: heading ${t.point}, ${t.deg} degrees` : 'Compass: no heading while stopped');
+    if (painted.get(svg) === key) return;
+    painted.set(svg, key); svg.textContent = '';
+    if (!t) return;
+    const make = (name, attrs, text) => { const n = (svg.ownerDocument || document).createElementNS('http://www.w3.org/2000/svg', name); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; svg.append(n); };
+    for (const k of t.ticks) {
+      const x = (k.x * 150).toFixed(1), fade = k.north ? 1 : (1 - Math.abs(k.x) * .35).toFixed(2);   // the edges dim a little; north never does
+      make('line', { x1: x, x2: x, y1: 9, y2: k.major ? 19 : 15, class: k.north ? 'major north' : k.major ? 'major' : '', opacity: fade });
+      if (k.label && Math.abs(k.x) > .36) make('text', { x, y: 40, class: k.north ? 'north' : '', opacity: fade }, k.label);   // the middle belongs to the readout
+    }
+    make('path', { d: 'M-6 0H6L0 8Z', class: 'needle' });
+    make('text', { x: 0, y: 41, class: 'readout' }, t.readout);
   }
 
   // Metres on the ground between two latitude/longitude pairs, flat-earth around the first: exact enough for the few
@@ -987,10 +1010,149 @@
     }
   }
 
-  const api = Object.freeze({ tape, prepare, project, clip, Guide, metres, words, POINTS,
+  const api = Object.freeze({ tape, paintTape, prepare, project, clip, Guide, metres, words, POINTS,
     FIX_MAX_AGE_MS, FIX_MAX_ACCURACY_M, ROUTE_MAX_AGE_S, OFF_BASE_M, OFF_FIXES, GIVE_UP_M, GIVE_UP_MS, ARRIVE_M,
     JOIN_FIXES, AGAINST_FIXES, ARRIVED_SHOW_MS, ARRIVED_LEAVE_M });
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveGuide = api;
+})(globalThis);
+;
+
+// cameras.js
+'use strict';
+// Fixed-camera warning for the Drive screens: a red light or speed camera on the road ahead, and how far. No DOM, no
+// timers and no network here, so Node runs this same code in drive/tests/cameras.test.cjs.
+//
+// The list is public data built by tools/build-cameras.cjs (drive/cameras.json): Toronto's own red light cameras and
+// the cameras mapped in OpenStreetMap for Canada. It is fixed sites only. It knows nothing about mobile radar, police
+// or temporary cameras, and a camera nobody mapped is not in it: a quiet screen is not a promise.
+//
+// Everything is worked out on the glasses from their own location. Only the camera being warned about and the last
+// distance to it are kept, in page memory; the position is not stored and nothing is sent.
+(function (root) {
+  const FIX_MAX_AGE_MS = 5000, FIX_MAX_ACCURACY_M = 50;   // the same limits as the speed (drive-location.js)
+  const FUTURE_MS = 2000;           // and the same allowance for a phone clock that runs a little ahead
+  const LOOK_S = 25;                // warn this many seconds ahead at the current speed,
+  const NEAR_M = 400, FAR_M = 1000; // but never nearer than this or farther than that
+  const LANE_M = 60;                // how far to the side of the line of travel still counts as this road
+  const PASSED_M = 25;              // a camera this close, not already being warned about, is too late to start on
+  const BEHIND_M = 15;              // the camera being warned about stays until it is this far behind: through the stop line and the junction
+  const ACCURACY_CAP_M = 15;        // how much of the fix's own doubt may widen the lane
+  const MOTORWAY_MPS = 70 / 3.6;    // a camera marked as beside a motorway warns only below this speed: it is on the street, not the motorway
+  const OLD_DAYS = 14, STALE_DAYS = 30;   // the list's age: said in details after the first, on the Drive face after the second
+  const HOLD_M = 40;                // stopped, or no course: keep the warning unless the camera is this much farther than it was
+  const CELL = 0.02;                // grid cell in degrees (about 2 km), for a quick look-up
+  const KINDS = Object.freeze({ r: 'Red light camera', s: 'Speed camera' });
+
+  const finite = Number.isFinite;
+  const cell = (lat, lon) => `${Math.floor(lat / CELL)}:${Math.floor(lon / CELL)}`;
+
+  // The list from drive/cameras.json, checked and put on a grid. Anything malformed gives an empty, harmless index.
+  function index(file) {
+    const grid = new Map();
+    let count = 0;
+    const items = file && Array.isArray(file.items) ? file.items : [];
+    for (const it of items) {
+      if (!Array.isArray(it) || !finite(it[0]) || !finite(it[1]) || Math.abs(it[0]) > 90 || Math.abs(it[1]) > 180 || !KINDS[it[2]]) continue;
+      const cam = { lat: it[0], lon: it[1], kind: it[2], limit: finite(it[3]) && it[3] >= 10 && it[3] <= 150 ? it[3] : 0,
+        motorway: it[4] === 1 && it[2] === 'r', street: typeof it[5] === 'string' ? it[5].slice(0, 18) : '' };
+      const key = cell(cam.lat, cam.lon);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(cam); count++;
+    }
+    const made = file && typeof file.made === 'string' && /^\d{4}-\d{2}-\d{2}/.test(file.made) ? file.made.slice(0, 10) : '';
+    return { grid, count, made, region: file && typeof file.region === 'string' ? file.region.slice(0, 24) : '',
+      redLightOnly: file && Array.isArray(file.redLightOnly) ? file.redLightOnly.filter((x) => typeof x === 'string').slice(0, 6) : [] };
+  }
+
+  // The cameras in the cells around a place.
+  function around(ix, lat, lon) {
+    const out = [], a = Math.floor(lat / CELL), b = Math.floor(lon / CELL);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const list = ix.grid.get(`${a + i}:${b + j}`); if (list) out.push(...list); }
+    return out;
+  }
+
+  // A camera seen from a place and a course: metres to it, metres ahead along the line of travel, metres to the side.
+  function seen(lat, lon, course, cam) {
+    const dx = (cam.lon - lon) * Math.cos(lat * Math.PI / 180) * 111320, dy = (cam.lat - lat) * 110540;
+    const dist = Math.hypot(dx, dy);
+    if (!finite(course)) return { dist, ahead: NaN, side: NaN };
+    const c = course * Math.PI / 180, ahead = dx * Math.sin(c) + dy * Math.cos(c);
+    return { dist, ahead, side: Math.abs(dx * Math.cos(c) - dy * Math.sin(c)) };
+  }
+
+  class Watch {
+    constructor({ now = Date.now } = {}) { this.now = now; this.ix = index(null); this.target = null; this.dist = NaN; this.at = 0; }
+    load(file) { this.ix = index(file); this.target = null; }
+    get count() { return this.ix.count; }
+    get made() { return this.ix.made; }
+    // How many whole days old the list is, or null when it has no date.
+    ageDays() { const t = Date.parse(this.ix.made + 'T00:00:00Z'); return this.ix.made && finite(t) ? Math.max(0, Math.floor((this.now() - t) / 86400000)) : null; }
+    // What the list covers, for the details panel, and the one line for the Drive face once it is too old to trust quietly.
+    about() {
+      if (!this.ix.count) return 'Cameras: list not loaded';
+      const age = this.ageDays(), only = this.ix.redLightOnly;
+      return `Cameras: ${this.ix.count} fixed sites, ${this.ix.region || 'region unknown'} only` + (only.length ? `. ${only.join(' and ')}: red light cameras only` : '') +
+        `. List of ${this.ix.made || 'unknown date'}` + (age !== null && age > OLD_DAYS ? `, ${age} days old` : '') + '. No mobile radar or police.';
+    }
+    // What a Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
+    faceNote(failed) { return failed && !this.ix.count ? 'no camera list' : this.staleNote().replace(/^C/, 'c'); }
+    staleNote() { const age = this.ageDays(); return this.ix.count && age !== null && age > STALE_DAYS ? `Camera list ${age} days old` : ''; }
+    // One location fix, with the course of travel in degrees (or null: stopped, or unknown) and the speed in metres a second.
+    fix(position, course, speed) {
+      const c = position && position.coords, at = position && position.timestamp, now = this.now();
+      if (!c || !finite(at) || at > now + FUTURE_MS || now - at >= FIX_MAX_AGE_MS) return;
+      if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
+      this.at = at;
+      if (!finite(course)) {
+        // Stopped at the light, or no course yet: the camera already warned about stays while it is not falling behind.
+        if (!this.target) return;
+        const d = seen(c.latitude, c.longitude, NaN, this.target).dist;
+        if (d > this.dist + HOLD_M) this.target = null; else this.dist = Math.min(this.dist, d), this.shown = d;
+        return;
+      }
+      const reach = Math.max(NEAR_M, Math.min(FAR_M, (finite(speed) && speed > 0 ? speed : 0) * LOOK_S));
+      const lane = LANE_M + Math.min(ACCURACY_CAP_M, c.accuracy);
+      // A camera marked as beside a motorway is on the street next to it or under it. At motorway speed the car is on the motorway.
+      const onStreet = (cam) => !cam.motorway || !(speed >= MOTORWAY_MPS);
+      let best = null;
+      for (const cam of around(this.ix, c.latitude, c.longitude)) {
+        const s = seen(c.latitude, c.longitude, course, cam);
+        // Ahead on this road: in front, within reach, and no farther to the side than a road is wide (plus a little of the
+        // fix's own doubt). The camera already being warned about is followed through the stop line and the junction until
+        // it is behind; a new one must still be properly ahead. The nearest that qualifies is the one shown, so a nearer
+        // camera takes over and turning off the road drops the old one.
+        const held = cam === this.target;
+        if (s.ahead <= (held ? -BEHIND_M : PASSED_M) || s.dist > (held ? Math.max(reach, this.dist + HOLD_M) : reach) || s.side > lane || !onStreet(cam)) continue;
+        if (!best || s.dist < best.dist) best = { cam, dist: s.dist };
+      }
+      this.target = best ? best.cam : null;
+      this.dist = this.shown = best ? best.dist : NaN;
+    }
+    // What the screen may say right now: null, or the kind, the distance and the posted limit when the map has one.
+    snapshot() {
+      if (!this.target || this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at - FUTURE_MS) return null;
+      return { kind: this.target.kind, dist: this.shown, limit: this.target.limit, street: this.target.motorway ? this.target.street : '' };
+    }
+  }
+
+  // Distance as a driver reads it, in 50 m steps (10 m steps under 200 m).
+  function metres(m) {
+    if (!finite(m) || m < 0) return '';
+    if (m < 195) return `${Math.max(10, Math.round(m / 10) * 10)} m`;
+    return m < 975 ? `${Math.round(m / 50) * 50} m` : `${(m / 1000).toFixed(1)} km`;
+  }
+
+  // The one line for the screen. `over` is true when it is a speed camera with a known limit and the speed shown is above it.
+  function words(snap, kmh) {
+    if (!snap) return null;
+    const limit = snap.kind === 's' && snap.limit ? snap.limit : 0;
+    // Beside a motorway the street is named, so a driver on the other road knows it is not theirs.
+    return { text: `${KINDS[snap.kind]}${snap.street ? ` on ${snap.street}` : ''}${limit ? ` · limit ${limit}` : ''} · ${metres(snap.dist)}`, kind: snap.kind, limit,
+      over: Boolean(limit && finite(kmh) && Math.round(kmh) > limit) };
+  }
+
+  const api = Object.freeze({ index, around, seen, Watch, metres, words, KINDS, FIX_MAX_AGE_MS, NEAR_M, FAR_M, LANE_M, LOOK_S, PASSED_M, BEHIND_M, HOLD_M, ACCURACY_CAP_M, MOTORWAY_MPS, OLD_DAYS, STALE_DAYS });
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.DriveCameras = api;
 })(globalThis);
 ;
 
@@ -1138,8 +1300,22 @@ function compass(deg) {
 }
 
 const motion = typeof DriveGuide==='undefined'?null:new DriveGuide.Guide();
+// Fixed-camera warning (cameras.js, the same module and list as Bakar Home's Drive tab): worked out here from each fix;
+// nothing about the position is kept or sent. A missing module or list leaves the speed screen as it was.
+const cams = typeof DriveCameras==='undefined'?null:new DriveCameras.Watch();
+let camsAsked=false,camsFailed=false;
+function loadCameras() {
+  if(!cams||camsAsked)return;
+  camsAsked=true;
+  fetch('cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{cams.load(file);camsFailed=!cams.count;})
+    .catch(()=>{camsAsked=false;camsFailed=true;});   // a miss is tried again the next time the page is shown
+}
 const feed = new StudioDriveLocation.Feed({geo:navigator.geolocation,permissions:navigator.permissions,change:onGps,
-  transform:position=>{motion?.fix(position);const sample=motion?motion.fill(position):position;noteHeading(sample);return sample;}
+  transform:position=>{
+    motion?.fix(position);const sample=motion?motion.fill(position):position;noteHeading(sample);
+    if(motion)cams?.fix(position,motion.course(sample.coords),sample.coords.speed);
+    return sample;
+  }
 });
 
 // Trip: time and an estimated distance from reported speed (not from positions), while a speed is live. One source
@@ -1470,6 +1646,7 @@ function render() {
   const walked = S.gps.status === 'live' && S.gps.speed >= 1.8 && motion ? motion.course() : null;
   const course = pg ? pg.hdg : (headingFresh ? S.heading : walked);
   $('heading').textContent = course !== null ? compass(course) : '';
+  if(motion)DriveGuide.paintTape($('tape'),course);else $('tape').style.visibility='hidden';
   $('gpsBtn').textContent = feed.enabled ? 'Stop GPS' : 'Start GPS';
   $('gpsBtn').disabled = S.gps.status === 'unsupported';
   const mins = Math.floor(S.trip.ms / 60000);
@@ -1517,8 +1694,15 @@ function render() {
   const linkedSoon=!live&&Boolean(S.addr)&&['live','ready'].includes(checkLink(view));
   const why=live?(selection.why||selection.label):linkedSoon?'Waiting for speed from phone':selection.why;
   const next=live?(selection.next||''):linkedSoon?'It shows when the phone sends it':selection.next;
-  $('status').textContent=guide?topLine(view):why;
-  $('speedNext').textContent=guide?'':next;
+  // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.
+  const camera=cams&&localReading.status==='live'&&!pg?DriveCameras.words(cams.snapshot(),localReading.speed):null;
+  hud.dataset.camera=camera?(camera.over?'over':'ahead'):'none';
+  // An old or missing camera list says so under the speed, in amber: a quiet screen must not look like a clear road.
+  const listNote=live&&!next&&cams?cams.faceNote(camsFailed):'';
+  $('camLine').textContent=camera?camera.text:'';$('camLine').hidden=!camera;
+  $('status').textContent=camera&&guide?camera.text:guide?topLine(view):why;
+  $('speedNext').textContent=guide?'':next||listNote;
+  $('speedNext').dataset.level=listNote?'warn':'ok';
   $('clock').textContent = clockText(new Date());
   if (S.panel) renderPanel();
 }
@@ -1560,7 +1744,7 @@ function renderPanel() {
   $('panelHelp').textContent = help;
   const h = S.shown;
   const source=StudioDriveLocation.display(phoneSpeed(),feed.snapshot()).source;
-  const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.'};
+  const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.',standing:'Standing still. The speed stays 0 until a fix shows movement.'};
   $('panelSpeed').textContent = origin[source] || (!h ? 'No current speed.' : `Speed unavailable. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`);   // one line: the panel has no room for more, and the screen has the rest
   // Plain facts for a photo of this screen: how often location was asked for and answered, the last error in words,
   // the permission, and the last fix's time and accuracy. Never a position.
@@ -1665,7 +1849,7 @@ function visible() {
   const preference=local('bd.gps');
   if(!on&&feed.visible)motion?.clearMotion?.();
   feed.setVisible(on,{autoStart:preference!=='off',resumeOnly:preference==='asked'||preference==='denied',worked:preference==='on'});
-  if (on) { S.openedAt = performance.now(); openLink(); } else closeLink();
+  if (on) { S.openedAt = performance.now(); openLink(); loadCameras(); } else closeLink();
   render();
 }
 

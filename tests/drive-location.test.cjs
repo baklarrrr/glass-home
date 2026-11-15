@@ -471,3 +471,10 @@ test('a fix stamped a little ahead of the glasses\' clock gives a speed; one cle
   assert.equal(near.feed.details().lastFix.at,now+1900);
   const far=started();far.watches[0].ok(fix(10,now+2500));assert.equal(far.feed.snapshot().status,'invalid');assert.equal(far.feed.report().positions,0);
 });
+
+test('standing still: a 0 is never shown as an estimate; from five seconds it is standing still',()=>{
+  const h=started();h.watches[0].ok(fix(0));
+  h.advance(MAX_AGE_MS-1);assert.equal(show(null,h.feed.snapshot()).label,'Location speed');
+  h.advance(1);const s=h.feed.snapshot();assert.equal(s.status,'standing');
+  assert.deepEqual([show(null,s).kmh,show(null,s).source],[0,'standing']);
+});

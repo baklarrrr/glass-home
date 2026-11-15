@@ -12,7 +12,7 @@
   const STILL_KMH = 1;                        // a reading under this is standing still
   // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
   const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
-  const holdLimit=kmh=>kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;
+  const holdLimit=kmh=>kmh>=STILL_KMH&&kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;   // a 0 is not "estimated" past 5 s: it becomes Standing still
   // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
   const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
   const PROBE_MIN_MS = 4000, PROBE_MAX_MS = 15000, RELAXED_AGE_MS = 10000, WATCH_SILENT_MS = 30000;
