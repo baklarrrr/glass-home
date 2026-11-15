@@ -44,7 +44,8 @@ async function run() {
       await page.click('#tab-apps');
       await page.locator('#appRows .row').first().waitFor();
       assert.deepEqual(await page.locator('#appRows .ti').allTextContents(),catalog.apps.map(app=>app.name));
-      assert.equal(new Set(paths).size,7);
+      assert.equal(new Set(paths).size,6);
+      assert.equal(catalog.apps.some(app=>/studio-glass/.test(app.url)||app.name==='Bakar Studio'),false,'Bakar Studio is inside Bakar Home, not a separate app');
       assert.deepEqual(await page.locator('#appRows .group').allTextContents(),[...new Set(catalog.apps.map(app=>app.group))]);
       assert.equal(await page.locator('#appContext').innerText(),'Apps');
       for (const [index, app] of catalog.apps.entries()) {
@@ -52,7 +53,7 @@ async function run() {
         // One press per row: on Back the next swipe starts where the wearer left off.
         if (index===0) await button.focus(); else await page.keyboard.press('ArrowDown');
         assert.equal(await button.evaluate(el=>el===document.activeElement),true,app.name+' focus');
-        if (process.env.MENU_EVIDENCE && !offlineCatalog && [0,3,6].includes(index)) {
+        if (process.env.MENU_EVIDENCE && !offlineCatalog && [0,3,5].includes(index)) {
           await page.waitForTimeout(250);
           await page.screenshot({path:path.join(process.env.MENU_EVIDENCE,'menu-'+index+'.png')});
         }
@@ -63,8 +64,8 @@ async function run() {
         await Promise.all([page.waitForURL(url=>url.pathname===new URL(app.url).pathname),page.keyboard.press('Enter')]);
         const url=new URL(page.url());
         assert.equal(url.search,'');
-        const expected=app.pass==='drive' ? {t:'route-topic',p:'route-public'} :
-          app.pass==='sg' ? {t:'studio-topic',k:'studio-key'} : {};
+        // The Studio pairing stays in Bakar Home (Review); no catalog app receives it.
+        const expected=app.pass==='drive' ? {t:'route-topic',p:'route-public'} : {};
         assert.deepEqual(Object.fromEntries(new URLSearchParams(url.hash.slice(1))),expected);
         await page.goBack();
         await page.waitForFunction(url=>document.activeElement?.dataset.appUrl===url,app.url);
@@ -84,15 +85,107 @@ async function run() {
       await page.click('#tab-games');
       assert.equal(await page.locator('#gameRows .row').count(),0);
       assert.equal(await page.locator('#appRows').isVisible(),false);
+      // One menu, named by what each place does.
+      assert.deepEqual(await page.locator('.sections button').allTextContents(),['Home','Review','Drive']);
+      await page.click('#section-work');
+      assert.deepEqual(await page.locator('.tab:visible').allTextContents(),['Now','Chats','Watch','Apps','Games']);
+      assert.equal(await page.title(),'Bakar Home');
       await page.click('#section-review');
       assert.equal(await page.locator('#review').isVisible(),true);
       await page.click('#section-work');
       await page.click('#section-drive');
       assert.equal(await page.locator('#drive').isVisible(),true);
+      assert.deepEqual(await page.locator('.tab:not([hidden])').allTextContents(),['Route','Drive']); // Drive starts quiet: its menu shows on Up
       assert.deepEqual(errors,[]);
       await context.close();
-      console.log((offlineCatalog?'Bundled fallback':'Fetched catalog')+' passed 7 routes, address protection, D-pad, Back and section checks.');
+      console.log((offlineCatalog?'Bundled fallback':'Fetched catalog')+' passed 6 routes, address protection, D-pad, Back and section checks.');
     }
+    await mergedStudio(browser);
   } finally {await browser.close();}
+}
+// What the separate Bakar Studio app did now lives in Review: Pictures, Feedback and Renders. The pairing it saved on
+// the glasses (same origin, key sg.pair) is used without pairing again. Synthetic values only; no broker is reached.
+async function mergedStudio(browser) {
+  const key=Buffer.alloc(32,7).toString('base64url');
+  const serve=async context=>{
+    await context.routeWebSocket(/.*/, ws => ws.close());
+    await context.route('**/*', async route => {
+      const url=new URL(route.request().url());
+      if (url.origin !== origin || !url.pathname.startsWith('/glass-home/')) return route.abort();
+      const filename=path.join(root,url.pathname.slice('/glass-home/'.length) || 'index.html');
+      try { return await route.fulfill({body:await fs.readFile(filename),contentType:types[path.extname(filename)] || 'text/plain'}); }
+      catch {return route.abort();}
+    });
+  };
+  const cases=[
+    ['pairing saved by the old Bakar Studio app',home,()=>localStorage.setItem('sg.pair',JSON.stringify({t:'old-studio-topic',k:window.__k}))],
+    ['old Bakar Studio address forwarded here',home+'#sg=old-studio-topic~'+key+'&tab=review&view=renders',()=>{}],
+    ['Bakar Studio link opened on Bakar Home',home+'#t=old-studio-topic&k='+key,()=>{}],
+  ];
+  for (const [name,address,seed] of cases) {
+    const context=await browser.newContext({viewport:{width:600,height:600},serviceWorkers:'block',reducedMotion:'reduce'});
+    await serve(context);
+    await context.addInitScript(k=>{window.__k=k;},key);
+    await context.addInitScript(seed);
+    const page=await context.newPage();
+    const errors=[];
+    page.on('pageerror',err=>errors.push(err.message));
+    await page.goto(address);
+    await page.waitForFunction(()=>typeof HomeShell==='object'&&document.getElementById('runningBuild'));
+    assert.deepEqual(await page.evaluate(()=>{const p=passPairing('sg');return p&&[p.t,p.k.length];}),['old-studio-topic',43],name+': the Studio pairing is used');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('gh.pass')).sg.startsWith('old-studio-topic~')),true,name+': kept for next time');
+    if (!address.includes('tab=review')) await page.click('#section-review');
+    const frame=page.frameLocator('#reviewFrame');
+    await page.waitForFunction(()=>!document.getElementById('reviewFrame').hidden);
+    assert.equal(new URL(await page.locator('#reviewFrame').getAttribute('src')).search,'','pairing never goes in a query');
+    assert.deepEqual(await frame.locator('#rootNavigation button').allTextContents(),['Pictures','Feedback','Renders']);
+    if (address.includes('view=renders')) await page.waitForFunction(()=>document.getElementById('appContext').textContent==='Renders');
+    else {
+      assert.equal(await page.locator('#appContext').innerText(),'Pictures');
+      // Swipes alone reach Renders: down from the menu into the frame, across its places, then press.
+      // A swipe inside the frame reaches the one focus mover by a message, so each step is awaited, as a wearer would see it.
+      await page.frame({url:/review\/index\.html/}).waitForFunction(()=>typeof review!=='undefined'&&!review.busy&&document.body.inert===false);
+      const inFrame=id=>page.waitForFunction(id=>document.getElementById('reviewFrame').contentDocument.activeElement?.id===id,id);
+      await page.locator('#section-review').focus();
+      await page.keyboard.press('ArrowDown');await inFrame('picturesTab');
+      await page.keyboard.press('ArrowRight');await inFrame('feedbackTab');
+      await page.keyboard.press('ArrowRight');await inFrame('studioTab');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(()=>document.getElementById('appContext').textContent==='Renders');
+    }
+    assert.equal(await frame.locator('#headCard').isVisible(),true,name+': render progress shows');
+    assert.equal(await frame.locator('#state').count(),1);
+    // The Renders card shows as many jobs as fit, and a job that needs a look, with its reason, before any "+N more".
+    const studio=page.frame({url:/review\/index\.html/});
+    const card=jobs=>studio.evaluate(jobs=>{
+      const items=jobs.map((st,i)=>({ti:'TEST job '+i,st,pct:st==='running'?10+i:undefined,why:st==='attention'?'TEST reason '+i:''}));
+      acceptSummary({t:'studio',at:Date.now()+jobs.length,head:'Needs your eyes',renders:{ok:true,running:items.length-1,attention:1,items},ai:{},cost:{},glasses:{}});
+      const block=document.getElementById('rendersBlock').getBoundingClientRect();
+      const rows=[...document.querySelectorAll('#renderList li')];
+      return {names:rows.map(li=>li.querySelector('.ti').textContent),why:rows.map(li=>li.querySelector('.why')?.textContent).filter(Boolean),
+        inside:rows.every(li=>{const b=li.getBoundingClientRect();return b.top>=block.top&&b.bottom<=block.bottom;})};
+    },jobs);
+    const three=await card(['running','running','attention']);
+    assert.deepEqual(three,{names:['TEST job 0','TEST job 1','TEST job 2'],why:['TEST reason 2'],inside:true},'three jobs and the reason all show');
+    const many=await card(['running','running','running','running','running','attention']);
+    assert.equal(many.inside,true,'nothing is cut off at the card edge');
+    assert.ok(many.names.includes('TEST job 5')&&many.why.includes('TEST reason 5'),'the job that needs a look stays, with its reason');
+    const listed=many.names.filter(name=>name.startsWith('TEST job')).length;
+    assert.ok(listed>=3,'as many jobs as fit ('+listed+')');
+    assert.equal(many.names.at(-1),'+'+(6-listed)+' more','the rest are counted, after the job that needs a look');
+    assert.equal(await frame.locator('#pictureList').isVisible(),false);
+    // Up from Renders leads back to the menu, and the menu still leaves the section.
+    await frame.locator('#studioTab').focus();
+    await page.keyboard.press('ArrowUp');
+    await page.waitForFunction(()=>document.activeElement?.id==='section-review'); // Up returns to the menu
+    await page.click('#section-work');
+    assert.equal(await page.locator('#now').isVisible(),true);
+    // A render card on Now opens render progress.
+    await page.evaluate(()=>openStudio());
+    await page.waitForFunction(()=>document.getElementById('appContext').textContent==='Renders'&&!document.getElementById('review').hidden);
+    assert.deepEqual(errors,[]);
+    await context.close();
+    console.log('Merged Studio: '+name+' passed pairing reuse, Renders by arrows, the Renders card, way out and Now card.');
+  }
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

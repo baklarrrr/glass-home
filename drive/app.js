@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 46; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 48; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:

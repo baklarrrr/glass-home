@@ -481,7 +481,9 @@ function render() {
     while (!block.hidden && (block.scrollHeight > block.clientHeight + 1 || list.getBoundingClientRect().bottom > lowerEdge() + 1)) {
       const listed = [...list.children].filter((li) => li !== moreRow);
       if (listed.length <= 1) break;
-      listed[listed.length - 1].remove();
+      // A job that needs a look stays, with its reason, as long as anything else can go: "+N more" must never hide it.
+      const calm = listed.filter((li) => !li.querySelector('.mark.attention'));
+      (calm.length ? calm[calm.length - 1] : listed[listed.length - 1]).remove();
       more++;
       showMore();
     }

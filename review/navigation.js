@@ -52,7 +52,7 @@ function navigateTo(route, replace = false) {
 }
 function choosePeer(peer) {
   navigation.revision = null;navigation.closing=false;
-  if (!['pictures', 'feedback'].includes(peer)) return;
+  if (!['studio', 'pictures', 'feedback'].includes(peer)) return;
   if (navigation.route.depth) {
     navigation.pendingPeer = peer;
     history.go(-navigation.route.depth);
@@ -73,9 +73,13 @@ function startRevision() {
   history.go(-navigation.route.depth);
 }
 function enterRoute() {
-  if (navigation.route.kind === 'root' && navigation.route.peer === 'studio') navigation.route.peer='pictures';
   const route = navigation.route;
-  window.parent.postMessage({type:'studio-review-depth',depth:route.depth},location.origin);
+  // Renders (the 'studio' peer: render progress, AI at work, AI use, glasses) is a place of its own beside Pictures and Feedback.
+  if (route.kind === 'root') navigation.rootPeer = route.peer;
+  const place = ['jobs', 'job'].includes(route.kind) || (route.kind === 'root' && route.peer === 'studio') ? 'renders'
+    : route.kind === 'root' ? route.peer : route.anchorKey === 'root:feedback' ? 'feedback' : 'pictures';
+  document.body.classList.toggle('renders-place', place === 'renders');
+  window.parent.postMessage({type:'studio-review-depth',depth:route.depth,place},location.origin);
   navigation.epoch++;
   navigation.editing = false;
   clearTimeout(review.statusTimer);

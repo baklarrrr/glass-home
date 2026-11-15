@@ -1,7 +1,8 @@
 'use strict';
-const APP_BUILD = 46; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 48; // Identity of this executing entry script, including offline launches.
 
-// Bakar Home on Meta Ray-Ban Display: Claude and Codex sessions from the studio PC (Work), Bakar's glasses apps
+// Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
+// feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
 // (Apps) and games kept apart from them (Games).
 //
 // The link: three free public MQTT brokers at once (EMQX, HiveMQ, and shiftr.io on port 443), the same link Tidal
@@ -38,7 +39,6 @@ const SITE = 'https://baklarrrr.github.io/';
 // The Apps and Games lists live in apps.json so another session can add an app or a game without touching this
 // code. These are used when it can't be read.
 let APPS = [
-  { group: 'Studio', name: 'Bakar Studio', url: SITE + 'studio-glass/', why: 'Review pictures and check render progress', icon: 'studio-glass/icon-mono.svg', pass: 'sg' },
   { group: 'Faith', name: 'Quran Glass', url: SITE + 'quran-glass/', why: 'Read or follow a recitation word by word', icon: 'quran-glass/icon-mono.svg' },
   { group: 'Listening', name: 'TIDAL Glass', url: SITE + 'tidal-glass/', why: 'Music from your iPhone through the glasses', icon: 'tidal-glass/icon-mono.svg', pass: 'tg' },
   { group: 'Listening', name: 'Sound Lab', url: SITE + 'tidal-glass/sound/', why: 'Check the audio output on your iPhone', icon: 'tidal-glass/sound/icon-mono.svg', pass: 'tg' },
@@ -436,15 +436,20 @@ function passPairing(name) {
   if (name !== 'sg') return null;
   const saved = local('gh.pass') || {};
   const incoming = S.fragment.get('sg');
-  const studio = incoming && incoming.includes('~') ? incoming : saved.sg || '';
-  const [t, k] = studio.split('~');
-  if (t && k) {
-    if (saved.sg !== studio) local('gh.pass', { ...saved, sg: studio });
-    return { t, k };
+  // A Bakar Studio link opened here directly (#t=…&k=…, with no Home key p) is the same Studio pairing.
+  const direct = !S.fragment.get('p') && S.fragment.get('t') && S.fragment.get('k')
+    ? S.fragment.get('t') + '~' + S.fragment.get('k') : '';
+  let studio = incoming && incoming.includes('~') ? incoming : direct || saved.sg || '';
+  if (!studio) {
+    // The pairing the separate Bakar Studio app saved on these glasses (same origin, key sg.pair). It is brought
+    // across once, so Review works without pairing again; the old key is left where it is.
+    const old = local('sg.pair');
+    if (old && typeof old.t === 'string' && typeof old.k === 'string' && old.t && old.k) studio = old.t + '~' + old.k;
   }
-  // The embedded Review also stores its surviving Studio pairing on this origin.
-  const review = local('sg.pair');
-  return review && review.t && review.k ? { t: review.t, k: review.k } : null;
+  const [t, k] = studio.split('~');
+  if (!t || !k) return null;
+  if (saved.sg !== studio) local('gh.pass', { ...saved, sg: studio });
+  return { t, k };
 }
 
 // ---- glasses battery -------------------------------------------------------------------------------
@@ -693,8 +698,9 @@ function duration(sec) {
   return sec < 90 ? `${sec} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
 }
 
+// A render card on Now opens render progress (Review, Renders).
 function openStudio() {
-  selectTab('review');
+  HomeShell.openRenders();
 }
 
 // ---- messages from the PC (relay/push.py, MCP glasses_say) ------------------------------------------
@@ -926,8 +932,8 @@ function placeRouteDot(s) {
 
 // ---- drive: reported phone GPS speed, never a vehicle instrument or a sample -------------------------
 const DRIVE_PHONE_LABELS=Object.freeze({
-  off:'Phone link stopped in this app', unpaired:'Phone link not set up', paused:'Phone link paused',
-  live:'Phone GPS through Journal', stale:'Phone speed expired', 'no-sample':'Phone linked · no fresh GPS speed',
+  off:'Phone link stopped in this app', unpaired:'No phone app is linked', paused:'Phone link paused',
+  live:'Speed from the linked phone app', stale:'Phone speed expired', 'no-sample':'Phone linked · no fresh GPS speed',
   pairing:'Compare the code on your phone', ready:'Phone linked · waiting for GPS',
   waiting:'Waiting for your phone', connecting:'Connecting to your phone', offline:'Phone link unavailable',
   unavailable:'Secure phone link unavailable'
@@ -1043,6 +1049,10 @@ function paintDrive(reading) {
   }
   paintDriveTape(course);
   if(reading.status==='live'&&!pg)driveRemember('1');
+  // A position came back, so location is allowed here even if no speed could be shown yet (rough or too few fixes).
+  // Remember that now, as Bakar Drive does, so a visit that opens straight on Drive starts by itself next time where
+  // the runtime cannot report the permission.
+  else if(driveFeed.hadGrant&&drivePreference()==='asked')driveRemember('1');
   else if(reading.status==='waiting'&&!drivePreference())driveRemember('asked');
   else if(reading.status==='denied'&&!driveHeld())driveRemember('denied');
   const live=selection.kmh!==null;
@@ -1116,7 +1126,7 @@ function paintDriveDetails() {
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
   const help={
-    off:'This page has not started a location request. It does not read Android’s GPS switch. Start app GPS here, or use the paired Journal phone link.',
+    off:'Location has not been started here. Press Start app GPS. Speed comes from location, sent by your phone.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
     timeout:'No fix within 10 seconds. The watch is still listening. Retry starts a new request.',
     'no-response':'The location provider has not called back. Check for an outstanding app permission prompt. Retry replaces the request.',
@@ -1475,8 +1485,8 @@ function renderApps() {
   }
   if (focusedUrl) focusApp(focusedUrl);
   $('gamesNote').textContent = GAMES.length
-    ? 'Games stay here, away from Work and Apps.'
-    : 'No web games added yet. Games you add will appear here, away from Work and Apps. Meta’s own games stay in the glasses’ main app list.';
+    ? 'Games stay here, away from Chats and Apps.'
+    : 'No web games added yet. Games you add will appear here, away from Chats and Apps. Meta’s own games stay in the glasses’ main app list.';
 }
 
 // App icons are kept here as data: addresses, so a section paints with its icons on its first frame; an icon fetched
@@ -1522,7 +1532,7 @@ function launch(app) {
   const url = new URL(app.url);
   // Only these exact app addresses may receive a pairing. Never forward it to another catalog entry.
   const destinations = {
-    'studio-glass/': 'sg', 'tidal-glass/': 'tg', 'tidal-glass/sound/': 'tg',
+    'tidal-glass/': 'tg', 'tidal-glass/sound/': 'tg',
     'battery-glass/': 'tg', 'glass-home/drive/': 'drive',
   };
   const pairing = destinations[url.pathname.slice(1)];
@@ -1530,7 +1540,7 @@ function launch(app) {
     const data = pairing === 'drive' ? drivePhone.link?.addr : passPairing(pairing);
     if (data) {
       const fragment = pairing === 'drive' ? { t: data.t, p: data.p }
-        : pairing === 'tg' ? { androidBridge: data.t + '~' + data.k } : { t: data.t, k: data.k };
+        : { androidBridge: data.t + '~' + data.k };
       url.hash = new URLSearchParams(fragment).toString();
     }
   }
