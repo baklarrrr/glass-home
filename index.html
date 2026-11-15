@@ -22,6 +22,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="drive/tape.css">
   <link rel="stylesheet" href="home-shell.css">
   <link rel="stylesheet" href="readable.css">
 </head>
@@ -135,18 +136,22 @@
         <div class="drive-actions"><button id="driveLight" class="row driverun">Light: Auto</button><button id="driveInfoButton" class="row driverun">Speed details</button></div>
       </div>
       <div id="driveInfo" class="drive-info" role="region" aria-label="Speed connection details" hidden>
-        <p id="driveHealthDetail" class="note"></p>
-        <h2>Speed connection</h2>
-        <p id="drivePhoneState" class="note"></p>
-        <p id="drivePhoneCode" class="note"></p>
-        <p class="note">Speed comes from location, sent by your phone. Nothing else needs setting up. If a phone app is linked, its code shows here to compare. Speed is blank until a fresh reading arrives.</p>
-        <button id="drivePhoneToggle" class="row driverun">Stop phone link</button>
-        <button id="drivePhoneUse" class="row driverun" hidden>Use offered phone</button>
-        <button id="drivePhoneKeep" class="row driverun" hidden>Keep current phone</button>
-        <p id="driveFacts" class="gps-facts"></p>
-        <p id="driveHelp" class="note"></p>
-        <p class="note">GPS estimate. Use your vehicle's instruments. Adjust settings when stopped. Details stay on this device.</p>
-        <button id="driveInfoClose" class="row driverun">Back to speed</button>
+        <div id="driveInfoBody" class="drive-info-body" tabindex="0" aria-label="Speed details. Swipe down to read on.">
+          <h2>Speed details</h2>
+          <p id="driveHealthDetail" class="lead"></p>
+          <p id="drivePhoneState" class="note"></p>
+          <p id="drivePhoneCode" class="note"></p>
+          <p id="driveHelp" class="note"></p>
+          <p class="note">Speed comes from location, sent by your phone. Nothing else needs setting up. If a phone app is linked, its code shows here to compare. Standing still stays 0. A moving speed goes blank when no new location arrives.</p>
+          <p id="driveFacts" class="gps-facts"></p>
+          <p class="note">GPS estimate. Use your vehicle's instruments. Adjust settings when stopped. Details stay on this device.</p>
+        </div>
+        <div class="drive-info-buttons">
+          <button id="drivePhoneToggle" class="row driverun">Stop phone link</button>
+          <button id="drivePhoneUse" class="row driverun" hidden>Use offered phone</button>
+          <button id="drivePhoneKeep" class="row driverun" hidden>Keep current phone</button>
+          <button id="driveInfoClose" class="row driverun">Back to speed</button>
+        </div>
       </div>
     </section>
 
@@ -188,7 +193,7 @@
   </div>
   <script src="vendor/mqtt.min.js"></script>
   <!-- app-entry -->
-  <script src="runtime/home-v49-6b08b4a9bfb7bb39.js"></script>
+  <script src="runtime/home-v50-c73678ee675ad1c2.js"></script>
   <!-- end-app-entry -->
 </body>
 </html>

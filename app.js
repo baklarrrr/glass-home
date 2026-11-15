@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
@@ -949,32 +949,15 @@ const driveGuide = typeof DriveGuide!=='undefined'?new DriveGuide.Guide():null;
 // the app (drive/cameras.json). Worked out here from each fix; nothing about the position is kept or sent.
 const driveCams = typeof DriveCameras!=='undefined'?new DriveCameras.Watch():null;
 let driveCamsAsked=false,driveCamsFailed=false;
-// What the Drive face must admit about the list, or '': it could not be loaded, or it is more than 30 days old.
-function driveCamsNote(){return !driveCams?'':driveCamsFailed&&!driveCams.count?'no camera list':driveCams.staleNote().replace(/^C/,'c');}
+function driveCamsNote(){return driveCams?driveCams.faceNote(driveCamsFailed):'';}
 function loadDriveCameras() {
   if(!driveCams||driveCamsAsked)return;
   driveCamsAsked=true;
   fetch('drive/cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{driveCams.load(file);driveCamsFailed=!driveCams.count;})
     .catch(()=>{driveCamsAsked=false;driveCamsFailed=true;});   // a miss is tried again next time Drive opens, and the face says there is no list
 }
-let driveTapeShown='';
-function paintDriveTape(course) {
-  const svg=$('driveTape'); if(!svg?.style)return;
-  const t=driveGuide?DriveGuide.tape(Number.isFinite(course)?course:NaN):null,key=t?String(Math.round(course*2)/2):'';
-  svg.style.visibility=t?'visible':'hidden';
-  svg.setAttribute('aria-label',t?`Compass: heading ${t.point}, ${t.deg} degrees`:'Compass: no heading while stopped');
-  if(key===driveTapeShown)return;
-  driveTapeShown=key; svg.textContent='';
-  if(!t)return;
-  const make=(name,attrs,text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const k in attrs)n.setAttribute(k,attrs[k]);if(text)n.textContent=text;svg.append(n);};
-  for(const k of t.ticks){
-    const x=(k.x*150).toFixed(1),fade=k.north?1:(1-Math.abs(k.x)*.35).toFixed(2);   // the edges dim a little; north never does
-    make('line',{x1:x,x2:x,y1:9,y2:k.major?19:15,class:k.north?'major north':k.major?'major':'',opacity:fade});
-    if(k.label&&Math.abs(k.x)>.36)make('text',{x,y:40,class:k.north?'north':'',opacity:fade},k.label);   // the middle belongs to the readout
-  }
-  make('path',{d:'M-6 0H6L0 8Z',class:'needle'});
-  make('text',{x:0,y:41,class:'readout'},t.readout);
-}
+// The compass is drawn by the shared painter (drive/guide.js), the same one Bakar Drive uses.
+function paintDriveTape(course){if(driveGuide)DriveGuide.paintTape($('driveTape'),course);else if($('driveTape')?.style)$('driveTape').style.visibility='hidden';}
 const driveFeed = new StudioDriveLocation.Feed({
   geo:navigator.geolocation, permissions:navigator.permissions,
   // Each fix goes to the guide (course, saved route, a speed where the device reports none) and to the camera watch.
@@ -994,7 +977,7 @@ const DRIVE_STATUS_LABELS=Object.freeze({
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
     timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'No GPS fix yet',
-    paused:'App GPS paused', found:'Location found · waiting for a newer fix'
+    paused:'App GPS paused', found:'Location found · waiting for a newer fix', standing:'Standing still · no new location'
   });
 // Only the already-paired private workstation receives these coarse facts.
 let driveReportTimer=0,lastDriveReport='',lastDriveReportAt=-Infinity;
@@ -1025,7 +1008,7 @@ function paintDrive(reading) {
   const selection=StudioDriveLocation.display(phone.gps&&{...phone.gps,ageMs:phone.ageMs},reading);
   const pg=selection.source==='linked'?phone.gps:null;
   // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
-  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=7.2&&driveGuide?driveGuide.course():null;   // 7.2 km/h is the feed's own 2 m/s: slower than that there is no course
+  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=1.8&&driveGuide?driveGuide.course():null;   // from walking pace up (0.5 m/s): the bearing between fixes. Standing still there is no course
   if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
   let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
@@ -1059,10 +1042,11 @@ function paintDrive(reading) {
   $('driveSpeed').textContent=live?String(selection.kmh):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
   // in plain words and shown amber. Calm states keep the words below; a missing module leaves the old wording alone.
-  const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
+  const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone),face:[selection.why,selection.next]}):null;
   const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
   $('driveHealthDetail').textContent=pg?'Linked speed':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
-    (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state]||'Phone speed unavailable'):
+    (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state==='live'&&!pg?'no-sample':phone.state]||'Phone speed unavailable'):   // linked, but no fresh speed from it: never "speed from the phone" beside a dash
+    
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHealthDetail').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
   $('driveState').textContent=selection.label;
@@ -1078,10 +1062,11 @@ function paintDrive(reading) {
   $('driveAge').textContent=guide?.note||oldList||'';
   $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
-  $('driveGps').textContent=driveFeed.enabled?'Stop app GPS':'Start app GPS';
+  $('driveGps').textContent=driveFeed.enabled&&!driveFeed.needsPress?'Stop GPS':'Start GPS';   // an unanswered permission question: the press asks again
   $('driveGps').disabled=reading.status==='unsupported';
   const retry=$('driveRetry');
-  const canRetry=driveFeed.enabled&&['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
+  const canRetry=driveFeed.enabled&&!driveFeed.needsPress&&   // Start GPS is the press that asks; a second button beside it would say the same
+    ['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
   retry.hidden=!canRetry&&document.activeElement!==retry;
   const permission=driveFeed.details().permission;
   HomeShell.setLocationPending(driveFeed.enabled&&['waiting','no-response'].includes(reading.status)&&permission!=='granted');
@@ -1091,6 +1076,9 @@ function paintDrive(reading) {
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
   driveStopped=driveFeed.enabled;
+  // The glasses have not been told yes or no yet: every press asks the runtime again, here inside the press itself, so its
+  // question can appear. Nothing but a press does this while the permission reads "prompt".
+  if(driveFeed.needsPress){driveStopped=false;driveRemember('asked');driveFeed.enable();return;}
   if(driveFeed.enabled){driveRemember('0');driveFeed.stop();} else {driveRemember('asked');driveFeed.enable();}
 }
 function retryDriveGps() {
@@ -1104,7 +1092,7 @@ function paintDriveDetails() {
   $('drivePhoneState').textContent=DRIVE_PHONE_LABELS[phone.state]||'Phone link unavailable';
   $('drivePhoneCode').textContent=phone.configured&&['pairing','waiting','ready','connecting'].includes(phone.state)?'Pairing code: '+phone.code:'';
   $('drivePhoneToggle').textContent=phone.enabled?'Stop phone link':'Resume phone link';
-  $('drivePhoneToggle').disabled=!phone.configured;
+  $('drivePhoneToggle').hidden=!phone.configured;   // with no phone app linked there is nothing to stop
   $('drivePhoneUse').hidden=$('drivePhoneKeep').hidden=!phone.offer;
   }
   // Details can stay open indefinitely: use acquisition time rather than an age
@@ -1126,16 +1114,20 @@ function paintDriveDetails() {
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
+  // No location came back. Who has to do something depends on what the permission says (drive-location.js NO_ANSWER_LINES).
+  const asked=driveFeed.snapshot().permission;
+  const noAnswerHelp=asked==='prompt'?'The glasses have not been told to allow location for this app. Press Start GPS and say yes when the glasses ask. This app asks only when you press.':
+    asked==='granted'?'Location is allowed here, but your phone sent nothing. The glasses have no GPS of their own: on your phone, set location for the Meta AI app to Always. This app keeps asking by itself.':
+    'Nothing has come back, and the glasses do not say whether location is allowed for this app. Allow location for this app in the glasses’ Web App menu → Permissions. This app keeps asking by itself.';
   const help={
-    off:'Location has not been started here. Press Start app GPS. Speed comes from location, sent by your phone.',
+    off:asked==='prompt'?noAnswerHelp:'Location has not been started here. Press Start GPS. Speed comes from location, sent by your phone.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
-    timeout:'Your phone did not send a position in time. The glasses have no GPS of their own: open the Meta AI app on your phone. This app keeps asking by itself.',
-    'no-response':'Nothing has come back from your phone yet. Open the Meta AI app on your phone, and answer a location question if one is showing. This app keeps asking by itself.',
+    timeout:noAnswerHelp, 'no-response':noAnswerHelp, disconnected:noAnswerHelp, error:noAnswerHelp,
     found:'Your phone sent a position that is more than five seconds old. Location works; a speed needs a newer one.',
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
     inaccurate:'The returned position exceeds this app’s 50 m accuracy filter.',
     stale:'The last usable speed expired after five seconds.',
-    disconnected:'Your phone had no position to give. Open the Meta AI app on your phone. This app keeps asking by itself.',
+    standing:'The last fix showed you standing still, and nothing newer has shown movement, so the speed stays 0. The first fix that shows movement replaces it.',
     unsupported:'This runtime has not supplied the geolocation API.'
   };
   $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';
@@ -1996,7 +1988,7 @@ function rowsOfControls() {
     else if (pane === 'watch') { add([$('ytFind')]); for (const b of $('watchRows').querySelectorAll('.row')) add([b]); }
     else if (pane === 'route') for (const b of $('routeRows').querySelectorAll('.row')) add([b]);
     else if (pane === 'drive' && HomeShell.driveQuiet()) add([$('driveReveal')]);
-    else if (pane === 'drive' && !$('driveInfo').hidden) add([$('drivePhoneToggle'),$('drivePhoneUse'),$('drivePhoneKeep'),$('driveInfoClose')]);
+    else if (pane === 'drive' && !$('driveInfo').hidden) { add([$('driveInfoBody')]); add([$('drivePhoneToggle'),$('drivePhoneUse'),$('drivePhoneKeep'),$('driveInfoClose')]); }
     else if (pane === 'drive') { add([$('driveGps'),$('driveRetry')]); add([$('driveLight'),$('driveInfoButton')]); }
     else if (pane === 'work') { add([$('newTask')]); for (const b of $('rows').querySelectorAll('.row')) add([b]); }
     else for (const b of $(pane === 'apps' ? 'appRows' : 'gameRows').querySelectorAll('.row')) add([b]);
@@ -2065,7 +2057,7 @@ function onKey(e) {
     selectTab(next, Boolean(e.target.closest('.tabs')),e.isTrusted);
     return;
   }
-  if ((e.target === $('dResult') || e.target === $('cQuote')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
+  if ((e.target === $('dResult') || e.target === $('cQuote') || e.target === $('driveInfoBody')) && (k === 'ArrowDown' || k === 'ArrowUp')) {
     const r = e.target;
     const down = k === 'ArrowDown';
     const room = down ? r.scrollHeight - r.clientHeight - r.scrollTop : r.scrollTop;

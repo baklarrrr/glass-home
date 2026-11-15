@@ -10,7 +10,7 @@ const version=JSON.parse(read('release.json')).build;
 if(!Number.isSafeInteger(version)||version<=0)throw Error('Invalid release build');
 const plans=[
  {dir:'',name:'home',cache:'glass-home',scripts:['parked.js','drive-location.js','drive/link-core.js','drive-phone.js','drive/speed-check.js','drive/guide.js','drive/cameras.js','home-shell.js','watch-phone.js','watch-library.js','app.js']},
- {dir:'drive/',name:'drive',cache:'bakar-drive',scripts:['../drive-location.js','link-core.js','speed-check.js','guide.js','app.js']},
+ {dir:'drive/',name:'drive',cache:'bakar-drive',scripts:['../drive-location.js','link-core.js','speed-check.js','guide.js','cameras.js','app.js']},
 ];
 const pending=new Map();
 function generated(file,body){pending.set(file,body);}

@@ -57,7 +57,7 @@ test('GPS help stays open indefinitely without moving focus',()=>{const h=harnes
 test('repeated reading keys do not arm a details dismissal timer',()=>{const h=harness();h.reveal();h.details();for(let i=0;i<5;i++){h.key('ArrowDown');h.advance(9000);}assert.equal(h.element('driveInfo').hidden,false);});
 test('explicit Back button restores focus and ordinary idle hide',()=>{const h=harness();h.reveal();h.details();h.element('driveInfoClose').click();assert.equal(h.element('driveInfo').hidden,true);assert.equal(h.document.activeElement.id,'driveInfoButton');h.advance(8000);assert.equal(h.element('drive').dataset.controls,'quiet');});
 test('Escape dismisses details explicitly before quieting controls',()=>{const h=harness();h.reveal();h.details();h.key('Escape');assert.equal(h.element('driveInfo').hidden,true);assert.equal(h.element('drive').dataset.controls,'open');assert.equal(h.document.activeElement.id,'driveInfoButton');h.key('Escape');assert.equal(h.element('drive').dataset.controls,'quiet');});
-test('timeout then denial updates on-demand connection details',()=>{const h=harness();h.reveal();h.feed.enable();h.error(3);assert.equal(h.element('driveHealthDetail').textContent,'GPS timed out\nWaiting for a new fix');h.details();h.error(1);assert.equal(h.element('driveHealthDetail').textContent,'Glasses location not allowed\nAllow location for this app');assert.match(h.element('driveFacts').textContent,/Now: Location permission not granted/);assert.match(h.element('driveFacts').textContent,/watch stopped/);h.advance(20000);assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.document.activeElement.id,'driveInfoClose');});
+test('timeout then denial updates on-demand connection details',()=>{const h=harness();h.reveal();h.feed.enable();h.error(3);assert.equal(h.element('driveHealthDetail').textContent,'No location yet\nAllow location for this app');h.details();h.error(1);assert.equal(h.element('driveHealthDetail').textContent,'Glasses location not allowed\nAllow location for this app');assert.match(h.element('driveFacts').textContent,/Now: Location permission not granted/);assert.match(h.element('driveFacts').textContent,/watch stopped/);h.advance(20000);assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.document.activeElement.id,'driveInfoClose');});
 test('unresolved permission pauses ordinary hide, observed grant resumes it',async()=>{const h=harness('prompt');h.reveal();h.feed.enable();await Promise.resolve();h.advance(30000);assert.equal(h.element('drive').dataset.controls,'open');assert.equal(h.feed.snapshot().status,'no-response');h.p.state='granted';h.p.onchange();h.advance(8000);assert.equal(h.element('drive').dataset.controls,'quiet');});
 test('page visibility changes preserve details and release location watch',async()=>{const h=harness();h.reveal();h.feed.enable();await Promise.resolve();h.details();h.document.hidden=true;h.emitDoc('visibilitychange');assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.feed.details().watchActive,false);h.document.hidden=false;h.emitDoc('visibilitychange');await Promise.resolve();h.advance(9000);assert.equal(h.element('driveInfo').hidden,false);});
 test('pagehide preserves help while stopping the active watch',()=>{const h=harness();h.reveal();h.feed.enable();h.details();h.emitWindow('pagehide');assert.equal(h.element('driveInfo').hidden,false);assert.equal(h.feed.details().watchActive,false);});
@@ -149,4 +149,28 @@ test('Speed details read plainly for a phone with no linked app',()=>{
   const app=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8'),html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   const drive=app.slice(app.indexOf('const DRIVE_PHONE_LABELS='),app.indexOf('// Light: the display'))+html.slice(html.indexOf('id="drive"'),html.indexOf('id="review"'));
   assert.doesNotMatch(drive,/Android|Journal/);
+});
+
+// ---- build 50: standing still stays 0 on the Home face; nothing to stop when no phone app is linked ----
+test('standing still on the Home face: 0, the reason and the age of the last fix, never a dash',()=>{
+  const h=harness();h.reveal();h.feed.enable();h.fix(0);
+  assert.equal(h.element('driveSpeed').textContent,'0');assert.equal(h.element('driveState').textContent,'Location speed');
+  for(let i=0;i<40;i++)h.advance(1000);
+  assert.equal(h.element('driveSpeed').textContent,'0');
+  assert.equal(h.element('driveState').textContent,'Standing still · last location 40 s ago');
+  assert.equal(h.element('driveHud').dataset.source,'standing');assert.equal(h.element('driveHud').dataset.status,'live');
+  h.error(3);assert.equal(h.element('driveSpeed').textContent,'0','a timed-out request does not take the 0 away');
+  h.reveal();h.details();assert.match(h.element('driveFacts').textContent,/Now: Standing still · no new location/);
+  assert.match(h.element('driveHelp').textContent,/standing still/);
+  h.fix(12);assert.equal(h.element('driveSpeed').textContent,'43');assert.equal(h.element('driveState').textContent,'Location speed');
+  for(let i=0;i<6;i++)h.advance(1000);
+  assert.equal(h.element('driveSpeed').textContent,'—','a moving speed is not held');assert.equal(h.element('driveState').textContent,'No new location · waiting for your phone');
+});
+test('speed details: with no phone app linked there is no Stop phone link button; with one there is',()=>{
+  const h=harness();h.reveal();h.details();
+  assert.equal(h.element('drivePhoneToggle').hidden,true);assert.equal(h.element('drivePhoneState').textContent,'No phone app is linked');
+  h.phone('ready');
+  assert.equal(h.element('drivePhoneToggle').hidden,false);assert.equal(h.element('drivePhoneToggle').textContent,'Stop phone link');
+  h.phone('off',{enabled:false});
+  assert.equal(h.element('drivePhoneToggle').hidden,false);assert.equal(h.element('drivePhoneToggle').textContent,'Resume phone link');
 });

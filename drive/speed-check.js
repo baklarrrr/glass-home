@@ -26,7 +26,8 @@
     switch (link) {
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
       case 'none': return gpsStatus==='denied'?'allow location for this app':
-        gpsStatus==='unsupported'?'location API unavailable':'waiting for a new fix';
+        gpsStatus==='unsupported'?'location API unavailable':
+        gpsStatus==='stale'?'waiting for a new fix':'allow location for this app';   // the apps pass the face's own lines (face) for the exact case
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -45,8 +46,8 @@
     denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
-    timeout: ['GPS timed out'],
-    disconnected: ['No GPS fix'],
+    timeout: ['No location yet', 'No location yet'],
+    disconnected: ['No location yet', 'No location yet'],
   });
 
   // The state of Studio Drive's phone link (drive-phone.js snapshot) in the shared words.
@@ -67,9 +68,13 @@
   // level: 'ok' (live) | 'wait' (nothing is wrong, or the phone is expected to supply the speed) | 'warn' (a definite
   // fault and nothing healthy behind it). text is '' unless level is 'warn': calm states keep each screen's own words.
   // short is the same two lines for the small corner (see FAULTS).
-  function line(gpsStatus, link) {
+  // face: the two lines the speed face shows for this state ([why, next] from drive-location.js), so details never say
+  // something else. Used when no phone link is set up and the phone simply sent nothing.
+  function line(gpsStatus, link, face) {
     const quiet = { level: gpsStatus === 'live' ? 'ok' : 'wait', text: '', short: '' };
     if (!Object.prototype.hasOwnProperty.call(FAULTS, gpsStatus) || HEALTHY.includes(link)) return quiet;
+    if (link === 'none' && (gpsStatus === 'timeout' || gpsStatus === 'disconnected') && Array.isArray(face) && face[0])
+      return { level: 'warn', text: face[1] ? `${face[0]}\n${face[1]}` : face[0], short: face[1] ? `${face[0]}\n${face[1]}` : face[0] };   // no directions corner without a phone link, so the whole lines fit
     const fault = FAULTS[gpsStatus];
     const way = backup(link,gpsStatus);
     const then = `${way[0].toUpperCase()}${way.slice(1)}`;
@@ -85,7 +90,7 @@
   function check(i) {
     if (i.phoneFresh) return { source: 'phone', level: 'ok', text: '', short: '', code: 'phone' };
     if (i.gpsStatus === 'live') return { source: 'glasses', level: 'ok', text: '', short: '', code: 'glasses' };
-    const l = line(i.gpsStatus, i.link);
+    const l = line(i.gpsStatus, i.link, i.face);
     return { source: 'none', level: l.level, text: l.text, short: l.short, code: i.gpsStatus };
   }
 

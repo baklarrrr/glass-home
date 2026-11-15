@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -141,8 +141,22 @@ function compass(deg) {
 }
 
 const motion = typeof DriveGuide==='undefined'?null:new DriveGuide.Guide();
+// Fixed-camera warning (cameras.js, the same module and list as Bakar Home's Drive tab): worked out here from each fix;
+// nothing about the position is kept or sent. A missing module or list leaves the speed screen as it was.
+const cams = typeof DriveCameras==='undefined'?null:new DriveCameras.Watch();
+let camsAsked=false,camsFailed=false;
+function loadCameras() {
+  if(!cams||camsAsked)return;
+  camsAsked=true;
+  fetch('cameras.json').then(r=>r.ok?r.json():Promise.reject()).then(file=>{cams.load(file);camsFailed=!cams.count;})
+    .catch(()=>{camsAsked=false;camsFailed=true;});   // a miss is tried again the next time the page is shown
+}
 const feed = new StudioDriveLocation.Feed({geo:navigator.geolocation,permissions:navigator.permissions,change:onGps,
-  transform:position=>{motion?.fix(position);const sample=motion?motion.fill(position):position;noteHeading(sample);return sample;}
+  transform:position=>{
+    motion?.fix(position);const sample=motion?motion.fill(position):position;noteHeading(sample);
+    if(motion)cams?.fix(position,motion.course(sample.coords),sample.coords.speed);
+    return sample;
+  }
 });
 
 // Trip: time and an estimated distance from reported speed (not from positions), while a speed is live. One source
@@ -178,7 +192,9 @@ function onGps(reading) {
 }
 
 function toggleGps() {
-  if (feed.enabled) { feed.stop(); local('bd.gps', 'off'); }
+  // An unanswered permission question: every press asks the runtime again, inside the press, so its question can appear.
+  if (feed.needsPress) { local('bd.gps','asked'); feed.enable(); }
+  else if (feed.enabled) { feed.stop(); local('bd.gps', 'off'); }
   else { local('bd.gps','asked'); feed.enable(); }
   render();
 }
@@ -428,7 +444,7 @@ function sunLight(when = new Date()) {
 const GPS_WORDS = {
   off: 'App GPS stopped', waiting: 'Finding GPS…', 'no-response': 'No GPS answer yet', live: 'App GPS',
   stale: 'GPS signal old', inaccurate: 'GPS too rough', invalid: 'GPS reading rejected', unavailable: 'No speed from GPS',
-  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', found: 'Location found', denied: 'Location not allowed', paused: 'GPS paused',
+  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', found: 'Location found', standing: 'Standing still', denied: 'Location not allowed', paused: 'GPS paused',
   unsupported: 'No GPS here',
 };
 
@@ -469,9 +485,12 @@ function render() {
   hud.dataset.gps = live ? 'live' : 'off';
   $('speed').textContent=live?String(selection.kmh):'—';
   const headingFresh = S.heading !== null && Date.now() - S.headingAt < 5000 && S.gps.status === 'live';
-  const course = pg ? pg.hdg : (headingFresh ? S.heading : null);   // the phone already leaves the heading out below 2 m/s
+  // The phone already leaves the heading out below 2 m/s. From walking pace up, with no reported heading: the bearing between fixes.
+  const walked = S.gps.status === 'live' && S.gps.speed >= 1.8 && motion ? motion.course() : null;
+  const course = pg ? pg.hdg : (headingFresh ? S.heading : walked);
   $('heading').textContent = course !== null ? compass(course) : '';
-  $('gpsBtn').textContent = feed.enabled ? 'Stop GPS' : 'Start GPS';
+  if(motion)DriveGuide.paintTape($('tape'),course);else $('tape').style.visibility='hidden';
+  $('gpsBtn').textContent = feed.enabled && !feed.needsPress ? 'Stop GPS' : 'Start GPS';
   $('gpsBtn').disabled = S.gps.status === 'unsupported';
   const mins = Math.floor(S.trip.ms / 60000);
   $('trip').textContent = S.trip.ms > 60000 ? `Trip ${mins} min · ${(S.trip.m / 1000).toFixed(1)} km est.` : '';
@@ -484,7 +503,7 @@ function render() {
   const guide = Boolean(n) && ['guide', 'arrived', 'ready', 'building'].includes(phase);
   const pairing = view === 'pairing';
   // Speed self-check: with no speed on screen, a definite fault and nothing healthy behind it gets a plain amber line.
-  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: checkLink(view) }) : { source: live ? 'ok' : 'none', level: 'wait', text: '', short: '' };
+  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: checkLink(view), face: [selection.why, selection.next] }) : { source: live ? 'ok' : 'none', level: 'wait', text: '', short: '' };
   S.shown = health;
   const warnText = guide ? health.short : health.text;   // beside the directions the corner is narrow: the same two lines, shorter
   $('speedWarn').textContent = warnText;
@@ -516,10 +535,17 @@ function render() {
   // No speed: one short reason on the top line and what happens next under the unit, never a bare "unavailable".
   // The glasses' own location is the story unless a linked phone has answered and is about to send its speed.
   const linkedSoon=!live&&Boolean(S.addr)&&['live','ready'].includes(checkLink(view));
-  const why=live?selection.label:linkedSoon?'Waiting for speed from phone':selection.why;
-  const next=live?'':linkedSoon?'It shows when the phone sends it':selection.next;
-  $('status').textContent=guide?topLine(view):why;
-  $('speedNext').textContent=guide?'':next;
+  const why=live?(selection.why||selection.label):linkedSoon?'Waiting for speed from phone':selection.why;
+  const next=live?(selection.next||''):linkedSoon?'It shows when the phone sends it':selection.next;
+  // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.
+  const camera=cams&&localReading.status==='live'&&!pg?DriveCameras.words(cams.snapshot(),localReading.speed):null;
+  hud.dataset.camera=camera?(camera.over?'over':'ahead'):'none';
+  // An old or missing camera list says so under the speed, in amber: a quiet screen must not look like a clear road.
+  const listNote=live&&!next&&cams?cams.faceNote(camsFailed):'';
+  $('camLine').textContent=camera?camera.text:'';$('camLine').hidden=!camera;
+  $('status').textContent=camera&&guide?camera.text:guide?topLine(view):why;
+  $('speedNext').textContent=guide?'':next||listNote;
+  $('speedNext').dataset.level=listNote?'warn':'ok';
   $('clock').textContent = clockText(new Date());
   if (S.panel) renderPanel();
 }
@@ -527,6 +553,7 @@ function render() {
 // Why there is no speed when nothing is wrong yet: GPS not started, still asking, or a reading that is not usable. One short
 // line: the panel has no room for more.
 function quietWhy() {
+  if (S.gps.permission === 'prompt') return 'Location not allowed yet. Press Start GPS, then say yes.';
   return { off: 'GPS is not started.', waiting: 'Waiting for GPS.', 'no-response': 'Waiting for GPS.', paused: 'GPS is paused.' }[S.gps.status]
     || `${GPS_WORDS[S.gps.status] || 'No GPS speed'}.`;
 }
@@ -561,7 +588,7 @@ function renderPanel() {
   $('panelHelp').textContent = help;
   const h = S.shown;
   const source=StudioDriveLocation.display(phoneSpeed(),feed.snapshot()).source;
-  const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.'};
+  const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.',standing:'Standing still. The speed stays 0 until a fix shows movement.'};
   $('panelSpeed').textContent = origin[source] || (!h ? 'No current speed.' : `Speed unavailable. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`);   // one line: the panel has no room for more, and the screen has the rest
   // Plain facts for a photo of this screen: how often location was asked for and answered, the last error in words,
   // the permission, and the last fix's time and accuracy. Never a position.
@@ -666,7 +693,7 @@ function visible() {
   const preference=local('bd.gps');
   if(!on&&feed.visible)motion?.clearMotion?.();
   feed.setVisible(on,{autoStart:preference!=='off',resumeOnly:preference==='asked'||preference==='denied',worked:preference==='on'});
-  if (on) { S.openedAt = performance.now(); openLink(); } else closeLink();
+  if (on) { S.openedAt = performance.now(); openLink(); loadCameras(); } else closeLink();
   render();
 }
 
