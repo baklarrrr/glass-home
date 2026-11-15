@@ -131,6 +131,7 @@ const GEO=()=>{
         assert.ok(await page.evaluate(()=>document.getElementById('driveInfoBody').scrollTop)>0,'down scrolls the words');
         for(let i=0;i<20&&await page.evaluate(()=>document.activeElement.id)!=='driveInfoClose';i++){await page.keyboard.press('ArrowDown');await page.clock.runFor(600);await page.waitForTimeout(250);}
         assert.equal(await page.evaluate(()=>document.activeElement.id),'driveInfoClose','past the end of the words, down returns to Back to speed');
+        assert.equal(await page.evaluate(()=>{const b=document.getElementById('driveInfoBody'),last=[...b.children].filter(c=>c.getClientRects().length).pop();return last.getBoundingClientRect().bottom<=b.getBoundingClientRect().bottom-26;}),true,'at the end the last line is clear of the fade');
         assert.equal(await page.evaluate(()=>document.getElementById('driveInfoClose').getBoundingClientRect().bottom<=600),true);
         await shot('details-no-phone');
       }

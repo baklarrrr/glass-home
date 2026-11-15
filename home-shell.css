@@ -71,7 +71,7 @@
 /* Speed details: the words scroll, the buttons stay on screen. */
 #drive[data-details=open] { justify-content:flex-start; align-items:stretch; }
 .drive-info { flex:1; min-height:0; }
-.drive-info-body { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:2px 4px 10px; border-radius:14px; outline:none;
+.drive-info-body { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:2px 4px 30px; border-radius:14px; outline:none;
   scrollbar-width:none; mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent); }
 .drive-info-body::-webkit-scrollbar { display:none; }
 .drive-info-body:focus { box-shadow:inset 3px 0 0 var(--accent); padding-left:12px; }

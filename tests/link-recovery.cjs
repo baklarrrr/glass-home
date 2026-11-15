@@ -165,6 +165,9 @@ function snap(at,title){
     await pass(7000);
     assert.equal(await review.locator('#stateText').innerText(),'Reconnecting…');
     assert.equal(await review.evaluate(()=>document.body.classList.contains('stale')),true,'Review dims what it shows as old');
+    await pass(150000);
+    assert.match(await review.locator('#stateText').innerText(),/^Reconnecting · last update [23] min ago$/,'while it is away, Review says how old its picture is');
+    assert.equal(await review.evaluate(()=>{const s=document.getElementById('state');return s.scrollWidth<=s.clientWidth+1&&s.getBoundingClientRect().right<=innerWidth;}),true,'the longer line fits');
     await shot('05-review-reconnecting');
     await net(()=>{__net.up=true;});
     for(let i=0;i<15&&await review.locator('#stateText').innerText()!=='Live';i++)await pass(2000);
