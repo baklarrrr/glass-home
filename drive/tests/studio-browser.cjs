@@ -108,7 +108,7 @@ async function run(browser, height, tag) {
     const details=await page.locator('#driveHealthDetail').textContent();
     const source=await page.locator('#driveHud').getAttribute('data-source');
     const isCamera=await page.locator('#driveHud').getAttribute('data-camera')!=='none';
-    const labels={none:await page.evaluate(()=>StudioDriveLocation.display(null,{status:driveFeed.snapshot().status}).label),linked:'Linked speed',location:'Location speed',estimated:'Estimated speed'};
+    const labels={none:await page.evaluate(()=>StudioDriveLocation.display(null,driveFeed.snapshot()).label),linked:'Linked speed',location:'Location speed',estimated:'Estimated speed'};
     if(source==='none')check(labels.none!=='Speed unavailable'&&labels.none.includes(' · '),tag+' '+name+': a dash carries its reason and next step ('+labels.none+')');
     const expected=isCamera?want.text:labels[source];
     const b=await bands(page,Math.ceil(m.headerBottom)+1,Math.floor(m.unitTop));
@@ -316,7 +316,7 @@ async function autoStart(browser) {
     if (!(await page.isVisible('#driveHud'))) { await page.click('#section-drive').catch(() => {}); await page.waitForTimeout(400); }
     const m = await page.evaluate(() => ({ enabled: driveFeed.enabled, text: document.getElementById('driveState').textContent, button: document.getElementById('driveGps').textContent }));
     if (granted === 'stopped') check(!m.enabled && m.button === 'Start GPS', `auto start: a deliberate Stop holds through a relaunch, even with location allowed (${m.enabled})`);
-    else if (granted === 'remembered') check(m.enabled && m.button === 'Stop GPS', `auto start: a Start that worked before is made again, even where the permission cannot be read (${m.enabled})`);
+    else if (granted === 'remembered') check(m.enabled && m.button === 'Start GPS' && m.text === 'Location not allowed yet · press Start GPS, then say yes', `auto start: a Start that worked before is made again; while the permission reads prompt the button offers the press that asks (${m.enabled}, ${m.button}, ${JSON.stringify(m.text)})`);
     else if (granted) {
       check(m.enabled && m.button === 'Stop GPS', `auto start: location already allowed, Drive starts by itself (${m.enabled}, ${JSON.stringify(m.text)})`);
       await page.evaluate(() => window.__drive(20, 180)); await page.waitForTimeout(80);
@@ -324,7 +324,7 @@ async function autoStart(browser) {
       check(await page.evaluate(() => localStorage.getItem('bakar.drive.gps') === '1'), 'auto start: a working Start is remembered for the next visit');
       const after = await page.evaluate(() => { driveStopped = true; driveFeed.stop(); syncDriveFeed(); return driveFeed.enabled; });   // what a press on Stop does
       check(after === false, 'auto start: a deliberate Stop holds; looking at Drive again does not restart it');
-    } else check(m.enabled && m.text === 'Waiting for location · it comes from your phone' && m.button === 'Stop GPS', `auto start: first Drive entry requests native location (${m.enabled}, ${JSON.stringify(m.text)})`);
+    } else check(m.enabled && m.text === 'Location not allowed yet · press Start GPS, then say yes' && m.button === 'Start GPS', `auto start: first Drive entry requests native location once, and while the permission reads prompt it says so (${m.enabled}, ${JSON.stringify(m.text)})`);
     await ctx.close();
   }
 }

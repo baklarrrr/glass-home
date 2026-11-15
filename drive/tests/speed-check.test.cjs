@@ -48,11 +48,14 @@ test('no location in this app is a warning too', () => {
 });
 
 test('each hard GPS fault is named as it is, and what backs it up follows', () => {
-  // The phone sent nothing: the same two lines as the face (drive-location.js NO_SPEED), not GPS jargon.
-  const words = { stale: 'GPS speed lost', timeout: 'No location from your phone', disconnected: 'No location from your phone' };
+  const words = { stale: 'GPS speed lost', timeout: 'No location yet', disconnected: 'No location yet' };
   for (const [gpsStatus, fault] of Object.entries(words)) {
     const r = at({ gpsStatus, link: 'none' });
-    assert.deepEqual([r.level, r.text], ['warn', `${fault}\n${gpsStatus === 'stale' ? 'Waiting for a new fix' : 'Open Meta AI on your phone'}`], gpsStatus);
+    assert.deepEqual([r.level, r.text], ['warn', `${fault}\n${gpsStatus === 'stale' ? 'Waiting for a new fix' : 'Allow location for this app'}`], gpsStatus);
+    // With no phone link the apps hand over the face's own two lines, so details and face never disagree.
+    const faced = at({ gpsStatus, link: 'none', face: ['Location not allowed yet', 'Press Start GPS, then say yes'] });
+    assert.equal(faced.text, gpsStatus === 'stale' ? 'GPS speed lost\nWaiting for a new fix' : 'Location not allowed yet\nPress Start GPS, then say yes', gpsStatus);
+    assert.equal(at({ gpsStatus, link: 'paused', face: ['x', 'y'] }).text, `${fault}\nPhone not answering`, 'beside a phone link the link is the story');
     assert.equal(at({ gpsStatus, link: 'paused' }).text, `${fault}\nPhone not answering`, gpsStatus);
     assert.equal(at({ gpsStatus, link: 'live' }).text, '', `${gpsStatus}: the phone is up, so no warning on top`);
   }
@@ -85,7 +88,7 @@ test('every warning fits two lines of the 600 px screen at its largest size', ()
 });
 
 test('the corner beside directions says the same thing in lines short enough for its 250 px', () => {
-  const compact = { denied: 'Glasses GPS refused', unsupported: 'No GPS in this app', timeout: 'No phone location', disconnected: 'No phone location' };
+  const compact = { denied: 'Glasses GPS refused', unsupported: 'No GPS in this app', };
   for (const gpsStatus of HARD) {
     // Directions are on screen only while the phone link is live or paused (no signal is the same silence), so the second line there is one of two.
     for (const [link, second] of [['paused', 'Phone not answering'], ['nosignal', 'No signal to phone']]) {

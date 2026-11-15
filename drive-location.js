@@ -12,6 +12,7 @@
   const STILL_KMH = 1;                        // a reading under this is standing still
   // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
   const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
+  const NO_ANSWER=new Set(['no-response','timeout','disconnected','error']), ASKING=new Set(['off','waiting',...NO_ANSWER]);
   const holdLimit=kmh=>kmh>=STILL_KMH&&kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;   // a 0 is not "estimated" past 5 s: it becomes Standing still
   // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
   const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
@@ -43,7 +44,20 @@
       this.facts={attempts:0,asks:0,errors:0,fixes:0,positionFixes:0,lastFix:null,lastError:null,permission:'unknown'};
     }
     publish(state) { this.state=state; this.change(this.snapshot()); }
-    snapshot() {
+    // Whose turn it is when no location comes: the wearer has not answered the permission question ('prompt'), location is
+    // allowed or has answered before ('granted'), or this host does not say ('unknown'). Only on states with no location.
+    mark(s) {
+      delete s.permission;
+      if(!ASKING.has(s.status))return s;
+      const p=this.facts.permission;
+      if(p==='prompt')s.permission='prompt';
+      else if(NO_ANSWER.has(s.status))s.permission=p==='granted'||this.facts.fixes>0?'granted':'unknown';
+      return s;
+    }
+    // The permission question is unanswered: only a real press may ask again (never a timer), and each press does.
+    get needsPress() { return this.facts.permission==='prompt'&&ASKING.has(this.snapshot().status); }
+    snapshot() { return this.mark(this.read()); }
+    read() {
       const s={...this.state};
       if (s.status==='live') {
         const elapsed=this.mono()-s.receivedMono, age=Math.max(this.now()-s.at,s.initialAge+elapsed);
@@ -368,10 +382,11 @@
   const NO_SPEED=Object.freeze({
     waiting:['Waiting for location','It comes from your phone'],
     // The glasses have no GPS of their own: the Meta AI app on the phone hands location over, and only while it runs.
-    'no-response':['No location from your phone','Open Meta AI on your phone'],
-    timeout:['No location from your phone','Open Meta AI on your phone'],
-    disconnected:['No location from your phone','Open Meta AI on your phone'],
-    error:['No location from your phone','Open Meta AI on your phone'],
+    // Nothing came back and this host does not say whether location is allowed (see NO_ANSWER_LINES for the other cases).
+    'no-response':['No location yet','Allow location for this app'],
+    timeout:['No location yet','Allow location for this app'],
+    disconnected:['No location yet','Allow location for this app'],
+    error:['No location yet','Allow location for this app'],
     found:['Location found','Waiting for a newer fix'],
     stale:['No new location','Waiting for your phone'],
     unavailable:['Location found','Working out speed'],
@@ -381,6 +396,12 @@
     off:['GPS is off','Press Start GPS'],
     paused:['GPS paused','It starts when Drive is open'],
     unsupported:['No location in this app','Speed cannot show here'],
+  });
+  // Real reports from the glasses (15 Nov 2026): no callback ever, and the permission reads "prompt". The question on the
+  // glasses was never answered, so the lines must not blame the phone. Three cases, by what the permission says.
+  const NO_ANSWER_LINES=Object.freeze({
+    prompt:['Location not allowed yet','Press Start GPS, then say yes'],
+    granted:['No location from your phone','Set Meta AI location to Always'],
   });
   // Each producer expires its own samples using both its sampling time and its
   // arrival clock. A linked reading carries no authenticated wheel/vehicle provenance.
@@ -398,10 +419,10 @@
       const next='Last location '+since(location.sinceMs)+' ago';
       return {source:'standing',kmh:0,why:'Standing still',next,label:'Standing still · last location '+since(location.sinceMs)+' ago'};
     }
-    const [why,next]=NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
+    const [why,next]=(ASKING.has(location?.status)&&NO_ANSWER_LINES[location.permission])||NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
     return {source:'none',kmh:null,why,next,label:next?why+' · '+next[0].toLowerCase()+next.slice(1):why};
   }
 
-  const api=Object.freeze({Feed,reading,display,NO_SPEED,FUTURE_MS,SLOW_KMH,SLOW_AGE_MS,STILL_KMH,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
+  const api=Object.freeze({Feed,reading,display,NO_SPEED,NO_ANSWER_LINES,FUTURE_MS,SLOW_KMH,SLOW_AGE_MS,STILL_KMH,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
   if(typeof module!=='undefined'&&module.exports)module.exports=api; else root.StudioDriveLocation=api;
 })(globalThis);

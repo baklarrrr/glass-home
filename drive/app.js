@@ -192,7 +192,9 @@ function onGps(reading) {
 }
 
 function toggleGps() {
-  if (feed.enabled) { feed.stop(); local('bd.gps', 'off'); }
+  // An unanswered permission question: every press asks the runtime again, inside the press, so its question can appear.
+  if (feed.needsPress) { local('bd.gps','asked'); feed.enable(); }
+  else if (feed.enabled) { feed.stop(); local('bd.gps', 'off'); }
   else { local('bd.gps','asked'); feed.enable(); }
   render();
 }
@@ -488,7 +490,7 @@ function render() {
   const course = pg ? pg.hdg : (headingFresh ? S.heading : walked);
   $('heading').textContent = course !== null ? compass(course) : '';
   if(motion)DriveGuide.paintTape($('tape'),course);else $('tape').style.visibility='hidden';
-  $('gpsBtn').textContent = feed.enabled ? 'Stop GPS' : 'Start GPS';
+  $('gpsBtn').textContent = feed.enabled && !feed.needsPress ? 'Stop GPS' : 'Start GPS';
   $('gpsBtn').disabled = S.gps.status === 'unsupported';
   const mins = Math.floor(S.trip.ms / 60000);
   $('trip').textContent = S.trip.ms > 60000 ? `Trip ${mins} min · ${(S.trip.m / 1000).toFixed(1)} km est.` : '';
@@ -501,7 +503,7 @@ function render() {
   const guide = Boolean(n) && ['guide', 'arrived', 'ready', 'building'].includes(phase);
   const pairing = view === 'pairing';
   // Speed self-check: with no speed on screen, a definite fault and nothing healthy behind it gets a plain amber line.
-  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: checkLink(view) }) : { source: live ? 'ok' : 'none', level: 'wait', text: '', short: '' };
+  const health = SC ? SC.check({ phoneFresh: Boolean(pg), gpsStatus: S.gps.status, link: checkLink(view), face: [selection.why, selection.next] }) : { source: live ? 'ok' : 'none', level: 'wait', text: '', short: '' };
   S.shown = health;
   const warnText = guide ? health.short : health.text;   // beside the directions the corner is narrow: the same two lines, shorter
   $('speedWarn').textContent = warnText;
@@ -551,6 +553,7 @@ function render() {
 // Why there is no speed when nothing is wrong yet: GPS not started, still asking, or a reading that is not usable. One short
 // line: the panel has no room for more.
 function quietWhy() {
+  if (S.gps.permission === 'prompt') return 'Location not allowed yet. Press Start GPS, then say yes.';
   return { off: 'GPS is not started.', waiting: 'Waiting for GPS.', 'no-response': 'Waiting for GPS.', paused: 'GPS is paused.' }[S.gps.status]
     || `${GPS_WORDS[S.gps.status] || 'No GPS speed'}.`;
 }

@@ -26,8 +26,8 @@ const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.svg'
     assert.equal(await label.innerText(),standalone?'Waiting for location':'Waiting for location · it comes from your phone');assert.equal(await value.innerText(),'—');
     if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'It comes from your phone');
     await page.evaluate(()=>gpsFail({code:3}));
-    assert.equal(await label.innerText(),standalone?'No location from your phone':'No location from your phone · open Meta AI on your phone');
-    if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'Open Meta AI on your phone');
+    assert.equal(await label.innerText(),standalone?'No location from your phone':'No location from your phone · set Meta AI location to Always');
+    if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'Set Meta AI location to Always');
     if(!standalone){
      await page.evaluate(()=>{showPairing('fixture');showPush({id:'fixture',ti:'Example PC notification',tx:'test'});renderState();});
      assert.equal(await page.locator('#drive').isVisible(),true);

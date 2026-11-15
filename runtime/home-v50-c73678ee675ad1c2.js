@@ -32,6 +32,7 @@
   const STILL_KMH = 1;                        // a reading under this is standing still
   // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
   const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
+  const NO_ANSWER=new Set(['no-response','timeout','disconnected','error']), ASKING=new Set(['off','waiting',...NO_ANSWER]);
   const holdLimit=kmh=>kmh>=STILL_KMH&&kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;   // a 0 is not "estimated" past 5 s: it becomes Standing still
   // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
   const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
@@ -63,7 +64,20 @@
       this.facts={attempts:0,asks:0,errors:0,fixes:0,positionFixes:0,lastFix:null,lastError:null,permission:'unknown'};
     }
     publish(state) { this.state=state; this.change(this.snapshot()); }
-    snapshot() {
+    // Whose turn it is when no location comes: the wearer has not answered the permission question ('prompt'), location is
+    // allowed or has answered before ('granted'), or this host does not say ('unknown'). Only on states with no location.
+    mark(s) {
+      delete s.permission;
+      if(!ASKING.has(s.status))return s;
+      const p=this.facts.permission;
+      if(p==='prompt')s.permission='prompt';
+      else if(NO_ANSWER.has(s.status))s.permission=p==='granted'||this.facts.fixes>0?'granted':'unknown';
+      return s;
+    }
+    // The permission question is unanswered: only a real press may ask again (never a timer), and each press does.
+    get needsPress() { return this.facts.permission==='prompt'&&ASKING.has(this.snapshot().status); }
+    snapshot() { return this.mark(this.read()); }
+    read() {
       const s={...this.state};
       if (s.status==='live') {
         const elapsed=this.mono()-s.receivedMono, age=Math.max(this.now()-s.at,s.initialAge+elapsed);
@@ -388,10 +402,11 @@
   const NO_SPEED=Object.freeze({
     waiting:['Waiting for location','It comes from your phone'],
     // The glasses have no GPS of their own: the Meta AI app on the phone hands location over, and only while it runs.
-    'no-response':['No location from your phone','Open Meta AI on your phone'],
-    timeout:['No location from your phone','Open Meta AI on your phone'],
-    disconnected:['No location from your phone','Open Meta AI on your phone'],
-    error:['No location from your phone','Open Meta AI on your phone'],
+    // Nothing came back and this host does not say whether location is allowed (see NO_ANSWER_LINES for the other cases).
+    'no-response':['No location yet','Allow location for this app'],
+    timeout:['No location yet','Allow location for this app'],
+    disconnected:['No location yet','Allow location for this app'],
+    error:['No location yet','Allow location for this app'],
     found:['Location found','Waiting for a newer fix'],
     stale:['No new location','Waiting for your phone'],
     unavailable:['Location found','Working out speed'],
@@ -401,6 +416,12 @@
     off:['GPS is off','Press Start GPS'],
     paused:['GPS paused','It starts when Drive is open'],
     unsupported:['No location in this app','Speed cannot show here'],
+  });
+  // Real reports from the glasses (15 Nov 2026): no callback ever, and the permission reads "prompt". The question on the
+  // glasses was never answered, so the lines must not blame the phone. Three cases, by what the permission says.
+  const NO_ANSWER_LINES=Object.freeze({
+    prompt:['Location not allowed yet','Press Start GPS, then say yes'],
+    granted:['No location from your phone','Set Meta AI location to Always'],
   });
   // Each producer expires its own samples using both its sampling time and its
   // arrival clock. A linked reading carries no authenticated wheel/vehicle provenance.
@@ -418,11 +439,11 @@
       const next='Last location '+since(location.sinceMs)+' ago';
       return {source:'standing',kmh:0,why:'Standing still',next,label:'Standing still · last location '+since(location.sinceMs)+' ago'};
     }
-    const [why,next]=NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
+    const [why,next]=(ASKING.has(location?.status)&&NO_ANSWER_LINES[location.permission])||NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
     return {source:'none',kmh:null,why,next,label:next?why+' · '+next[0].toLowerCase()+next.slice(1):why};
   }
 
-  const api=Object.freeze({Feed,reading,display,NO_SPEED,FUTURE_MS,SLOW_KMH,SLOW_AGE_MS,STILL_KMH,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
+  const api=Object.freeze({Feed,reading,display,NO_SPEED,NO_ANSWER_LINES,FUTURE_MS,SLOW_KMH,SLOW_AGE_MS,STILL_KMH,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
   if(typeof module!=='undefined'&&module.exports)module.exports=api; else root.StudioDriveLocation=api;
 })(globalThis);
 ;
@@ -821,7 +842,7 @@
       case 'live': case 'ready': case 'waiting': case 'connecting': return 'phone speed once you move';
       case 'none': return gpsStatus==='denied'?'allow location for this app':
         gpsStatus==='unsupported'?'location API unavailable':
-        gpsStatus==='stale'?'waiting for a new fix':'open Meta AI on your phone';   // the same words as the face (drive-location.js NO_SPEED)
+        gpsStatus==='stale'?'waiting for a new fix':'allow location for this app';   // the apps pass the face's own lines (face) for the exact case
       case 'pairing': return 'compare the code on your phone';
       case 'stopped': return 'resume the phone link';
       case 'unavailable': return 'phone link unavailable';
@@ -840,8 +861,8 @@
     denied: ['Glasses location not allowed', 'Glasses GPS refused'],
     unsupported: ['This app gets no location', 'No GPS in this app'],
     stale: ['GPS speed lost'],
-    timeout: ['No location from your phone', 'No phone location'],
-    disconnected: ['No location from your phone', 'No phone location'],
+    timeout: ['No location yet', 'No location yet'],
+    disconnected: ['No location yet', 'No location yet'],
   });
 
   // The state of Studio Drive's phone link (drive-phone.js snapshot) in the shared words.
@@ -862,9 +883,13 @@
   // level: 'ok' (live) | 'wait' (nothing is wrong, or the phone is expected to supply the speed) | 'warn' (a definite
   // fault and nothing healthy behind it). text is '' unless level is 'warn': calm states keep each screen's own words.
   // short is the same two lines for the small corner (see FAULTS).
-  function line(gpsStatus, link) {
+  // face: the two lines the speed face shows for this state ([why, next] from drive-location.js), so details never say
+  // something else. Used when no phone link is set up and the phone simply sent nothing.
+  function line(gpsStatus, link, face) {
     const quiet = { level: gpsStatus === 'live' ? 'ok' : 'wait', text: '', short: '' };
     if (!Object.prototype.hasOwnProperty.call(FAULTS, gpsStatus) || HEALTHY.includes(link)) return quiet;
+    if (link === 'none' && (gpsStatus === 'timeout' || gpsStatus === 'disconnected') && Array.isArray(face) && face[0])
+      return { level: 'warn', text: face[1] ? `${face[0]}\n${face[1]}` : face[0], short: face[1] ? `${face[0]}\n${face[1]}` : face[0] };   // no directions corner without a phone link, so the whole lines fit
     const fault = FAULTS[gpsStatus];
     const way = backup(link,gpsStatus);
     const then = `${way[0].toUpperCase()}${way.slice(1)}`;
@@ -880,7 +905,7 @@
   function check(i) {
     if (i.phoneFresh) return { source: 'phone', level: 'ok', text: '', short: '', code: 'phone' };
     if (i.gpsStatus === 'live') return { source: 'glasses', level: 'ok', text: '', short: '', code: 'glasses' };
-    const l = line(i.gpsStatus, i.link);
+    const l = line(i.gpsStatus, i.link, i.face);
     return { source: 'none', level: l.level, text: l.text, short: l.short, code: i.gpsStatus };
   }
 
@@ -2654,7 +2679,7 @@ function paintDrive(reading) {
   $('driveSpeed').textContent=live?String(selection.kmh):'—';
   // Self-check (drive/speed-check.js): with no speed on screen, a definite fault and nothing healthy behind it is said
   // in plain words and shown amber. Calm states keep the words below; a missing module leaves the old wording alone.
-  const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone)}):null;
+  const check=driveCheck?driveCheck.check({phoneFresh:Boolean(pg),gpsStatus:reading.status,link:driveCheck.fromStudio(phone),face:[selection.why,selection.next]}):null;
   const phoneFault=!live&&phone.configured&&phone.enabled&&['stale','offline','unavailable'].includes(phone.state);
   $('driveHealthDetail').textContent=pg?'Linked speed':reading.status==='live'?(reading.source==='estimated'?'Speed estimated from positions':'App location · GPS estimate'):
     (reading.status==='unavailable'&&driveFeed.report().fresh&&driveFeed.report().coordinates?'Location found · measuring speed':null)||check?.text||(phone.configured&&phone.enabled?(DRIVE_PHONE_LABELS[phone.state==='live'&&!pg?'no-sample':phone.state]||'Phone speed unavailable'):   // linked, but no fresh speed from it: never "speed from the phone" beside a dash
@@ -2674,10 +2699,11 @@ function paintDrive(reading) {
   $('driveAge').textContent=guide?.note||oldList||'';
   $('driveAge').dataset.level=oldList?'warn':'ok';
   $('driveHud').dataset.status=live?'live':reading.status;
-  $('driveGps').textContent=driveFeed.enabled?'Stop GPS':'Start GPS';
+  $('driveGps').textContent=driveFeed.enabled&&!driveFeed.needsPress?'Stop GPS':'Start GPS';   // an unanswered permission question: the press asks again
   $('driveGps').disabled=reading.status==='unsupported';
   const retry=$('driveRetry');
-  const canRetry=driveFeed.enabled&&['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
+  const canRetry=driveFeed.enabled&&!driveFeed.needsPress&&   // Start GPS is the press that asks; a second button beside it would say the same
+    ['timeout','no-response','disconnected','stale','invalid','inaccurate'].includes(reading.status);
   retry.hidden=!canRetry&&document.activeElement!==retry;
   const permission=driveFeed.details().permission;
   HomeShell.setLocationPending(driveFeed.enabled&&['waiting','no-response'].includes(reading.status)&&permission!=='granted');
@@ -2687,6 +2713,9 @@ function paintDrive(reading) {
 function toggleDriveGps() {
   if(HomeShell.driveQuiet()||S.tab!=='drive'||document.hidden)return;
   driveStopped=driveFeed.enabled;
+  // The glasses have not been told yes or no yet: every press asks the runtime again, here inside the press itself, so its
+  // question can appear. Nothing but a press does this while the permission reads "prompt".
+  if(driveFeed.needsPress){driveStopped=false;driveRemember('asked');driveFeed.enable();return;}
   if(driveFeed.enabled){driveRemember('0');driveFeed.stop();} else {driveRemember('asked');driveFeed.enable();}
 }
 function retryDriveGps() {
@@ -2722,17 +2751,20 @@ function paintDriveDetails() {
     'Web permission: '+f.permission+' · policy: '+policy,
     'Secure page: '+(window.isSecureContext===true?'yes':window.isSecureContext===false?'no':'unknown')
   ].join('\n');
+  // No location came back. Who has to do something depends on what the permission says (drive-location.js NO_ANSWER_LINES).
+  const asked=driveFeed.snapshot().permission;
+  const noAnswerHelp=asked==='prompt'?'The glasses have not been told to allow location for this app. Press Start GPS and say yes when the glasses ask. This app asks only when you press.':
+    asked==='granted'?'Location is allowed here, but your phone sent nothing. The glasses have no GPS of their own: on your phone, set location for the Meta AI app to Always. This app keeps asking by itself.':
+    'Nothing has come back, and the glasses do not say whether location is allowed for this app. Allow location for this app in the glasses’ Web App menu → Permissions. This app keeps asking by itself.';
   const help={
-    off:'Location has not been started here. Press Start GPS. Speed comes from location, sent by your phone.',
+    off:asked==='prompt'?noAnswerHelp:'Location has not been started here. Press Start GPS. Speed comes from location, sent by your phone.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
-    timeout:'Your phone did not send a position in time. The glasses have no GPS of their own: open the Meta AI app on your phone. This app keeps asking by itself.',
-    'no-response':'Nothing has come back from your phone yet. Open the Meta AI app on your phone, and answer a location question if one is showing. This app keeps asking by itself.',
+    timeout:noAnswerHelp, 'no-response':noAnswerHelp, disconnected:noAnswerHelp, error:noAnswerHelp,
     found:'Your phone sent a position that is more than five seconds old. Location works; a speed needs a newer one.',
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
     inaccurate:'The returned position exceeds this app’s 50 m accuracy filter.',
     stale:'The last usable speed expired after five seconds.',
     standing:'The last fix showed you standing still, and nothing newer has shown movement, so the speed stays 0. The first fix that shows movement replaces it.',
-    disconnected:'Your phone had no position to give. Open the Meta AI app on your phone. This app keeps asking by itself.',
     unsupported:'This runtime has not supplied the geolocation API.'
   };
   $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';

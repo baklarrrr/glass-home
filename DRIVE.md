@@ -15,7 +15,9 @@ Bakar's glasses are paired with an iPhone since about 10 Nov 2026, so there is n
 | State | Reason | Next |
 |---|---|---|
 | Asked, no answer yet | Waiting for location | It comes from your phone |
-| No answer after 12 s, timed out, or no fix (build 49) | No location from your phone | Open Meta AI on your phone |
+| The glasses' permission question is unanswered (the permission reads "prompt"), at any point | Location not allowed yet | Press Start GPS, then say yes |
+| No answer, timed out or no fix; location is allowed or has answered before | No location from your phone | Set Meta AI location to Always |
+| No answer, timed out or no fix; the glasses do not say whether location is allowed | No location yet | Allow location for this app |
 | A position more than 5 s old (build 49) | Location found | Waiting for a newer fix |
 | Fixes stopped | No new location | Waiting for your phone |
 | Fix without a speed | Location found | Working out speed |
@@ -42,7 +44,7 @@ The glasses have no GPS. The Meta AI app on the paired iPhone hands location to 
 - On glasses where location answered on an earlier visit (the app remembers that in `bakar.drive.gps` / `bd.gps`), one request is made even before any error. If it is never answered, nothing more is asked until there is proof: a second request must not stack a permission question.
 - Never while a permission question may be open: with the permission reported as "prompt", or unknown with no answer of any kind yet, the app does not ask twice.
 - A position older than 5 s is never a speed. If it is under a minute old it now reads "Location found / Waiting for a newer fix" instead of "No new location": it shows that the phone is answering.
-- The words for no answer are "No location from your phone" and "Open Meta AI on your phone".
+- The words for no answer depend on what the permission says: see "The permission question nobody answered" below. (Build 49 said "Open Meta AI on your phone", which blamed the wrong thing.)
 - Details on both faces list: how many times location was asked for, how many answers came, the last error in words (timed out, phone gave no position, not allowed), the permission, and the last fix's time and accuracy. No coordinates.
 - Checks: `tests/drive-location.test.cjs`, section "keeps asking" (a provider that never answers; a timeout then an answer to a relaxed request; "no position" five times then a fix; only 8-second-old positions). Played in Node and a desktop browser only. Not seen on the real glasses: whether the Meta runtime answers the repeated requests is not known until Bakar tries build 49.
 
@@ -143,3 +145,27 @@ Also in this round: a reading of 0 is never called "estimated" (from five second
 words for "the phone sent nothing" are the same as on the face; the turn line on Home's Drive tab always keeps its room so
 the speed does not move; Speed details scrolls its words and keeps "Back to speed" on screen; "Open Studio Drive" is
 "Open Bakar Home".
+
+## The permission question nobody answered (15 Nov 2026, build 50)
+
+What the glasses really reported (Home's Drive reports read on the PC, build 49): 70 reports since 11 Nov, every one with
+0 callbacks and 0 positions; the status went waiting, no answer, timed out; the permission read unknown, then "prompt",
+sometimes granted. Bakar saw "Open Meta AI on your phone" with Meta AI open and location on. The question the glasses ask
+for this web app was unanswered most of the time, and the words blamed the phone.
+
+- While the permission reads "prompt" (on opening, after a press, after a timeout) both faces say **Location not allowed
+  yet / Press Start GPS, then say yes**, and the button reads Start GPS even though a request is already out.
+- Every press of Start GPS in that state calls the runtime's location request inside the press handler itself, so the
+  glasses' question can appear. Nothing else asks while it reads "prompt": no timer, no retry, no polling.
+- Allowed (or a position has come back before) and nothing comes: **No location from your phone / Set Meta AI location to
+  Always**. The permission not reported and nothing has ever come: **No location yet / Allow location for this app**.
+- With the permission granted, or after the provider's own "timed out" / "no position" where the permission is not
+  reported, the app keeps asking by itself exactly as in build 49.
+- Speed details says the same two lines as the face (drive/speed-check.js takes them from the face when no phone app is linked).
+- The report to the PC is unchanged. It already carries `callbacks`, `positions`, `error` and `permission`. The counts of
+  requests and errors (`asks`, `errors`) are in Speed details on the glasses but were not added to the report: the list of
+  fields the PC accepts lives on the PC side, outside this repository, and an unknown field could make it drop the report.
+- Checks: `tests/drive-location.test.cjs` (the last five tests and "no answer: the two lines say whose turn it is"),
+  `drive/tests/permission-faces.cjs` (both faces in a browser: no request by itself in two minutes, three presses make
+  three requests inside the press, then allowed-and-silent). Not seen on the real glasses: whether their question appears
+  on the press is the runtime's decision.

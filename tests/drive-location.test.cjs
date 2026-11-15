@@ -384,12 +384,20 @@ test('keeps asking: never beside a permission question, and a remembered visit e
   probes[0].ok(place(2,h.wall));assert.equal(h.feed.snapshot().status,'live');
   h.advance(9000);assert.ok(probes.length>=2,'an answer is proof, and the asking carries on');
 });
-test('keeps asking: the words for no answer name the phone and what to do',()=>{
+test('no answer: the two lines say whose turn it is, by what the permission says',()=>{
   const {display}=require('../drive-location.js');
   for(const status of ['no-response','timeout','disconnected','error']){
-    const d=display(null,{status});assert.equal(d.why,'No location from your phone');assert.equal(d.next,'Open Meta AI on your phone');assert.equal(d.kmh,null);
+    let d=display(null,{status});assert.deepEqual([d.why,d.next,d.kmh],['No location yet','Allow location for this app',null],status+', permission not reported');
+    d=display(null,{status,permission:'unknown'});assert.deepEqual([d.why,d.next],['No location yet','Allow location for this app']);
+    d=display(null,{status,permission:'granted'});assert.deepEqual([d.why,d.next],['No location from your phone','Set Meta AI location to Always']);
+    d=display(null,{status,permission:'prompt'});assert.deepEqual([d.why,d.next],['Location not allowed yet','Press Start GPS, then say yes']);
   }
+  for(const status of ['off','waiting'])assert.deepEqual([display(null,{status,permission:'prompt'}).why,display(null,{status,permission:'prompt'}).next],['Location not allowed yet','Press Start GPS, then say yes'],status);
+  assert.equal(display(null,{status:'off'}).why,'GPS is off');assert.equal(display(null,{status:'waiting'}).why,'Waiting for location');
+  assert.equal(display(null,{status:'denied',permission:'prompt'}).why,'Location not allowed','a refusal keeps its own words');
   assert.deepEqual([display(null,{status:'found'}).why,display(null,{status:'found'}).next],['Location found','Waiting for a newer fix']);
+  for(const lines of Object.values(require('../drive-location.js').NO_SPEED).concat(Object.values(require('../drive-location.js').NO_ANSWER_LINES)))
+    assert.ok(!/Open Meta AI/.test(lines.join(' ')),'no line tells the wearer to open Meta AI: '+lines.join(' / '));
 });
 
 // ---- standing still stays 0, and slow speeds are held a little longer (build 50) ----
@@ -477,4 +485,54 @@ test('standing still: a 0 is never shown as an estimate; from five seconds it is
   h.advance(MAX_AGE_MS-1);assert.equal(show(null,h.feed.snapshot()).label,'Location speed');
   h.advance(1);const s=h.feed.snapshot();assert.equal(s.status,'standing');
   assert.deepEqual([show(null,s).kmh,show(null,s).source],[0,'standing']);
+});
+
+// ---- the permission question was never answered (real reports from the glasses, 15 Nov 2026: 70 reports, 0 callbacks, "prompt") ----
+const lines=h=>{const d=show(null,h.feed.snapshot());return d.why+' / '+d.next;};
+test('permission prompt on entry: nothing is requested, and the lines ask for a press and a yes',async()=>{
+  const h=harness('prompt');h.feed.setVisible(true,{autoStart:true,resumeOnly:true});await Promise.resolve();await Promise.resolve();
+  assert.equal(h.watches.length,0,'opening Drive never asks while the answer is still open');
+  assert.equal(h.feed.snapshot().status,'off');assert.equal(h.feed.snapshot().permission,'prompt');
+  assert.equal(lines(h),'Location not allowed yet / Press Start GPS, then say yes');
+  assert.equal(h.feed.needsPress,true);
+});
+test('permission prompt: every press asks the runtime again inside the press; a timer never does',async()=>{
+  const h=harness('prompt');h.feed.setVisible(true,{autoStart:true,resumeOnly:true});await Promise.resolve();await Promise.resolve();
+  h.feed.enable();assert.equal(h.watches.length,1,'the native request is made before enable() returns: inside the press');
+  await Promise.resolve();await Promise.resolve();
+  for(let t=0;t<120;t++)h.advance(1000);
+  assert.equal(h.watches.length,1,'two minutes of silence: no second request by itself');
+  assert.equal(h.feed.details().asks,1);
+  assert.equal(h.feed.snapshot().status,'no-response');assert.equal(lines(h),'Location not allowed yet / Press Start GPS, then say yes');
+  assert.equal(h.feed.needsPress,true,'the button still offers Start GPS');
+  h.feed.enable();assert.equal(h.watches.length,2,'the second press asks again');
+  await Promise.resolve();await Promise.resolve();
+  h.feed.enable();assert.equal(h.watches.length,3,'and the third');
+  await Promise.resolve();await Promise.resolve();
+  h.watches[2].fail({code:3});
+  assert.equal(h.feed.snapshot().status,'timeout');assert.equal(lines(h),'Location not allowed yet / Press Start GPS, then say yes','a timeout while it reads prompt is still the unanswered question');
+  for(let t=0;t<60;t++)h.advance(1000);
+  assert.equal(h.feed.details().asks,3,'and a timeout does not start polling while it reads prompt');
+});
+test('permission prompt answered yes: the feed runs, polls as in build 49, and the lines move on',async()=>{
+  const h=harness('prompt');h.feed.setVisible(true);h.feed.enable();await Promise.resolve();await Promise.resolve();
+  h.advance(RESPONSE_NOTICE_MS+1);assert.equal(lines(h),'Location not allowed yet / Press Start GPS, then say yes');
+  h.p.state='granted';h.p.onchange();
+  assert.equal(h.feed.needsPress,false);
+  h.advance(RESPONSE_NOTICE_MS+1);assert.equal(lines(h),'No location from your phone / Set Meta AI location to Always','allowed, and still nothing: now it is the phone');
+  h.watches[0].ok(fix(12,h.wall));assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.snapshot().permission,undefined);
+});
+test('granted and silent: the phone is named, with the setting to change; it keeps asking',async()=>{
+  const h=started();await Promise.resolve();await Promise.resolve();
+  h.advance(RESPONSE_NOTICE_MS+1);assert.equal(h.feed.snapshot().status,'no-response');
+  assert.equal(lines(h),'No location from your phone / Set Meta AI location to Always');
+  h.watches[0].fail({code:3});assert.equal(lines(h),'No location from your phone / Set Meta AI location to Always');
+  assert.equal(h.feed.needsPress,false);
+});
+test('permission not reported and silent: allow location for this app; after any answer it is the phone',async()=>{
+  const h=harness();h.feed.permissions=undefined;h.feed.setVisible(true);h.feed.enable();
+  h.advance(RESPONSE_NOTICE_MS+1);assert.equal(lines(h),'No location yet / Allow location for this app');
+  h.watches[0].fail({code:3});assert.equal(lines(h),'No location yet / Allow location for this app');
+  h.watches[0].ok(fix(10,h.wall));h.advance(6000);h.watches[0].fail({code:3});
+  assert.equal(lines(h),'No location from your phone / Set Meta AI location to Always','a position did come once, so location is allowed: the phone went quiet');
 });

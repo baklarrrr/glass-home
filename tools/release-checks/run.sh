@@ -8,5 +8,6 @@ node tests/app-menu.cjs
 node drive/tests/gps-entry.cjs
 node drive/tests/quiet-hud.cjs
 node drive/tests/speed-faces.cjs
+node drive/tests/permission-faces.cjs
 node drive/tests/running-build.cjs
 node tools/release-checks/release-identity.cjs
