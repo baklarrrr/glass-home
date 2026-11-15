@@ -2,8 +2,8 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v51';
-const ENTRY = 'runtime/home-v51-9a1de9e479dafb07.js';
+const CACHE = 'glass-home-v52';
+const ENTRY = 'runtime/home-v52-f75bd153d4f57a57.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/tape.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 

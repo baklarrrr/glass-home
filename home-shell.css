@@ -85,3 +85,10 @@
 #drive[data-controls=open] .gps-age:empty { display:none; }
 #drive[data-controls=open] .gps-speed { font-size:clamp(72px,19vmin,116px); line-height:1.05; }
 .drive-info-body .note { font-size:18px !important; line-height:1.35; }
+/* Round 5. No speed: why, then what to do, as two lines above the dash. They grow upward from the line's fixed place, so the
+   dash does not move. */
+#driveHud[data-source=none] .gps-state.two { flex-direction:column; justify-content:flex-end; overflow:visible; font-size:23px; font-weight:600; color:#fff; line-height:1.25; }
+#driveHud[data-source=none] .gps-state.two .sep { display:none; }
+#driveHud[data-source=none] .gps-state.two .next { display:block; font-size:20px; font-weight:500; color:var(--soft); }
+#driveHud[data-source=none] .gps-state.two .next::first-letter { text-transform:uppercase; }
+@media(max-height:500px){ #driveHud[data-source=none] .gps-state.two { font-size:21px; } #driveHud[data-source=none] .gps-state.two .next { font-size:18px; } }

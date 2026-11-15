@@ -31,3 +31,8 @@ body.renders-place .block.line { min-block-size:40px; padding:6px 16px 7px; }
 .picture-tools .review-pager { display:contents; }
 .picture-tools #reviewPosition { display:none; }
 .picture-tools > button, .picture-tools .review-pager button { padding-inline:8px; }
+
+/* Round 5. The three places keep their row whichever one is open: the link state sits under them, not above. */
+.root-navigation { order:-2; }
+.topline { order:-1; }
+body.renders-place .topline { font-size:17px; }

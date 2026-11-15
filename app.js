@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 51; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 52; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
@@ -1096,7 +1096,16 @@ function paintDrive(reading) {
     
     (DRIVE_STATUS_LABELS[reading.status]||'Speed unavailable'));
   $('driveHealthDetail').dataset.level=check?.level==='warn'||phoneFault?'warn':'ok';
-  $('driveState').textContent=selection.label;
+  // No speed: the reason and the next step are two lines a driver can read at a glance (the same words as before, in the
+  // same order, so the text of the line is unchanged). With a speed: one quiet line.
+  const stateLine=$('driveState');
+  // Beside a turn line the status stays one line (the turn is the thing to read there).
+  const twoLines=!live&&Boolean(selection.next)&&$('driveTurn')?.hidden!==false&&Boolean(stateLine.replaceChildren)&&typeof document.createElement==='function';
+  stateLine.classList?.toggle('two',twoLines);
+  if(twoLines){
+    const part=(cls,text)=>{const s=document.createElement('span');s.className=cls;s.textContent=text;return s;};
+    stateLine.replaceChildren(part('why',selection.why),part('sep',' · '),part('next',selection.label.slice(selection.why.length+3)));
+  }else stateLine.textContent=selection.label;
   $('driveHud').dataset.level='ok';
   $('driveHud').dataset.source=selection.source;
   // A fixed camera on the road ahead takes the top line while the glasses' own reading is live: what it is and how far.

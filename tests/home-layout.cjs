@@ -72,6 +72,25 @@ const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.svg'
       // Back: the menus return.
       await page.evaluate(()=>history.back());await page.waitForTimeout(150);
       assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.sections')).display),'flex');
+      // Review with no link to the PC: the words, and no button that leads nowhere.
+      await page.evaluate(()=>selectTab('review'));await page.waitForTimeout(150);
+      assert.match(await page.locator('#reviewState').innerText(),/^Review is not linked to your studio PC yet\./);
+      assert.equal(await page.locator('#reviewEnter').isVisible(),false,'not linked: no Open Review button');
+      // Review linked (a made-up link, no PC): its three places keep their row whichever one is open.
+      const linked=await ctx.newPage();
+      linked.on('pageerror',e=>errors.push(String(e)));
+      await linked.goto(origin+'/glass-home/#sg=made-up~'+Buffer.alloc(32,7).toString('base64url'));
+      await linked.waitForFunction(()=>document.getElementById('runningBuild'));
+      await linked.click('#section-review');
+      await linked.waitForFunction(()=>!document.getElementById('reviewFrame').hidden,null,{timeout:8000});
+      const frame=linked.frames().find(f=>/review\/index\.html/.test(f.url()));
+      const navTop=()=>frame.evaluate(()=>Math.round(document.getElementById('rootNavigation').getBoundingClientRect().top));
+      const inPictures=await navTop();
+      await linked.evaluate(()=>HomeShell.openRenders());
+      await frame.waitForFunction(()=>document.body.classList.contains('renders-place'),null,{timeout:5000});
+      assert.equal(await navTop(),inPictures,'Pictures, Feedback, Renders stay where they are when Renders opens');
+      assert.equal(await frame.evaluate(()=>{const n=document.getElementById('rootNavigation').getBoundingClientRect(),t=document.querySelector('.topline').getBoundingClientRect();return t.top>=n.bottom-1;}),true,'the link state sits under them');
+      if(out)await linked.screenshot({path:path.join(out,'review-renders-'+height+'.png')});
       assert.deepEqual(errors,[]);
       await ctx.close();
     }

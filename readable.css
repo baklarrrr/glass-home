@@ -69,3 +69,10 @@ body.deep .top { min-height:0; }
 #dOptions .btn.help { font-size:20px; min-height:46px; padding:8px 14px; }
 body.deep .top { grid-template-areas:"id id state state"; grid-template-columns:auto minmax(0,1fr) auto auto; column-gap:14px; }
 body.deep .gbat:not(.low) { display:none; }
+
+/* Round 5. Watch: the title has the whole first line; where it came from sits under it at the right. */
+#watchRows .row .ti { grid-column:2 / -1; }
+#watchRows .row .tag { grid-row:2; grid-column:3; align-self:baseline; }
+#ytFind { font-size:20px; min-height:48px; padding:8px 16px; text-align:center; }
+.note.wide { font-size:20px; max-inline-size:none; }
+.group { font-size:16px; }

@@ -34,15 +34,24 @@ const GEO=()=>{
       await page.goto(origin+'/glass-home/'+(standalone?'drive/':'#tab=drive'));
       await page.waitForFunction(()=>document.getElementById('runningBuild'));
       const speed=()=>page.locator(standalone?'#speed':'#driveSpeed').innerText();
-      const words=async()=>standalone?(await page.locator('#status').innerText())+' / '+(await page.locator('#speedNext').innerText()):page.locator('#driveState').innerText();
+      const words=async()=>standalone?(await page.locator('#status').innerText())+' / '+(await page.locator('#speedNext').innerText()):page.locator('#driveState').textContent();
       const pass=async ms=>{for(let t=0;t<ms;t+=1000)await page.clock.runFor(1000);};
       const shot=async name=>{if(out)await page.screenshot({path:path.join(out,(standalone?'drive-':'home-')+name+'.png')});};
       await pass(1000);
       assert.equal(await speed(),'—',face+': before any fix there is no number');
 
-      // Standing still: the device says 0, then the phone sends nothing more.
+      // Home's Drive tab, no speed: the reason and the next step are two lines above the dash, and the dash is where the number will be.
+      let dashTop=0;
+      if(!standalone){
+        const two=await page.evaluate(()=>{const r=e=>e.getBoundingClientRect(),w=document.querySelector('#driveState .why'),n=document.querySelector('#driveState .next'),d=document.getElementById('driveSpeed');
+          return {text:document.getElementById('driveState').textContent,why:w.textContent,next:getComputedStyle(n,'::first-letter').textTransform,stacked:r(n).top>=r(w).bottom-1,above:r(n).bottom<=r(d).top+12,size:parseFloat(getComputedStyle(w).fontSize)>=21,top:Math.round(r(d).top)};});
+        dashTop=two.top;delete two.top;
+        assert.deepEqual(two,{text:'Waiting for location · it comes from your phone',why:'Waiting for location',next:'uppercase',stacked:true,above:true,size:true},'Home: two readable lines, the same words');
+      }
+
       await page.evaluate(()=>play(0,0));
       assert.equal(await speed(),'0');
+      if(!standalone)assert.equal(await page.evaluate(()=>Math.round(document.getElementById('driveSpeed').getBoundingClientRect().top)),dashTop,'Home: the number is exactly where the dash was');
       // A 0 is never "estimated": from five seconds it is standing still.
       await pass(6000);
       assert.match(await words(),/^Standing still/,face+': at six seconds a 0 says standing still, not estimated');

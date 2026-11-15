@@ -36,7 +36,7 @@ const GEO=()=>{
       await page.clock.install();
       await page.goto(origin+'/glass-home/'+(standalone?'drive/':'#tab=drive'));
       await page.waitForFunction(()=>document.getElementById('runningBuild'));
-      const words=async()=>standalone?(await page.locator('#status').innerText())+' / '+(await page.locator('#speedNext').innerText()):page.locator('#driveState').innerText();
+      const words=async()=>standalone?(await page.locator('#status').innerText())+' / '+(await page.locator('#speedNext').innerText()):page.locator('#driveState').textContent();
       const want=standalone?'Location not allowed yet / Press Start GPS, then say yes':'Location not allowed yet · press Start GPS, then say yes';
       const pass=async ms=>{for(let t=0;t<ms;t+=1000)await page.clock.runFor(1000);};
       const button=standalone?'#gpsBtn':'#driveGps';
