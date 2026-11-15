@@ -5,10 +5,14 @@
 // The W3C API does not report speed uncertainty or whether a fix is mocked.
 (function (root) {
   const MAX_AGE_MS = 5000, MAX_ACCURACY_M = 50, MAX_SPEED_MPS = 100, RESPONSE_NOTICE_MS = 12000;
+  const FOUND_AGE_MS = 60000;                 // a position this recent, though too old for a speed, still shows that location works
+  const PROBE_MIN_MS = 4000, PROBE_MAX_MS = 15000, RELAXED_AGE_MS = 10000, WATCH_SILENT_MS = 30000;
+  const placed=c=>Boolean(c)&&Number.isFinite(c.latitude)&&Math.abs(c.latitude)<=90&&Number.isFinite(c.longitude)&&Math.abs(c.longitude)<=180;
   function reading(position, now) {
     const c = position?.coords, at = position?.timestamp;
     if (!Number.isFinite(at) || at <= 0 || at > now) return {status:'invalid', speed:null};
-    if (now - at >= MAX_AGE_MS) return {status:'stale', speed:null, at};
+    // An older position (a cached one, say) is not a speed, but it proves location reaches this app: say found, not lost.
+    if (now - at >= MAX_AGE_MS) return {status:now-at<FOUND_AGE_MS&&placed(c)?'found':'stale', speed:null, at};
     // A fix too rough to use cannot give a speed from positions either: say rough, not "working out speed".
     if (c && c.speed == null && Number.isFinite(c.accuracy) && c.accuracy > MAX_ACCURACY_M) return {status:'inaccurate', speed:null, at};
     if (!c || c.speed == null) return {status:'unavailable', speed:null, at};
@@ -24,10 +28,10 @@
       schedule=(fn,ms)=>setTimeout(fn,ms), cancel=id=>clearTimeout(id), change=()=>{}}) {
       Object.assign(this,{geo,permissions,transform,now,mono,schedule,cancel,change});
       this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.gestureTried=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';
-      this.hadGrant=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
+      this.hadGrant=false; this.worked=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
       this.state={status:geo?'off':'unsupported',speed:null}; this.permission=null;
       // Page-local facts only: never copy the position object or its coordinates.
-      this.facts={attempts:0,fixes:0,positionFixes:0,lastFix:null,lastError:null,permission:'unknown'};
+      this.facts={attempts:0,asks:0,errors:0,fixes:0,positionFixes:0,lastFix:null,lastError:null,permission:'unknown'};
     }
     publish(state) { this.state=state; this.change(this.snapshot()); }
     snapshot() {
@@ -44,7 +48,7 @@
     details() {
       const f=this.facts,last=f.lastFix;
       const age=last?.at===null?NaN:last?Math.max(this.now()-last.at,last.initialAge+this.mono()-last.receivedMono):NaN;
-      return {status:this.snapshot().status,attempts:f.attempts,fixes:f.fixes,positionFixes:f.positionFixes,watchActive:this.watch!==null,
+      return {status:this.snapshot().status,attempts:f.attempts,asks:f.asks,errors:f.errors,fixes:f.fixes,positionFixes:f.positionFixes,watchActive:this.watch!==null,
         visible:this.visible,enabled:this.enabled,permission:f.permission,
         lastFix:last?{at:last.at,ageMs:Number.isFinite(age)&&age>=0&&this.now()>=last.at?age:null,
           accuracy:last.accuracy,speedPresent:last.speedPresent,status:last.status}:null,
@@ -53,7 +57,7 @@
     report() {
       const state=this.snapshot();
       const f=this.positionFacts;
-      return {version:1,status:state.status,permission:this.facts.permission,
+      return {version:1,status:state.status==='found'?'stale':state.status,permission:this.facts.permission,
         callbacks:this.facts.fixes,positions:this.facts.positionFixes,
         coordinates:f?.coordinates===true,fresh:Boolean(f?.at>0&&this.now()>=f.at&&this.now()-f.at<MAX_AGE_MS),
         accurate:f?.accurate===true,source:state.status==='live'?(state.source||'reported'):'none',
@@ -89,7 +93,9 @@
     // Explicit Start or Retry replaces the watch. Entering the same visible view keeps it.
     enable() { this.denied=false;this.enabled=true; if(this.visible)this.start(true); }
     stop() { this.observed='off';this.lastGood=null;this.pendingState=null;this.hadGrant=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
-    setVisible(visible, {autoStart=false, resumeOnly=false, gesture=false}={}) {
+    setVisible(visible, {autoStart=false, resumeOnly=false, gesture=false, worked=false}={}) {
+      // worked: location answered here on an earlier visit (the app remembers that), on a host that cannot report the permission.
+      if(visible)this.worked=Boolean(worked);
       if(this.visible===visible){
         if(visible&&gesture&&!this.denied&&!this.hadGrant&&!this.gestureTried&&
           (!this.enabled||['timeout','no-response'].includes(this.state.status))){
@@ -171,6 +177,9 @@
       const options={enableHighAccuracy:true,maximumAge:0,timeout:30000};
       const startedAt=this.mono();
       let lastWatchFix=-Infinity, probeExpired=false;
+      // sawError: the provider itself answered "timed out" or "no position". That answer proves no permission sheet is open,
+      // so asking again cannot stack one. lastAnswer: when any position last came back, usable for a speed or not.
+      let sawError=false, lastAnswer=-Infinity, watchSince=startedAt, probeFails=0;
       const active=()=>epoch===this.epoch&&this.visible&&this.enabled;
       const accept=(position,fromWatch)=>{
         if(!active())return;
@@ -180,7 +189,7 @@
           Number.isFinite(raw?.longitude)&&Math.abs(raw.longitude)<=180;
         const accurate=Number.isFinite(raw?.accuracy)&&raw.accuracy>=0&&raw.accuracy<=MAX_ACCURACY_M;
         const hasPosition=fresh&&coordinates;
-        ++this.facts.fixes;
+        ++this.facts.fixes;lastAnswer=this.mono();
         if(this.positionFacts?.at && at<this.positionFacts.at)return;
         if(hasPosition&&at!==this.positionFacts?.at)++this.facts.positionFixes;
         const next=reading(this.transform(position),now);
@@ -206,7 +215,8 @@
       const fail=error=>{
         if(!active())return;
         const code=[1,2,3].includes(error?.code)?error.code:null;
-        this.facts.lastError={code,at:this.now(),attempt:this.facts.attempts};
+        this.facts.lastError={code,at:this.now(),attempt:this.facts.attempts};++this.facts.errors;
+        if(code!==1)sawError=true;
         if(code===1){
           this.lastGood=null;this.pendingState=null;this.denied=true;this.hadGrant=false;this.enabled=false;this.clear();
           this.observed='denied';this.publish({status:'denied',speed:null});return;
@@ -217,11 +227,15 @@
       // A second API call while the first prompt is open can stack permission
       // sheets. Poll only after evidence of permission; leave a silent watch alive.
       const mayPoll=()=>this.facts.permission==='granted'||
-        (this.facts.permission==='unknown'&&this.hadGrant);
-      const scheduleProbe=(delay=4000)=>{
+        (this.facts.permission==='unknown'&&(this.hadGrant||sawError||this.worked));
+      // Proof, not memory: only this lets a request that got no answer at all be followed by another.
+      const sure=()=>this.facts.permission==='granted'||(this.facts.permission==='unknown'&&(this.hadGrant||sawError));
+      // Each request that brings nothing waits a little longer before the next: 4 s, 4 s, 6 s, 9 s, 13 s, then every 15 s.
+      const backoff=()=>Math.min(PROBE_MAX_MS,Math.round(PROBE_MIN_MS*1.5**Math.max(0,probeFails-1)));
+      const scheduleProbe=(delay=backoff())=>{
         if(!this.geo.getCurrentPosition||!active()||!mayPoll()||this.probeDeadline!==null)return;
         if(this.probeTimer!==null)this.cancel(this.probeTimer);
-        this.probeTimer=this.schedule(probe,delay);
+        this.probeTimer=this.schedule(()=>{this.probeTimer=null;if(mayPoll())probe();},delay);   // the permission may have turned out to be a question since this was set
       };
       let probeNumber=0;
       const probe=()=>{
@@ -229,6 +243,8 @@
         if(this.probeTimer!==null){this.cancel(this.probeTimer);this.probeTimer=null;}
         const watchAge=this.mono()-lastWatchFix;
         if(watchAge<MAX_AGE_MS){scheduleProbe(MAX_AGE_MS-watchAge);return;}
+        // A watch that has given nothing for half a minute is opened again: some hosts answer a watch only once.
+        if(this.watch!==null&&this.mono()-Math.max(watchSince,lastWatchFix)>=WATCH_SILENT_MS)openWatch();
         const id=++this.probeId;
         const finish=callback=>{
           if(!active()||id!==this.probeId)return;
@@ -238,14 +254,15 @@
         };
         this.probeDeadline=this.schedule(()=>{
           if(!active()||id!==this.probeId)return;
-          if(this.mono()-lastWatchFix>=MAX_AGE_MS)this.observe({status:'no-response',speed:null});
-          if(mayPoll())finish(()=>{});
+          ++probeFails;
+          if(this.mono()-lastWatchFix>=MAX_AGE_MS&&this.mono()-lastAnswer>=PROBE_MAX_MS)this.observe({status:'no-response',speed:null});
+          if(sure())finish(()=>{});
           else probeExpired=true; // A pending prompt can still produce a valid first callback.
         },RESPONSE_NOTICE_MS);
         let nativeDone=false;
         const success=p=>{
           if(!active()||nativeDone)return;
-          nativeDone=true;
+          nativeDone=true;probeFails=0;
           if(id===this.probeId){finish(()=>accept(p,false));return;}
           // A timeout retires the request, not a freshly acquired sample from
           // this still-visible visit. Never let an old request revoke permission.
@@ -253,13 +270,17 @@
           if(Number.isFinite(age)&&age>=0&&age<MAX_AGE_MS)accept(p,false);
         };
         try {
-          const precise=this.watch===null||(++probeNumber%2===0);
+          // Take turns: a relaxed request may be answered from a position the phone already has (up to 10 s old), which
+          // is the only kind some hosts give; a precise one asks for a new fix.
+          const precise=(++probeNumber+(this.watch===null?1:0))%2===0;
+          ++this.facts.asks;
           this.geo.getCurrentPosition(success,e=>{
             if(nativeDone)return;
-            nativeDone=true;finish(()=>{
-              if(e?.code===1||this.mono()-lastWatchFix>=MAX_AGE_MS)fail(e);
+            nativeDone=true;++probeFails;if(e?.code!==1)sawError=true;finish(()=>{
+              // A position came back a moment ago: one failed request beside it is not "no location".
+              if(e?.code===1||(this.mono()-lastWatchFix>=MAX_AGE_MS&&this.mono()-lastAnswer>=PROBE_MAX_MS))fail(e);
             });
-          },{...options,enableHighAccuracy:precise,timeout:10000});
+          },{...options,enableHighAccuracy:precise,maximumAge:precise?0:RELAXED_AGE_MS,timeout:10000});
         }catch(e){finish(()=>{if(this.watch===null)fail(e);});}
       };
       const granted=()=>{
@@ -294,18 +315,22 @@
       // Register one stream immediately; a silent getCurrentPosition must not
       // keep a working watch from receiving its first fix. Hosts with only
       // one-shot location still receive one request on the entry gesture.
+      const watchOk=p=>{accept(p,true);if(this.probeTimer===null)scheduleProbe();};
+      const watchFail=e=>{fail(e);scheduleProbe(sawError&&probeNumber?backoff():0);};
+      const openWatch=()=>{
+        try{
+          const old=this.watch;this.watch=null;if(old!==null)this.geo.clearWatch?.(old);
+          ++this.facts.asks;watchSince=this.mono();
+          this.watch=this.geo.watchPosition(watchOk,watchFail,options);
+        }catch(_){ /* the one-shot requests carry on */ }
+      };
       if(typeof this.geo.watchPosition==='function'){
         try{
-          const watch=this.geo.watchPosition(p=>{
-            accept(p,true);
-            if(this.probeTimer===null)scheduleProbe();
-          },e=>{
-            fail(e);
-            scheduleProbe(0);
-          },options);
+          ++this.facts.asks;
+          const watch=this.geo.watchPosition(watchOk,watchFail,options);
           if(!active()){this.geo.clearWatch?.(watch);return;}
           this.watch=watch;
-          if(this.hadGrant)scheduleProbe();
+          if(this.hadGrant||this.worked)scheduleProbe();
         }catch(e){
           if(e?.code===1){fail(e);return;}
           if(this.geo.getCurrentPosition)probe();
@@ -323,10 +348,12 @@
   // Location reaches the glasses through the paired phone, whatever phone that is, so nothing here names an app.
   const NO_SPEED=Object.freeze({
     waiting:['Waiting for location','It comes from your phone'],
-    'no-response':['Still waiting for location','It keeps trying by itself'],
-    timeout:['No location yet','It keeps trying by itself'],
-    disconnected:['No location yet','It keeps trying by itself'],
-    error:['No location yet','It keeps trying by itself'],
+    // The glasses have no GPS of their own: the Meta AI app on the phone hands location over, and only while it runs.
+    'no-response':['No location from your phone','Open Meta AI on your phone'],
+    timeout:['No location from your phone','Open Meta AI on your phone'],
+    disconnected:['No location from your phone','Open Meta AI on your phone'],
+    error:['No location from your phone','Open Meta AI on your phone'],
+    found:['Location found','Waiting for a newer fix'],
     stale:['No new location','Waiting for your phone'],
     unavailable:['Location found','Working out speed'],
     inaccurate:['Location too rough','Waiting for a better fix'],

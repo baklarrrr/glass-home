@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 48; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -428,7 +428,7 @@ function sunLight(when = new Date()) {
 const GPS_WORDS = {
   off: 'App GPS stopped', waiting: 'Finding GPS…', 'no-response': 'No GPS answer yet', live: 'App GPS',
   stale: 'GPS signal old', inaccurate: 'GPS too rough', invalid: 'GPS reading rejected', unavailable: 'No speed from GPS',
-  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', denied: 'Location not allowed', paused: 'GPS paused',
+  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', found: 'Location found', denied: 'Location not allowed', paused: 'GPS paused',
   unsupported: 'No GPS here',
 };
 
@@ -563,8 +563,16 @@ function renderPanel() {
   const source=StudioDriveLocation.display(phoneSpeed(),feed.snapshot()).source;
   const origin={linked:'Speed is coming from the linked source.',location:'App location is providing speed.',estimated:'Speed is estimated from recent positions.'};
   $('panelSpeed').textContent = origin[source] || (!h ? 'No current speed.' : `Speed unavailable. ${h.short ? h.short.split('\n')[0] + '.' : quietWhy()}`);   // one line: the panel has no room for more, and the screen has the rest
+  // Plain facts for a photo of this screen: how often location was asked for and answered, the last error in words,
+  // the permission, and the last fix's time and accuracy. Never a position.
+  const f = feed.details(), fix = f.lastFix, err = f.lastError;
+  const errWords = err ? ({ 1: 'not allowed', 2: 'phone gave no position', 3: 'timed out' }[err.code] || 'unknown') : 'none';
+  const at = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  $('panelFacts').textContent = `Location: asked ${f.asks} · answers ${f.fixes} · last error ${errWords}${err ? ' ' + at(err.at) : ''} · permission ${f.permission === 'unknown' ? 'not reported' : f.permission} · last fix ${
+    fix ? (fix.at == null ? 'time unknown' : at(fix.at)) + ', ' + (fix.accuracy == null ? 'accuracy unknown' : Math.round(fix.accuracy) + ' m') : 'none'}`;
   $('panelCode').hidden = !S.code || S.phone!=='pairing' || Boolean(S.offer);
   $('panelQuiet').hidden = Boolean(S.offer);
+  $('panelFacts').hidden = Boolean(S.addr) || Boolean(S.offer);   // with a phone app linked, its own state and code need the room
   $('panelCodeNum').textContent = !$('panelCode').hidden ? `${S.code.slice(0, 3)} ${S.code.slice(3)}` : '';
 }
 
@@ -657,7 +665,7 @@ function visible() {
   const on = !document.hidden;
   const preference=local('bd.gps');
   if(!on&&feed.visible)motion?.clearMotion?.();
-  feed.setVisible(on,{autoStart:preference!=='off',resumeOnly:preference==='asked'||preference==='denied'});
+  feed.setVisible(on,{autoStart:preference!=='off',resumeOnly:preference==='asked'||preference==='denied',worked:preference==='on'});
   if (on) { S.openedAt = performance.now(); openLink(); } else closeLink();
   render();
 }

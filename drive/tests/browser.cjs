@@ -110,7 +110,7 @@ async function layoutOk(page, what) {
   check(!(await page.isVisible('#controls')), 'controls hide themselves after 8 s');
   // The 16.1 m/s reading is now old: no number from the past, a dash, and the amber line says why.
   let lost = await warn(page);
-  check((await page.textContent('#speed'))==='—' && ['No new location','Still waiting for location','No location yet'].includes(await page.textContent('#status')) && Boolean(await page.textContent('#speedNext')) &&
+  check((await page.textContent('#speed'))==='—' && ['No new location','No location from your phone'].includes(await page.textContent('#status')) && Boolean(await page.textContent('#speedNext')) &&
     !await page.isVisible('#speedWarn') && ['stale','no-response','timeout'].includes(await page.evaluate(()=>feed.snapshot().status)),
     'expired speed disappears while the current provider condition stays in Details');
   const lostDash = await dashAt(page);
