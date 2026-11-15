@@ -1,5 +1,5 @@
 'use strict';
-// Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Network first, so an update shows on
+// Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Each build is served from its own install, so it opens at once; an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
 const CACHE = 'bakar-drive-v52';
 const ENTRY = 'runtime/drive-v52-dac530c9bdc23141.js';
@@ -26,14 +26,14 @@ self.addEventListener('fetch', (event) => {
   // The Battery app's one-line logger lives in another app on this origin. It is never part of the install (a missing
   // file must not stop this app installing); once it has been fetched it is kept, so readings carry on offline.
   if (event.request.method === 'GET' && url.origin === self.location.origin && url.pathname === '/battery-glass/battery-log.js') {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
-      try {
-        const response = await Promise.race([fetch(event.request), new Promise((_, reject) => setTimeout(() => reject(new Error('slow network')), 3000))]);
-        if (response.ok) await cache.put(url.origin + url.pathname, response.clone()).catch(() => {});
-        return response;
-      } catch (e) { return (await cache.match(url.origin + url.pathname)) || Response.error(); }
-    })());
+    // Kept copy first, so a slow network never holds the page; the copy is renewed behind it for the next launch.
+    const renew = (async () => {
+      const response = await Promise.race([fetch(event.request), new Promise((_, reject) => setTimeout(() => reject(new Error('slow network')), 3000))]);
+      if (response.ok) await (await caches.open(CACHE)).put(url.origin + url.pathname, response.clone()).catch(() => {});
+      return response;
+    })();
+    event.waitUntil(renew.catch(() => {}));
+    event.respondWith((async () => (await (await caches.open(CACHE)).match(url.origin + url.pathname)) || renew.catch(() => Response.error()))());
     return;
   }
   const known = new Set(SHELL.concat(LATER).map((p) => new URL(p, self.registration.scope).pathname));
@@ -43,7 +43,11 @@ self.addEventListener('fetch', (event) => {
     const entryURL=new URL(ENTRY,self.registration.scope);
     const indexURL=new URL('index.html',self.registration.scope);
     const rootURL=new URL('./',self.registration.scope);
-    if(url.pathname===entryURL.pathname||url.pathname===indexURL.pathname||url.pathname===rootURL.pathname){
+    // Everything installed with this build is served from the install: the page opens at once on a slow or dead network,
+    // and the page, its script, its styles and the camera list are always from the same build. The link library (LATER)
+    // still asks the network first.
+    const fixed=new Set(SHELL.map(p=>new URL(p,self.registration.scope).pathname));
+    if(fixed.has(url.pathname)){
       const installed=await cache.match(url.origin+url.pathname,{ignoreSearch:true});
       if(installed)return installed;
     }
