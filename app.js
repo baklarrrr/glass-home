@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 51; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
@@ -231,13 +231,14 @@ function remember(payload) {
 // The link library is a large file. On the first launch after an update the previous offline copy of this app can
 // give up on it before it arrives, so it is fetched again for about half a minute instead of waiting silently.
 function loadMqtt() {
-  if (S.mqttLoading || S.mqttTries >= 10) return;
+  if (S.mqttLoading || typeof mqtt !== 'undefined') return;
   S.mqttLoading = true;
   S.mqttTries += 1;
   const tag = document.createElement('script');
   tag.src = `vendor/mqtt.min.js?try=${S.mqttTries}`;
   tag.onload = () => { S.mqttLoading = false; if (!S.paused) openLink(); };
-  tag.onerror = () => { S.mqttLoading = false; tag.remove(); setTimeout(loadMqtt, 3000); };
+  // It never gives up while the page is on screen: 3 s between the first tries, then longer, up to 30 s.
+  tag.onerror = () => { S.mqttLoading = false; tag.remove(); clearTimeout(S.mqttTimer); S.mqttTimer = setTimeout(() => { if (!S.paused) loadMqtt(); }, Math.min(30000, 3000 * 1.5 ** Math.max(0, S.mqttTries - 3))); };
   document.head.append(tag);
 }
 
@@ -291,7 +292,8 @@ function addBroker({ url, ...extra }) {
     linkChanged();
     if(S.tab==='drive')scheduleDriveReport();
     // Back after a drop: a hello the PC hasn't answered is asked again (the PC ignores a repeat).
-    if (!S.paused && S.askedAt && S.heardAt < S.askedAt && now - S.askedAt > 3000) hello();
+    // And after every broker was down, the PC is always asked again: what is listed is from before the drop and must not read as live.
+    if (!S.paused && (S.dropped || (S.askedAt && S.heardAt < S.askedAt && now - S.askedAt > 3000))) { S.dropped = false; hello(); }
   });
   client.on('message', (t, payload) => {
     const text = new TextDecoder().decode(payload);
@@ -299,7 +301,7 @@ function addBroker({ url, ...extra }) {
     else handle(text);
   });
   client.on('offline', linkChanged);
-  client.on('close', () => { linkChanged(); scheduleRetry(client); });
+  client.on('close', () => { if (S.links.includes(client) && !linkUp()) S.dropped = true; linkChanged(); scheduleRetry(client); });
   client.on('error', () => { /* a 'close' follows, and the retry is scheduled there */ });
   S.links.push(client);
   return client;
@@ -310,6 +312,7 @@ function closeLink() {
   S.links = [];
   S.outbox = [];
   S.sentLately = [];   // a reopened link never resends an old hello
+  S.dropped = false;
   for (const l of old) {
     clearTimeout(l.retryTimer);
     l.retryTimer = 0;
@@ -339,20 +342,27 @@ async function handle(text) {
   // The retained list can be minutes old. A reply that names one of this visit's hellos is live, and so is anything
   // the PC wrote after that reply (by the PC's own clock, so the two clocks needn't agree).
   const live = Boolean(m.re && S.hellos.includes(m.re)) || (S.pcAt > 0 && (m.at || 0) >= S.pcAt);
-  if (live) { S.heardAt = Date.now(); S.quiet = false; S.pcAt = Math.max(S.pcAt, m.at || 0); }
+  if (live) { S.heardAt = Date.now(); S.quiet = false; S.helloFails = 0; clearTimeout(S.reask); S.pcAt = Math.max(S.pcAt, m.at || 0); }
   if (m.t === 'snap') {
-    if (!S.snap || m.at >= S.snap.at) {
-      S.snap = m;
-      showPush(m.say);
-      if (S.pairing && live) closePairing();
-      renderWork();
-      if (S.view === 'detail') renderDetail();
+    if (Number.isFinite(m.at) && (!S.snap || m.at >= S.snap.at)) {
+      const before = S.snap;
+      try {
+        S.snap = m;
+        showPush(m.say);
+        if (S.pairing && live) closePairing();
+        renderWork();
+        if (S.view === 'detail') renderDetail();
+      } catch (e) {
+        // A list this build cannot draw: the one from before stays on screen, and the next good one replaces it.
+        S.snap = before;
+        try { renderWork(); if (S.view === 'detail') renderDetail(); } catch (e2) { /* nothing more to draw */ }
+      }
     }
   } else if (m.t === 'det') {
     const old = S.details[m.k];
     if (!old || m.at >= old.at) {
       S.details[m.k] = m;
-      if (S.view === 'detail' && S.open === m.k) renderDetail();
+      try { if (S.view === 'detail' && S.open === m.k) renderDetail(); } catch (e) { S.details[m.k] = old; }
     }
   } else if (m.t === 'ack') {
     const done = S.pending[m.re];
@@ -384,7 +394,14 @@ function hello() {
   send('hello', { w: S.view === 'detail' ? S.open : '', d: diagnostics(), gps });
   clearTimeout(S.answer);
   S.answer = setTimeout(() => {
-    if (S.heardAt < S.askedAt) { S.quiet = true; renderState(); }
+    if (S.heardAt >= S.askedAt) { S.helloFails = 0; return; }
+    S.quiet = true; renderState();
+    // The PC did not answer. Ask again by itself, a little later each time (5 s, 10 s, 20 s, 40 s, then every minute),
+    // instead of waiting for the next regular hello two and a half minutes on. The PC ignores a repeat.
+    S.helloFails = (S.helloFails || 0) + 1;
+    clearTimeout(S.reask);
+    S.reask = setTimeout(() => { if (!S.paused && S.quiet && document.visibilityState === 'visible') hello(); },
+      Math.min(60000, 5000 * 2 ** (S.helloFails - 1)));
   }, ANSWER_MS);
 }
 
@@ -410,6 +427,7 @@ function sleep(reason) {
   clearInterval(S.hello);
   clearTimeout(S.idle);
   clearTimeout(S.answer);
+  clearTimeout(S.reask); S.helloFails = 0;
   renderState();
 }
 
@@ -584,23 +602,51 @@ function el(tag, cls, text) {
 
 // ---- drawing ---------------------------------------------------------------------------------------
 
+// How old the list on screen is, for every state that is not live: "6:40 PM" while it is under a minute and a half old,
+// then its age, so an old list is never read as now.
+function snapAge(now = Date.now()) {
+  const old = Math.max(0, now - S.snap.at);
+  if (old < 90000) return clock(S.snap.at);
+  const m = Math.round(old / 60000);
+  return m < 60 ? `${m} min old` : m < 2880 ? `${Math.round(m / 60)} h old` : `${Math.round(m / 1440)} days old`;
+}
+// What to say while there is no list yet: one calm line that names what is being waited for.
+function waitingLine(what) {
+  if (S.paused) return 'Press any key to ask your PC.';
+  if (!linkUp()) return navigator.onLine === false ? 'No signal. It connects by itself when signal returns.' : 'Connecting…';
+  if (S.quiet) return 'Your PC is not answering. Still trying.';
+  return what;
+}
 function renderState() {
   const dot = $('dot');
   let text = '';
   let tone = '';
+  let aged = false;
+  const offline = navigator.onLine === false;
   if(S.tab==='drive'&&S.view==='list')text='';
   else if (S.flash) text = S.flash;
   else if (!S.kUp) text = '';
   else if (S.pairing) { text = 'Not paired'; tone = 'warn'; }
-  else if (S.paused) text = S.snap ? `Paused · ${clock(S.snap.at)}` : 'Paused';
-  else if (!linkUp() && !S.snap) text = 'Connecting…';
+  else if (S.paused) { text = S.snap ? `Paused · ${snapAge()}` : 'Paused'; aged = Boolean(S.snap); }
+  // The link itself is down: it reconnects by itself (scheduleRetry), and what is on screen is said to be old.
+  else if (!linkUp() && S.snap) { text = `${offline ? 'No signal' : 'Reconnecting'} · ${snapAge()}`; tone = 'warn'; aged = true; }
+  else if (!linkUp()) { text = offline ? 'No signal' : 'Connecting…'; tone = offline ? 'warn' : ''; }
   else if (S.quiet && !S.snap) { text = 'PC not answering'; tone = 'warn'; }
   else if (!S.snap) text = 'Asking your PC…';
-  else if (S.quiet) { text = `PC quiet · ${clock(S.snap.at)}`; tone = 'warn'; }
+  else if (S.quiet) { text = `PC quiet · ${snapAge()}`; tone = 'warn'; aged = true; }
   else if (S.heardAt < S.askedAt) text = `Updating · ${clock(S.snap.at)}`;
   else { text = `Live · ${clock(S.snap.at)}`; tone = 'live'; }
   $('stateText').textContent = text;
   dot.className = 'dot' + (tone ? ' ' + tone : '');
+  document.body.classList.toggle('stale-list', aged && tone === 'warn');
+  // An age moves on by itself, and the waiting lines on Now and Chats follow the link.
+  clearTimeout(S.stateTimer);
+  if (aged && !document.hidden) S.stateTimer = setTimeout(renderState, 30000);
+  if (S.kUp && !S.snap) {
+    const now = waitingLine('Asking your PC…'), chats = waitingLine('Asking your PC for Claude and Codex…');
+    if ($('nowLine').textContent !== now) $('nowLine').textContent = now;
+    if ($('summary').textContent !== chats) $('summary').textContent = chats;
+  }
 }
 
 function flash(text) {
@@ -625,7 +671,7 @@ function renderWork() {
     return;
   }
   if (!s) {
-    sum.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC for Claude and Codex…';
+    sum.textContent = waitingLine('Asking your PC for Claude and Codex…');
     return;
   }
   const n = s.n || {};
@@ -835,7 +881,7 @@ function renderNow() {
   list.textContent = '';
   const line = $('nowLine');
   if (!S.kUp) { line.textContent = 'Open Bakar Home from its existing link to see your studio.'; return; }
-  if (!S.snap) { line.textContent = S.paused ? 'Press any key to ask your PC.' : 'Asking your PC…'; return; }
+  if (!S.snap) { line.hidden = false; line.textContent = waitingLine('Asking your PC…'); return; }
   const cards = nowCards();
   const calm = !cards.length || cards[0].rank >= 2;
   line.textContent = calm ? (cards.some((c) => c.unknown) ? 'Some activity is unknown.' : 'Nothing needs you right now.') : '';
@@ -2088,7 +2134,7 @@ function registerServiceWorker() {
     let lastCheck=0;
     const check=()=>{
       if(document.hidden||Date.now()-lastCheck<60000)return;
-      lastCheck=Date.now();reg.update().catch(()=>{});
+      lastCheck=Date.now();try{reg?.update?.()?.catch?.(()=>{});}catch(_){}
     };
     window.addEventListener('pageshow',check);
     document.addEventListener('visibilitychange',check);

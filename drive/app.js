@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 51; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -302,13 +302,14 @@ function checkLink(view) {
 }
 
 function loadMqtt() {
-  if (S.mqttLoading || S.mqttTries >= 10) return;
+  if (S.mqttLoading || typeof mqtt !== 'undefined') return;
   S.mqttLoading = true;
   S.mqttTries += 1;
   const tag = document.createElement('script');
   tag.src = `../vendor/mqtt.min.js?try=${S.mqttTries}`;
   tag.onload = () => { S.mqttLoading = false; if (!document.hidden) openLink(); };
-  tag.onerror = () => { S.mqttLoading = false; tag.remove(); setTimeout(loadMqtt, 3000); };
+  // It never gives up while the page is on screen: 3 s between the first tries, then longer, up to 30 s.
+  tag.onerror = () => { S.mqttLoading = false; tag.remove(); clearTimeout(S.mqttTimer); S.mqttTimer = setTimeout(() => { if (!document.hidden) loadMqtt(); }, Math.min(30000, 3000 * 1.5 ** Math.max(0, S.mqttTries - 3))); };
   document.head.append(tag);
 }
 
@@ -729,7 +730,7 @@ function tickClock() {
   if(S.offer)openPanel(); // Only a newly opened address offering a different phone needs a choice.
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
     let lastCheck=0;
-    const check=()=>{if(!document.hidden&&Date.now()-lastCheck>=60000){lastCheck=Date.now();reg.update().catch(()=>{});}};
+    const check=()=>{if(!document.hidden&&Date.now()-lastCheck>=60000){lastCheck=Date.now();try{reg?.update?.()?.catch?.(()=>{});}catch(_){}}};
     window.addEventListener('pageshow',check);document.addEventListener('visibilitychange',check);
     if(navigator.serviceWorker.controller)check();
   }).catch(()=>{});

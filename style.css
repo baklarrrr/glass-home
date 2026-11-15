@@ -381,3 +381,6 @@ body.calm .playhead, body.calm .pvcontrols { opacity: .55; }
 .driveg .drivegdot { fill: #ffd27a; stroke: none; }
 .driverun { display: block; text-align: center; }
 @keyframes routedraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+/* The link is down or the PC is quiet: what is listed is the last copy, so it is dimmed under the amber state line. */
+body.stale-list .rows, body.stale-list #detail .dhead, body.stale-list #detail .rwrap { opacity: 0.62; }

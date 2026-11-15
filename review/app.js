@@ -115,15 +115,17 @@ function linkChanged() {
 // of this app can give up on it before it arrives, so it is fetched again for about half a minute.
 let mqttTries = 0;
 let mqttLoading = false;
+let mqttTimer = 0;
 function loadMqtt() {
   if (window.reviewHostVisible === false || document.hidden) return;
-  if (typeof mqtt !== 'undefined' || mqttLoading || mqttTries >= 10) return;
+  if (typeof mqtt !== 'undefined' || mqttLoading) return;
   mqttTries++;
   mqttLoading = true;
   const s = document.createElement('script');
   s.src = '../vendor/mqtt.min.js';
   s.onload = () => { mqttLoading = false; if ((document.visibilityState === 'visible' && window.reviewHostVisible !== false)) openLink(); };
-  s.onerror = () => { mqttLoading = false; setTimeout(loadMqtt, 3000); };
+  // It never gives up while Review is on screen: 3 s between the first tries, then longer, up to 30 s.
+  s.onerror = () => { mqttLoading = false; s.remove(); clearTimeout(mqttTimer); mqttTimer = setTimeout(loadMqtt, Math.min(30000, 3000 * 1.5 ** Math.max(0, mqttTries - 3))); };
   document.head.appendChild(s);
 }
 
@@ -166,6 +168,7 @@ function scheduleRetry(client) {
 }
 
 let clientSeq = 0;
+let droppedAll = false;   // every broker went down during this visit
 function addBroker({ url, ...extra }) {
   const client = mqtt.connect(url, {
     clientId: `sgg-${linkId}-${clientSeq++}`, clean: true, keepalive: 45, protocolVersion: 4,
@@ -184,11 +187,12 @@ function addBroker({ url, ...extra }) {
     for (const o of sentLately) client.publish(`bkr/${topic}/c`, o.body, { qos: 1 });
     flushOutbox();
     // Back after a drop: a hello lost on the way (or too old to send) is asked again.
-    if (helloAt && answeredRe < helloAt && Date.now() - helloAt > 3000) hello();
+    // And after every broker was down, the PC is always asked again: what is shown is from before the drop.
+    if (droppedAll || (helloAt && answeredRe < helloAt && Date.now() - helloAt > 3000)) { droppedAll = false; hello(); }
   });
   client.on('message', (t, payload) => handle(new TextDecoder().decode(payload)));
   client.on('offline', linkChanged);
-  client.on('close', () => { linkChanged(); scheduleRetry(client); });
+  client.on('close', () => { if (links.includes(client) && !linkUp()) droppedAll = true; linkChanged(); scheduleRetry(client); });
   client.on('error', () => { /* the close that follows schedules the next try */ });
   links.push(client);
   return client;
@@ -251,16 +255,19 @@ async function handle(text) {
   if (recent.length > 8) recent.shift();
   let m;
   try { m = await openMessage(text); } catch (e) { return; }
-  if (m.t === 'review') { handleReviewReply(m); return; }
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'review') { try { handleReviewReply(m); } catch (e) { /* a reply this build cannot read changes nothing */ } return; }
   acceptSummary(m);
 }
 
 function acceptSummary(m) {
   if (m.t !== 'studio') return;
   if (data && Number(m.at) < Number(data.at)) return; // an older copy one broker still kept
+  const before = data;
   data = m;
-  if (firstHelloAt && Number(m.re) >= firstHelloAt) answeredRe = Math.max(answeredRe, Number(m.re));
-  render();
+  if (firstHelloAt && Number(m.re) >= firstHelloAt) { answeredRe = Math.max(answeredRe, Number(m.re)); helloMisses = 0; }
+  // A summary this build cannot draw never blanks the screen: the one from before stays, and the next good one replaces it.
+  try { render(); } catch (e) { data = before; try { render(); } catch (e2) { /* nothing more to draw */ } }
 }
 
 function hello() {
@@ -277,7 +284,7 @@ function onVisibility() {
   helloTimer = tickTimer = 0;
   if ((document.visibilityState === 'visible' && window.reviewHostVisible !== false)) {
     // A new visit: nothing heard before it counts as the PC answering now.
-    helloAt = prevHelloAt = firstHelloAt = answeredRe = 0;
+    helloAt = prevHelloAt = firstHelloAt = answeredRe = 0; helloMisses = 0;
     lastInputAt = Date.now();
     openLink();
     hello();
@@ -293,7 +300,11 @@ function onVisibility() {
   }
 }
 
+let helloMisses = 0;
 function tick() {
+  // The PC did not answer the last hello: ask again by itself, a little later each time (5 s, 10 s, 20 s, 40 s, then every
+  // minute) instead of waiting for the next regular hello two minutes on. The PC ignores a repeat.
+  if (helloAt && answeredRe < helloAt && linkUp() && Date.now() - helloAt >= ANSWER_WAIT + Math.min(60000, 5000 * 2 ** helloMisses)) { helloMisses++; hello(); }
   if (Math.floor(Date.now() / 60000) !== drawnMinute) render(); // running times move once a minute
   else renderState();
 }
@@ -380,7 +391,7 @@ function runningFor(since, asOf) {
 function stateInfo() {
   const now = Date.now();
   if (!window.STUDIO_LOCAL && typeof mqtt === 'undefined' && mqttTries >= 10 && !window.__testLink) {
-    return { text: 'No link yet: press Back, then Refresh', warn: true, head: 'No link yet', sub: 'Press Back, then Refresh' };
+    return { text: 'No link yet · still trying', warn: true, head: 'No link yet', sub: 'Still trying by itself' };
   }
   if (linkDownSince && now - linkDownSince > 5000) return { text: 'Reconnecting…', warn: true, head: 'Reconnecting…' };
   const waiting = helloAt && now - helloAt <= ANSWER_WAIT;

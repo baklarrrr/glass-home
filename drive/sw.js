@@ -1,8 +1,8 @@
 'use strict';
 // Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Network first, so an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
-const CACHE = 'bakar-drive-v50';
-const ENTRY = 'runtime/drive-v50-f4be1f3575085989.js';
+const CACHE = 'bakar-drive-v51';
+const ENTRY = 'runtime/drive-v51-2691a67764e53232.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css', 'tape.css', 'cameras.json', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
 const LATER = ['../vendor/mqtt.min.js'];   // kept once it has been fetched, only when the phone link is set up
 
@@ -23,6 +23,19 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  // The Battery app's one-line logger lives in another app on this origin. It is never part of the install (a missing
+  // file must not stop this app installing); once it has been fetched it is kept, so readings carry on offline.
+  if (event.request.method === 'GET' && url.origin === self.location.origin && url.pathname === '/battery-glass/battery-log.js') {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const response = await Promise.race([fetch(event.request), new Promise((_, reject) => setTimeout(() => reject(new Error('slow network')), 3000))]);
+        if (response.ok) await cache.put(url.origin + url.pathname, response.clone()).catch(() => {});
+        return response;
+      } catch (e) { return (await cache.match(url.origin + url.pathname)) || Response.error(); }
+    })());
+    return;
+  }
   const known = new Set(SHELL.concat(LATER).map((p) => new URL(p, self.registration.scope).pathname));
   if (!known.has(url.pathname)) return;
   event.respondWith((async () => {

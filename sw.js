@@ -2,8 +2,8 @@
 
 // Keeps the app shell on the glasses so it opens quickly on a slow link. Network first, so an update shows on the
 // next launch. Only this app's own files are handled; the link to the PC (the MQTT brokers) never passes through here.
-const CACHE = 'glass-home-v50';
-const ENTRY = 'runtime/home-v50-c73678ee675ad1c2.js';
+const CACHE = 'glass-home-v51';
+const ENTRY = 'runtime/home-v51-daace790f623454c.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css','readable.css', 'vendor/mqtt.min.js', 'apps.json', 'icon.svg', 'icon-mono.svg','home-shell.css','drive/tape.css','drive/cameras.json','review/index.html','review/app.js','review/style.css','review/readable.css','review/review.js','review/navigation.js','review/embedded.js','review/embedded.css','review/icon.svg','review/icon-mono.svg'];
 const PRECACHE = SHELL.filter(path=>!path.startsWith('review/'));
 
@@ -29,6 +29,19 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   const scope = new URL(self.registration.scope);
+  // The Battery app's one-line logger lives in another app on this origin. It is never part of the install (a missing
+  // file must not stop this app installing); once it has been fetched it is kept, so readings carry on offline.
+  if (event.request.method === 'GET' && url.origin === self.location.origin && url.pathname === '/battery-glass/battery-log.js') {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const response = await Promise.race([fetch(event.request), new Promise((_, reject) => setTimeout(() => reject(new Error('slow network')), 3000))]);
+        if (response.ok) await cache.put(url.origin + url.pathname, response.clone()).catch(() => {});
+        return response;
+      } catch (e) { return (await cache.match(url.origin + url.pathname)) || Response.error(); }
+    })());
+    return;
+  }
   if (event.request.method !== 'GET' || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
   const shellPaths = new Set(SHELL.map(p=>new URL(p,self.registration.scope).pathname));
   if (!shellPaths.has(url.pathname)) return; // Never cache task/API/private-image responses.
