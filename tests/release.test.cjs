@@ -28,3 +28,17 @@ test('refuse a worker-only or JS-only release under an existing number; verify i
   assert.notEqual(verify('--check').status,0);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+// ---- build 51: the Battery app's logger is an optional extra, never part of what the app needs to open ----
+test('battery logger: one async line after the app entry on both apps; never precached, kept once fetched',()=>{
+  const fs=require('node:fs'),path=require('node:path'),at=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
+  for(const [page,name,worker] of [['index.html','Bakar Home','sw.js'],['drive/index.html','Bakar Drive','drive/sw.js']]){
+    const html=at(page),line=`<script async src="/battery-glass/battery-log.js" data-app="${name}"></script>`;
+    assert.equal(html.split(line).length,2,page+': the line is there once');
+    assert.ok(html.indexOf(line)>html.indexOf('<!-- end-app-entry -->'),page+': after the app, which never waits for it');
+    const sw=at(worker),shell=sw.match(/const SHELL = \[[^\]]*\]/)[0];
+    assert.ok(!/battery/.test(shell),worker+': not in the install list, so a missing logger cannot stop the app installing');
+    assert.match(sw,/url\.pathname === '\/battery-glass\/battery-log\.js'/,worker+': fetched through the worker and kept for offline');
+    assert.match(sw,/\|\| Response\.error\(\)/);
+  }
+});

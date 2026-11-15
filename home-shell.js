@@ -70,6 +70,8 @@ window.HomeShell=(()=>{
     for(const button of document.querySelectorAll('[data-section]')){button.setAttribute('aria-current',button.dataset.section===group?'page':'false');button.disabled=S.view!=='list';button.title=button.disabled?'Use Back to return before changing sections.':'';}
     for(const button of document.querySelectorAll('.tab')){button.hidden=groups[button.dataset.tab]!==group;button.disabled=S.view!=='list';}
     document.querySelector('.tabs').hidden=group==='review';
+    // Inside a chat or a message the menus cannot be used (Back comes first), so they give their two rows to the words.
+    document.body.classList.toggle('deep',S.view!=='list');
   }
   function onPane(id,before){
     paint();document.body.classList.toggle('drive-view',id==='drive');
