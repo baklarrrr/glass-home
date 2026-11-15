@@ -32,3 +32,40 @@
   #cText, #cQuote, #dQText, #dResult { font-size:24px; }
   #cNote { max-height:64px; font-size:20px; }
 }
+
+/* Round 4: nothing small, nothing cut, nothing that moves the page. */
+.nowline { font-size:20px; line-height:1.35; color:var(--soft); }
+.row.hero .kicker { font-size:17px; }
+.row.hero .why { font-size:20px; }
+.subline { font-size:20px; }
+#pRetry { font-size:22px; min-height:48px; padding:8px 22px; }
+/* The top is a grid, so nothing in it can wrap and push the page down: the name with the batteries on the first row, the
+   menu with the link state on the second (the state takes all the room the menu leaves and is never cut by a battery). */
+.top { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; grid-template-areas:"id id gb bb" "menu state state state" "tabs tabs tabs tabs";
+  align-items:center; column-gap:0; row-gap:6px; }
+.app-identity { grid-area:id; min-inline-size:0; }
+.sections { grid-area:menu; flex:none; }
+.sections button { padding:8px 12px; }
+.tabs { grid-area:tabs; }
+.side { display:contents; }
+#gbat { grid-area:gb; } #bbat { grid-area:bb; }
+.gbat { font-size:17px; margin-inline-start:12px; }
+.state { grid-area:state; justify-self:end; min-inline-size:0; max-inline-size:100%; padding-inline-start:10px; }
+#stateText { font-size:19px; }
+.dot[hidden] { display:none; }
+/* A quiet card's second line runs under its tag to the edge instead of stopping where the tag starts. */
+.rows.now .row:not(.hero) .why { grid-column:2 / -1; }
+.rows.now .row .age:empty { display:none; }
+/* Chats: the counts fit beside New task. */
+.summary { font-size:18px; }
+/* Inside a chat or a message: the menus are off (Back first), and their rows go to the words. */
+body.deep .sections, body.deep .tabs { display:none; }
+body.deep .top { min-height:0; }
+#dActions .btn { flex:1 1 auto; white-space:nowrap; font-size:21px; padding:10px 12px; text-align:center; }
+/* A chat with a question: the question gives way (it scrolls inside) so the reply buttons are never pushed off the screen. */
+#detail { overflow:hidden; }
+#dQuestion { max-height:none; flex:0 1 auto; min-height:120px; }
+#detail .rwrap { flex:1 1 64px; min-block-size:64px; }
+#dOptions .btn.help { font-size:20px; min-height:46px; padding:8px 14px; }
+body.deep .top { grid-template-areas:"id id state state"; grid-template-columns:auto minmax(0,1fr) auto auto; column-gap:14px; }
+body.deep .gbat:not(.low) { display:none; }

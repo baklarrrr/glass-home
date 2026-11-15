@@ -1458,6 +1458,8 @@ window.HomeShell=(()=>{
     for(const button of document.querySelectorAll('[data-section]')){button.setAttribute('aria-current',button.dataset.section===group?'page':'false');button.disabled=S.view!=='list';button.title=button.disabled?'Use Back to return before changing sections.':'';}
     for(const button of document.querySelectorAll('.tab')){button.hidden=groups[button.dataset.tab]!==group;button.disabled=S.view!=='list';}
     document.querySelector('.tabs').hidden=group==='review';
+    // Inside a chat or a message the menus cannot be used (Back comes first), so they give their two rows to the words.
+    document.body.classList.toggle('deep',S.view!=='list');
   }
   function onPane(id,before){
     paint();document.body.classList.toggle('drive-view',id==='drive');
@@ -2275,6 +2277,7 @@ function renderState() {
   else { text = `Live · ${clock(S.snap.at)}`; tone = 'live'; }
   $('stateText').textContent = text;
   dot.className = 'dot' + (tone ? ' ' + tone : '');
+  dot.hidden = !text;   // no words, no lone dot
   document.body.classList.toggle('stale-list', aged && tone === 'warn');
   // An age moves on by itself, and the waiting lines on Now and Chats follow the link.
   clearTimeout(S.stateTimer);
@@ -2997,7 +3000,7 @@ function renderDetail() {
   $('dTitle').textContent = d.ti;
   const meta = $('dMeta');
   meta.textContent = '';
-  meta.append(`${d.own ? 'Glasses task · ' : ''}${PROVIDER[d.p]} · ${d.pr || ''} · `);
+  meta.append(`${[d.own ? 'Glasses task' : '', PROVIDER[d.p], d.pr].filter(Boolean).join(' · ')} · `);   // an empty part leaves no doubled dot
   meta.append(el('span', d.st, STATUS[d.st]));
   if (d.step) meta.append(` · Step ${d.step.n} of ${d.step.of}`);
   const nowParts = [];
