@@ -292,3 +292,97 @@ test('a rough fix without a speed is rough, not a speed being worked out',()=>{
  assert.equal(reading({timestamp:now,coords:{speed:null,accuracy:50}},now).status,'unavailable');
  assert.equal(reading({timestamp:now,coords:{accuracy:3}},now).status,'unavailable');
 });
+
+// ---- keeps asking until the phone answers (build 49) ----
+// The glasses have no GPS: the phone's Meta AI app hands location over, as one-shot answers. These play that provider.
+function asking(permission='granted'){
+  const h=harness(permission),probes=[];
+  h.feed.geo.getCurrentPosition=(ok,fail,options)=>probes.push({ok,fail,options,at:h.wall});
+  return {h,probes};
+}
+const place=(speed,at,accuracy=8)=>({timestamp:at,coords:{speed,accuracy,latitude:10,longitude:10,heading:null}});
+test('keeps asking: a provider that never answers is asked again and again, slower each time, and the watch is reopened',async()=>{
+  const {h,probes}=asking('granted');
+  h.feed.setVisible(true,{autoStart:true});await Promise.resolve();
+  for(let i=0;i<120;i++)h.advance(1000);   // two minutes of silence
+  assert.ok(probes.length>=6&&probes.length<=12,'asked several times, not hammered: '+probes.length);
+  const gaps=probes.slice(1).map((p,i)=>p.at-probes[i].at);
+  assert.ok(gaps.every(g=>g>=RESPONSE_NOTICE_MS),'each unanswered request is given its time before the next');
+  assert.ok(gaps.at(-1)<=RESPONSE_NOTICE_MS+15000,'never slower than 15 s after a request gives up');
+  assert.ok(h.watches.length>=3,'a watch silent for 30 s is opened again: '+h.watches.length);
+  assert.equal(h.feed.watch,h.watches.length-1);assert.equal(h.clears.length,h.watches.length-1,'the old watch is released each time');
+  assert.equal(h.feed.snapshot().status,'no-response');
+  assert.ok(probes.some(p=>p.options.enableHighAccuracy===false&&p.options.maximumAge===10000),'relaxed requests may use a recent position');
+  assert.ok(probes.some(p=>p.options.enableHighAccuracy===true&&p.options.maximumAge===0),'precise requests ask for a new one');
+  probes.at(-1).ok(place(3,h.wall));
+  assert.equal(h.feed.snapshot().speed,10.8,'and the first answer shows at once');
+});
+test('keeps asking: a timeout with the permission not reported, then an answer to a relaxed request',()=>{
+  const {h,probes}=asking();h.feed.permissions=null;
+  h.feed.setVisible(true);h.feed.enable();
+  assert.equal(probes.length,0,'nothing beside the watch while a permission question may be open');
+  h.advance(RESPONSE_NOTICE_MS*3);assert.equal(probes.length,0,'silence alone is not proof');
+  h.watches[0].fail({code:3});h.advance(0);
+  assert.equal(h.feed.snapshot().status,'timeout');
+  assert.equal(probes.length,1,'the returned error is proof: ask again at once');
+  assert.deepEqual(probes[0].options,{enableHighAccuracy:false,maximumAge:10000,timeout:10000});
+  probes[0].ok(place(5,h.wall-2000));
+  assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.snapshot().speed,18);
+  assert.equal(h.feed.hadGrant,true);
+  assert.equal(h.watches.length,2,'the watch had been silent for over 30 s, so it was opened again');
+  const d=h.feed.details();assert.equal(d.asks,3);assert.equal(d.errors,1);assert.equal(d.fixes,1);assert.equal(d.lastError.code,3);
+});
+test('keeps asking: "no position" again and again, then it recovers',()=>{
+  const {h,probes}=asking();h.feed.permissions=null;
+  h.feed.setVisible(true);h.feed.enable();
+  h.watches[0].fail({code:2});h.advance(0);
+  const waits=[];
+  for(let i=0;i<5;i++){
+    assert.equal(probes.length,i+1);probes[i].fail({code:2});
+    assert.equal(h.feed.snapshot().status,'disconnected');
+    let waited=0;while(probes.length===i+1&&waited<20000){h.advance(500);waited+=500;}
+    waits.push(waited);
+  }
+  assert.deepEqual(waits,[4000,6000,9000,13500,15000],'4 s, then slower, never slower than 15 s');
+  assert.deepEqual(probes.slice(0,4).map(p=>p.options.enableHighAccuracy),[false,true,false,true],'relaxed and precise take turns');
+  probes[5].ok(place(0,h.wall));
+  assert.equal(h.feed.snapshot().status,'live');assert.equal(h.feed.snapshot().speed,0);
+  h.advance(4000);assert.equal(probes.length,7,'and the next request is quick again');
+});
+test('keeps asking: a provider that only ever gives positions 8 s old says location was found, never a speed and never "no location"',()=>{
+  const {h,probes}=asking();h.feed.permissions=null;
+  h.feed.setVisible(true);h.feed.enable();
+  h.watches[0].fail({code:3});h.advance(0);
+  for(let i=0;i<6;i++){
+    probes[i].ok(place(20,h.wall-8000));
+    const s=h.feed.snapshot();
+    assert.equal(s.status,'found');assert.equal(s.speed,null,'an old moving speed is never shown');
+    assert.equal(h.feed.report().status,'stale','the PC keeps hearing the word it knows');
+    if(i%2)h.watches.at(-1).fail({code:3});   // an error beside the answers does not turn it back into "no location"
+    assert.equal(h.feed.snapshot().status,i%2?'timeout':'found');
+    let waited=0;while(probes.length===i+1&&waited<20000){h.advance(500);waited+=500;}
+    assert.equal(waited,4000,'answers keep the asking quick');
+  }
+  assert.equal(h.feed.hadGrant,true,'an old position still proves that location is allowed');
+  assert.equal(h.feed.details().lastFix.status,'found');
+});
+test('keeps asking: never beside a permission question, and a remembered visit earns one request only',async()=>{
+  const prompt=asking('prompt');
+  prompt.h.feed.setVisible(true,{autoStart:true,worked:true});await Promise.resolve();
+  prompt.h.advance(120000);assert.equal(prompt.probes.length,0,'permission "prompt": only the one watch');
+  assert.equal(prompt.h.watches.length,1);
+  const {h,probes}=asking();h.feed.permissions=null;
+  h.feed.setVisible(true,{autoStart:true,worked:true});
+  h.advance(4000);assert.equal(probes.length,1,'location answered here before: one request beside the watch');
+  h.advance(120000);assert.equal(probes.length,1,'unanswered, it is not followed by another');
+  assert.equal(h.watches.length,1);
+  probes[0].ok(place(2,h.wall));assert.equal(h.feed.snapshot().status,'live');
+  h.advance(9000);assert.ok(probes.length>=2,'an answer is proof, and the asking carries on');
+});
+test('keeps asking: the words for no answer name the phone and what to do',()=>{
+  const {display}=require('../drive-location.js');
+  for(const status of ['no-response','timeout','disconnected','error']){
+    const d=display(null,{status});assert.equal(d.why,'No location from your phone');assert.equal(d.next,'Open Meta AI on your phone');assert.equal(d.kmh,null);
+  }
+  assert.deepEqual([display(null,{status:'found'}).why,display(null,{status:'found'}).next],['Location found','Waiting for a newer fix']);
+});

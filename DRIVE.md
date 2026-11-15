@@ -15,8 +15,8 @@ Bakar's glasses are paired with an iPhone since about 10 Nov 2026, so there is n
 | State | Reason | Next |
 |---|---|---|
 | Asked, no answer yet | Waiting for location | It comes from your phone |
-| No answer after 12 s | Still waiting for location | It keeps trying by itself |
-| Timed out, or no fix | No location yet | It keeps trying by itself |
+| No answer after 12 s, timed out, or no fix (build 49) | No location from your phone | Open Meta AI on your phone |
+| A position more than 5 s old (build 49) | Location found | Waiting for a newer fix |
 | Fixes stopped | No new location | Waiting for your phone |
 | Fix without a speed | Location found | Working out speed |
 | Fix rougher than 50 m | Location too rough | Waiting for a better fix |
@@ -29,6 +29,22 @@ Bakar's glasses are paired with an iPhone since about 10 Nov 2026, so there is n
 - Bakar Drive remembers that location works as soon as one position arrives, not only once a speed shows, so the next visit starts by itself.
 - Not changed, by rule: a speed older than 5 s is dropped, a fix rougher than 50 m is not used, and a fix stamped later than the glasses' clock is rejected.
 - Checked in a desktop browser with played location only. Not checked: the real glasses, an iPhone, a real drive.
+
+## It keeps asking until the phone answers (15 Nov 2026, build 49)
+
+Bakar, from the glasses on build 48, 15 Nov 2026 13:00: "it's still stuck on waiting for location. No location yet. It keeps trying by itself ... Broken".
+
+The glasses have no GPS. The Meta AI app on the paired iPhone hands location to the web app. Meta's guidance says positions are one-shot and that `timeout` and `maximumAge` are not used. Until build 49 the app opened one watch and asked again by itself only after proof of permission (a granted answer from the browser, or a first position). With neither, one silent watch was all there was.
+
+- `drive-location.js` now also takes a returned error (timed out, or no position) as proof that no permission question is open, and keeps asking: one request after the error, then again after 4 s, 4 s, 6 s, 9 s, 13 s and every 15 s while nothing comes back. A request that is answered starts the count again.
+- The requests take turns: a relaxed one (no high accuracy, a position up to 10 s old allowed), then a precise one (new fix only).
+- A watch that has produced nothing for 30 s is opened again.
+- On glasses where location answered on an earlier visit (the app remembers that in `bakar.drive.gps` / `bd.gps`), one request is made even before any error. If it is never answered, nothing more is asked until there is proof: a second request must not stack a permission question.
+- Never while a permission question may be open: with the permission reported as "prompt", or unknown with no answer of any kind yet, the app does not ask twice.
+- A position older than 5 s is never a speed. If it is under a minute old it now reads "Location found / Waiting for a newer fix" instead of "No new location": it shows that the phone is answering.
+- The words for no answer are "No location from your phone" and "Open Meta AI on your phone".
+- Details on both faces list: how many times location was asked for, how many answers came, the last error in words (timed out, phone gave no position, not allowed), the permission, and the last fix's time and accuracy. No coordinates.
+- Checks: `tests/drive-location.test.cjs`, section "keeps asking" (a provider that never answers; a timeout then an answer to a relaxed request; "no position" five times then a fix; only 8-second-old positions). Played in Node and a desktop browser only. Not seen on the real glasses: whether the Meta runtime answers the repeated requests is not known until Bakar tries build 49.
 
 ## Compass and saved-route guidance (11 Nov 2026)
 

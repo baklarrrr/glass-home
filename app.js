@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 48; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
@@ -994,7 +994,7 @@ const DRIVE_STATUS_LABELS=Object.freeze({
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
     timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'No GPS fix yet',
-    paused:'App GPS paused'
+    paused:'App GPS paused', found:'Location found · waiting for a newer fix'
   });
 // Only the already-paired private workstation receives these coarse facts.
 let driveReportTimer=0,lastDriveReport='',lastDriveReportAt=-Infinity;
@@ -1111,14 +1111,15 @@ function paintDriveDetails() {
   // that would freeze when the expired feed stops its refresh timer.
   const fixTime=last?.at==null?'time unknown':new Date(last.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   const fix=last?fixTime+' · accuracy '+(last.accuracy==null?'unknown':Math.round(last.accuracy)+' m')+' · speed '+(last.speedPresent?'reported':'absent'):'none';
-  const errorName=error?({1:'Denied',2:'Unavailable',3:'Timeout'}[error.code]||'Unknown'):'none';
+  const errorName=error?({1:'Denied',2:'Phone gave no position',3:'Timed out'}[error.code]||'Unknown'):'none';
   const errorTime=error?' '+new Date(error.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}):'';
   let policy='unknown';
   try {const p=document.permissionsPolicy||document.featurePolicy;if(p?.allowsFeature)policy=p.allowsFeature('geolocation')?'allowed':'blocked';}catch(_){}
   $('driveFacts').textContent=[
     'Bakar Home v'+APP_BUILD+' · '+(f.watchActive?'watch active':'watch stopped')+' · '+(f.visible?'page visible':'page hidden'),
     'Now: '+(status==='live'?'Phone GPS speed received':DRIVE_STATUS_LABELS[status]||'Speed unavailable'),
-    'Fresh positions: '+f.positionFixes+' · callbacks: '+f.fixes+' · starts: '+f.attempts,
+    'Asked: '+f.asks+' · answers: '+f.fixes+' · errors: '+f.errors+' · starts: '+f.attempts,
+    'Fresh positions: '+f.positionFixes,
     'Last fix: '+fix+(last?' · position '+(sample.coordinates?'present':'missing'):''),
     driveCams?(driveCamsFailed&&!driveCams.count?'Cameras: the list could not be loaded':driveCams.about()):'Cameras: not available',
     'Last API error: '+errorName+errorTime+(error?' (#'+error.attempt+')':''),
@@ -1128,12 +1129,13 @@ function paintDriveDetails() {
   const help={
     off:'Location has not been started here. Press Start app GPS. Speed comes from location, sent by your phone.',
     denied:'Open the glasses’ Web App menu → Permissions. Check this app’s location access, then return and press Start GPS.',
-    timeout:'No fix within 10 seconds. The watch is still listening. Retry starts a new request.',
-    'no-response':'The location provider has not called back. Check for an outstanding app permission prompt. Retry replaces the request.',
+    timeout:'Your phone did not send a position in time. The glasses have no GPS of their own: open the Meta AI app on your phone. This app keeps asking by itself.',
+    'no-response':'Nothing has come back from your phone yet. Open the Meta AI app on your phone, and answer a location question if one is showing. This app keeps asking by itself.',
+    found:'Your phone sent a position that is more than five seconds old. Location works; a speed needs a newer one.',
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
     inaccurate:'The returned position exceeds this app’s 50 m accuracy filter.',
     stale:'The last usable speed expired after five seconds.',
-    disconnected:'The location provider could not supply a fix. This does not establish that the phone is disconnected.',
+    disconnected:'Your phone had no position to give. Open the Meta AI app on your phone. This app keeps asking by itself.',
     unsupported:'This runtime has not supplied the geolocation API.'
   };
   $('driveHelp').textContent=help[status]||'“Now” is current. The last API error may be from an earlier request. No coordinates or raw error text are saved or sent.';
@@ -1144,7 +1146,7 @@ function syncDriveFeed(gesture=false) {
   const pref=drivePreference();
   if(!visible&&driveFeed.visible)driveGuide?.clearMotion?.();
   const fromWearer=visible && gesture===true && !driveStopped && pref!=='0' && pref!=='denied';
-  driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied',gesture:fromWearer});
+  driveFeed.setVisible(visible,{autoStart:!driveStopped&&pref!=='0',resumeOnly:pref==='asked'||pref==='denied',gesture:fromWearer,worked:pref==='1'});
   drivePhone.setVisible(visible);
   if(visible)scheduleDriveReport();
   if(visible)loadDriveCameras();
