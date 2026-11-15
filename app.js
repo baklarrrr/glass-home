@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
 
 // Bakar Home on Meta Ray-Ban Display, the one app: Claude and Codex sessions from the studio PC (Chats), pictures,
 // feedback and render progress (Review, which was the separate Bakar Studio app), Drive, Bakar's other glasses apps
@@ -994,7 +994,7 @@ const DRIVE_STATUS_LABELS=Object.freeze({
     invalid:'GPS reading unavailable', inaccurate:'GPS signal too weak',
     stale:'GPS reading expired', denied:'Location permission not granted',
     timeout:'GPS request timed out', 'no-response':'No GPS response yet', disconnected:'No GPS fix yet',
-    paused:'App GPS paused', found:'Location found · waiting for a newer fix'
+    paused:'App GPS paused', found:'Location found · waiting for a newer fix', standing:'Standing still · no new location'
   });
 // Only the already-paired private workstation receives these coarse facts.
 let driveReportTimer=0,lastDriveReport='',lastDriveReportAt=-Infinity;
@@ -1025,7 +1025,7 @@ function paintDrive(reading) {
   const selection=StudioDriveLocation.display(phone.gps&&{...phone.gps,ageMs:phone.ageMs},reading);
   const pg=selection.source==='linked'?phone.gps:null;
   // The course: the phone's, else the one the location reports, else the one worked out from movement (drive/guide.js).
-  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=7.2&&driveGuide?driveGuide.course():null;   // 7.2 km/h is the feed's own 2 m/s: slower than that there is no course
+  const course=pg?pg.hdg:Number.isFinite(reading.heading)?reading.heading:reading.status==='live'&&reading.speed>=1.8&&driveGuide?driveGuide.course():null;   // from walking pace up (0.5 m/s): the bearing between fixes. Standing still there is no course
   if($('driveHeading'))$('driveHeading').textContent=driveGuide&&$('driveTape')?.style?'':Number.isFinite(course)?['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(course/22.5)%16]:'';
   let guide=null;
   const nav=phone.nav,words={NO_TURN:'Straight on',GO_STRAIGHT:'Straight on',TURN_RIGHT:'Turn right',TURN_LEFT:'Turn left',TURN_SLIGHT_RIGHT:'Bear right',TURN_SLIGHT_LEFT:'Bear left',TURN_SHARP_RIGHT:'Sharp right',TURN_SHARP_LEFT:'Sharp left',U_TURN_LEFT:'U-turn',U_TURN_RIGHT:'U-turn',ENTER_ROUND_ABOUT:'Roundabout',LEAVE_ROUND_ABOUT:'Leave roundabout',STAY_ON_ROUND_ABOUT:'Roundabout',START_AT_THE_END_OF_STREET:'To the end of the street',REACHED_YOUR_DESTINATION:'Destination',EXIT_HIGHWAY_TO_RIGHT:'Exit right',EXIT_HIGHWAY_TO_LEFT:'Exit left'};
@@ -1104,7 +1104,7 @@ function paintDriveDetails() {
   $('drivePhoneState').textContent=DRIVE_PHONE_LABELS[phone.state]||'Phone link unavailable';
   $('drivePhoneCode').textContent=phone.configured&&['pairing','waiting','ready','connecting'].includes(phone.state)?'Pairing code: '+phone.code:'';
   $('drivePhoneToggle').textContent=phone.enabled?'Stop phone link':'Resume phone link';
-  $('drivePhoneToggle').disabled=!phone.configured;
+  $('drivePhoneToggle').hidden=!phone.configured;   // with no phone app linked there is nothing to stop
   $('drivePhoneUse').hidden=$('drivePhoneKeep').hidden=!phone.offer;
   }
   // Details can stay open indefinitely: use acquisition time rather than an age
@@ -1135,6 +1135,7 @@ function paintDriveDetails() {
     unavailable:'A position arrived without speed. Nothing is converted to zero.',
     inaccurate:'The returned position exceeds this app’s 50 m accuracy filter.',
     stale:'The last usable speed expired after five seconds.',
+    standing:'The last fix showed you standing still, and nothing newer has shown movement, so the speed stays 0. The first fix that shows movement replaces it.',
     disconnected:'Your phone had no position to give. Open the Meta AI app on your phone. This app keeps asking by itself.',
     unsupported:'This runtime has not supplied the geolocation API.'
   };

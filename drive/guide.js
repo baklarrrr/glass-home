@@ -12,6 +12,12 @@
   const POINTS = Object.freeze(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']);
   const FIX_MAX_AGE_MS = 5000;       // the same age limit as the speed (drive-location.js)
   const FIX_MAX_ACCURACY_M = 50;     // and the same accuracy limit
+  const FUTURE_MS = 2000;            // and the same allowance for a phone clock that runs a little ahead of the glasses'
+  const TRAIL_MS = 20000;            // how long fixes are kept for working out a speed: long enough for walking pace
+  const LONG_MS = 12000;             // on foot a few seconds of movement is smaller than GPS scatter, so look back this far
+  const SLOW_MPS = 20 / 3.6;         // under this the estimate is smoothed a little, so it does not jump between 0 and 7
+  const WALK_MPS = 0.5;              // slower than this is standing: no course
+  const SLOW_COURSE_MS = 12000;      // on foot the course between fixes is kept this long (12 m takes a walker about 9 s)
   const ROUTE_MAX_AGE_S = 18 * 3600; // a route saved for an earlier day does not start guiding by itself
   const OFF_BASE_M = 70;             // road width, GPS scatter and the thinned outline together
   const OFF_FIXES = 3;               // this many fixes in a row off the line before the screen says so
@@ -108,33 +114,83 @@
 
   class Guide {
     constructor({ now = Date.now } = {}) { this.now = now; this.route = null; this.anchor = null; this.moved = null; this.trail = []; this.reset(); }
-    clearMotion() { this.trail=[];this.anchor=null;this.moved=null; }
+    clearMotion() { this.trail=[];this.anchor=null;this.moved=null;this.rest=null;this.est=null;this.miss=0; }
     // The way the car is moving, for a runtime whose location gives no heading: the bearing between two fixes at least
     // 12 m apart (more when the fix is rough). The earlier fix is held in page memory for this only and replaced as the car
     // moves; a reported heading always wins. Nothing here needs a route.
     track(c, at) {
       // A few seconds of fixes, for a speed where the device reports none (see estimate). Page memory only.
-      this.trail = this.trail.filter((p) => at - p.at <= 12000 && at > p.at);
+      const before = this.trail[this.trail.length - 1];
+      this.trail = this.trail.filter((p) => at - p.at <= TRAIL_MS && at > p.at);
+      // Fixes went quiet for longer than the trail keeps: the last one stays, to tell standing still from having moved.
+      if (!this.trail.length && before) this.rest = before;
       this.trail.push({ lat: c.latitude, lon: c.longitude, at, acc: c.accuracy });
       const a = this.anchor;
-      if (a && at - a.at <= 15000 && at >= a.at) {
+      if (a && at - a.at <= 30000 && at >= a.at) {
         const [dx, dy] = flat(a.lat, a.lon, c.latitude, c.longitude), far = Math.hypot(dx, dy);
         if (far < Math.max(12, c.accuracy)) return;
-        if (far < 400) this.moved = { deg: norm(Math.atan2(dx, dy) * 180 / Math.PI), at };
+        if (far < 400) this.moved = { deg: norm(Math.atan2(dx, dy) * 180 / Math.PI), at, slow: far / Math.max(1, (at - a.at) / 1000) < SLOW_MPS };
       }
       this.anchor = { lat: c.latitude, lon: c.longitude, at };
     }
     // Ground speed in metres a second from the last few fixes, for a runtime whose location reports no speed: the distance
     // from a fix 1.5 to 6 seconds back (up to 12 seconds for sparse one-shot callbacks), over the time between. Movement smaller than the fixes' own scatter counts as
     // standing still. Null until there are two usable fixes. An estimate from positions, labelled as GPS on screen.
+    // Walking and running (15 Nov 2026): a few seconds of walking is smaller than the scatter of the fixes, so two fixes
+    // cannot tell it from standing. Under 20 km/h the speed is the slope of a straight line fitted through the last 12
+    // seconds of fixes, which averages the scatter out. It counts only when the last 6 seconds show movement too: a car that
+    // has just stopped, or a walker who has, is standing still, not a leftover speed. Moving estimates under 20 km/h are
+    // blended a little with the one before. After fixes went quiet for longer than the trail, the last fix before the gap
+    // tells standing still (0) from having moved (no number: the next fix gives one).
     estimate() {
       const t = this.trail, last = t[t.length - 1];
       if (!last || this.now() - last.at >= FIX_MAX_AGE_MS) return null;
-      const from = t.find((p) => last.at-p.at>=1500 && last.at-p.at<=6000) || t.find((p) => last.at-p.at>=1500);
-      if (!from) return null;
-      const [dx, dy] = flat(from.lat, from.lon, last.lat, last.lon), far = Math.hypot(dx, dy);
-      const speed = far < Math.max(5, 0.6 * Math.max(from.acc, last.acc)) ? 0 : far / ((last.at - from.at) / 1000);
-      return { speed, heading: speed >= 2 ? this.course() : null };
+      if (this.est && this.est.at === last.at) return this.est.out;
+      const gap = (p) => last.at - p.at, scatter = (p) => Math.max(p.acc, last.acc);
+      const far = (p) => { const [dx, dy] = flat(p.lat, p.lon, last.lat, last.lon); return Math.hypot(dx, dy); };
+      const back = (ms) => { for (let i = t.length - 2; i >= 0; i--) if (gap(t[i]) >= ms) return t[i]; return null; };
+      // Metres a second and metres covered, from a line fitted through the fixes of the last `ms`; null with too few of them.
+      const fit = (ms, least) => {
+        const pts = t.filter((p) => gap(p) <= ms), span = pts.length ? gap(pts[0]) / 1000 : 0;
+        if (pts.length < 2 || span < least) return null;
+        const xy = pts.map((p) => flat(last.lat, last.lon, p.lat, p.lon)), ts = pts.map((p) => -gap(p) / 1000);
+        const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length, tm = mean(ts), xm = mean(xy.map((q) => q[0])), ym = mean(xy.map((q) => q[1]));
+        let stt = 0, stx = 0, sty = 0;
+        ts.forEach((v, k) => { stt += (v - tm) ** 2; stx += (v - tm) * (xy[k][0] - xm); sty += (v - tm) * (xy[k][1] - ym); });
+        const speed = Math.hypot(stx / stt, sty / stt);
+        return { speed, span, moved: speed * span, acc: Math.max(...pts.map((p) => p.acc)) };
+      };
+      const near = t.find((p) => gap(p) >= 1500 && gap(p) <= 6000) || back(1500);
+      let speed = null, fitted = false;
+      if (near) {
+        let two = far(near) >= Math.max(5, 0.6 * scatter(near)) ? far(near) / (gap(near) / 1000) : 0;
+        // Pulling away, the last two seconds say more than the last six: a clear difference there wins.
+        const quick = back(1500);
+        if (quick && quick !== near) {
+          const q = far(quick) >= Math.max(20, 2 * scatter(quick)) ? far(quick) / (gap(quick) / 1000) : 0;   // 20 m in two seconds: a car
+          if (q > 0 && Math.abs(q - two) > 0.3 * Math.max(q, two)) two = q;
+        }
+        const whole = fit(LONG_MS, 6), recent = fit(LONG_MS / 2, 3);
+        if (two >= SLOW_MPS || !whole || !recent) speed = two;          // a car, or too few fixes for a line: two fixes, as before
+        else {
+          const steady = whole.moved >= Math.max(6, 0.5 * whole.acc), lately = recent.moved >= Math.max(4, 0.4 * recent.acc);
+          // One doubtful look at the last few seconds does not drop a walker to 0: the third in a row does.
+          this.miss = steady && !lately ? (this.miss || 0) + 1 : 0;
+          speed = steady && (lately || (this.miss < 3 && this.est && this.est.fitted)) ? whole.speed : 0;
+          fitted = speed > 0;
+        }
+        // Braking hard or stopped: anything faster than a walk must show in the last four seconds too. If they show less
+        // than half of it, they alone are the speed, and 0 once they show no movement beyond the scatter.
+        const brief = fit(4000, 2);
+        if (speed >= 2.5 && brief && brief.moved < 0.5 * speed * brief.span) { speed = brief.moved >= Math.max(5, 0.6 * brief.acc) ? brief.speed : 0; fitted = false; }
+      } else if (this.rest && gap(this.rest) >= 1500 && far(this.rest) < Math.max(8, 0.75 * scatter(this.rest))) speed = 0;
+      if (speed === null) return null;
+      const prev = this.est;
+      // Standing still is said at once; only one moving estimate after another is blended.
+      if (prev && last.at - prev.at <= 12000 && speed > 0 && speed < SLOW_MPS && prev.speed > 0 && prev.speed < SLOW_MPS) speed = 0.6 * speed + 0.4 * prev.speed;
+      const out = { speed, heading: speed >= 2 ? this.course() : null };
+      this.est = { at: last.at, speed, out, fitted };
+      return out;
     }
     // The fix as the speed feed should see it: unchanged when the device reports a speed, otherwise with the estimate
     // filled in. Never a made-up number: with no estimate the fix goes through as it came.
@@ -152,8 +208,10 @@
     // never older than the speed's own limit.
     course(c) {
       if (c && finite(c.heading) && c.heading >= 0 && c.heading < 360 && finite(c.speed) && c.speed >= 2) return c.heading;
-      if (c && finite(c.speed) && c.speed >= 0 && c.speed < 2) return null;                   // the device says stopped
-      return this.moved && this.now() - this.moved.at < FIX_MAX_AGE_MS && this.now() >= this.moved.at ? this.moved.deg : null;
+      if (c && finite(c.speed) && c.speed >= 0 && c.speed < WALK_MPS) return null;            // the device says stopped
+      // At walking pace a reported heading is noise, so the bearing between fixes is used, and kept longer than in a car.
+      const m = this.moved;
+      return m && this.now() - m.at < (m.slow ? SLOW_COURSE_MS : FIX_MAX_AGE_MS) && this.now() >= m.at - FUTURE_MS ? m.deg : null;
     }
     reset() { this.joined = false; this.s = null; this.away = null; this.at = 0; this.offCount = 0; this.offSince = 0; this.done = false; this.doneAt = 0;
       this.onCount = 0; this.againstCount = 0; }
@@ -170,7 +228,7 @@
     // One location fix, straight from the browser. Only numbers derived from it are kept.
     fix(position) {
       const r = this.route, c = position && position.coords, at = position && position.timestamp, now = this.now();
-      if (!c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
+      if (!c || !finite(at) || at > now + FUTURE_MS || now - at >= FIX_MAX_AGE_MS) return;
       if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
       if(Math.abs(c.latitude)>90||Math.abs(c.longitude)>180)return;
       const previous=this.trail[this.trail.length-1];
@@ -212,7 +270,7 @@
       if (!r || !this.joined || this.over) return { state: 'none' };
       if (this.now() / 1000 - this.savedAt > ROUTE_MAX_AGE_S) return { state: 'none' };      // the route has gone old while open
       if (this.done) return this.now() - this.doneAt < ARRIVED_SHOW_MS ? { state: 'arrived', title: r.ti } : { state: 'none' };
-      if (this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at) return { state: 'paused', title: r.ti };
+      if (this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at - FUTURE_MS) return { state: 'paused', title: r.ti };
       if (this.offCount >= OFF_FIXES) return { state: 'off', title: r.ti, away: this.away };
       const next = r.steps.find((st) => st.s > this.s + PASSED_M) || null;
       const last = !next || next.t === 'Arrive';      // the PC's last turn is the arrival

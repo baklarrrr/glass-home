@@ -10,6 +10,7 @@
 // distance to it are kept, in page memory; the position is not stored and nothing is sent.
 (function (root) {
   const FIX_MAX_AGE_MS = 5000, FIX_MAX_ACCURACY_M = 50;   // the same limits as the speed (drive-location.js)
+  const FUTURE_MS = 2000;           // and the same allowance for a phone clock that runs a little ahead
   const LOOK_S = 25;                // warn this many seconds ahead at the current speed,
   const NEAR_M = 400, FAR_M = 1000; // but never nearer than this or farther than that
   const LANE_M = 60;                // how far to the side of the line of travel still counts as this road
@@ -77,7 +78,7 @@
     // One location fix, with the course of travel in degrees (or null: stopped, or unknown) and the speed in metres a second.
     fix(position, course, speed) {
       const c = position && position.coords, at = position && position.timestamp, now = this.now();
-      if (!c || !finite(at) || at > now || now - at >= FIX_MAX_AGE_MS) return;
+      if (!c || !finite(at) || at > now + FUTURE_MS || now - at >= FIX_MAX_AGE_MS) return;
       if (!finite(c.latitude) || !finite(c.longitude) || !finite(c.accuracy) || c.accuracy < 0 || c.accuracy > FIX_MAX_ACCURACY_M) return;
       this.at = at;
       if (!finite(course)) {
@@ -107,7 +108,7 @@
     }
     // What the screen may say right now: null, or the kind, the distance and the posted limit when the map has one.
     snapshot() {
-      if (!this.target || this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at) return null;
+      if (!this.target || this.now() - this.at >= FIX_MAX_AGE_MS || this.now() < this.at - FUTURE_MS) return null;
       return { kind: this.target.kind, dist: this.shown, limit: this.target.limit, street: this.target.motorway ? this.target.street : '' };
     }
   }

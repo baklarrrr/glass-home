@@ -1,16 +1,25 @@
 'use strict';
 // Phone-reported GPS ground speed. No coordinates are retained, sent or inferred.
-// Product policy: at most 5 s old, <=50 m position uncertainty, <=100 m/s.
+// Product policy: at most 5 s old, <=50 m position uncertainty, <=100 m/s. Two owner exceptions (15 Nov 2026, DRIVE.md):
+// a speed under 20 km/h may stay up to 10 s, and a reading of standing still stays 0 until a fix shows movement.
 // These are conservative display filters, not a guarantee of speed accuracy.
 // The W3C API does not report speed uncertainty or whether a fix is mocked.
 (function (root) {
   const MAX_AGE_MS = 5000, MAX_ACCURACY_M = 50, MAX_SPEED_MPS = 100, RESPONSE_NOTICE_MS = 12000;
   const FOUND_AGE_MS = 60000;                 // a position this recent, though too old for a speed, still shows that location works
+  const FUTURE_MS = 2000;                     // the phone's clock may run a little ahead of the glasses': a fix stamped this far ahead is still now
+  const SLOW_KMH = 20, SLOW_AGE_MS = 10000;   // on foot fixes are sparse: a speed under 20 km/h may be held this long. Faster, 5 s stands.
+  const STILL_KMH = 1;                        // a reading under this is standing still
+  // While standing still is on screen, these say only that nothing new came: they never show movement, so the 0 stays.
+  const QUIET = new Set(['waiting','no-response','timeout','disconnected','error','stale','found','inaccurate','invalid']);
+  const holdLimit=kmh=>kmh<SLOW_KMH?SLOW_AGE_MS:MAX_AGE_MS;
+  // How long ago, in the steps a glance can take: 5 s steps under a minute, then whole minutes.
+  const since=ms=>ms<60000?Math.max(5,Math.floor(ms/5000)*5)+' s':Math.floor(ms/60000)+' min';
   const PROBE_MIN_MS = 4000, PROBE_MAX_MS = 15000, RELAXED_AGE_MS = 10000, WATCH_SILENT_MS = 30000;
   const placed=c=>Boolean(c)&&Number.isFinite(c.latitude)&&Math.abs(c.latitude)<=90&&Number.isFinite(c.longitude)&&Math.abs(c.longitude)<=180;
   function reading(position, now) {
     const c = position?.coords, at = position?.timestamp;
-    if (!Number.isFinite(at) || at <= 0 || at > now) return {status:'invalid', speed:null};
+    if (!Number.isFinite(at) || at <= 0 || at > now + FUTURE_MS) return {status:'invalid', speed:null};
     // An older position (a cached one, say) is not a speed, but it proves location reaches this app: say found, not lost.
     if (now - at >= MAX_AGE_MS) return {status:now-at<FOUND_AGE_MS&&placed(c)?'found':'stale', speed:null, at};
     // A fix too rough to use cannot give a speed from positions either: say rough, not "working out speed".
@@ -27,7 +36,7 @@
     constructor({geo, permissions, transform=p=>p, now=Date.now, mono=()=>performance.now(),
       schedule=(fn,ms)=>setTimeout(fn,ms), cancel=id=>clearTimeout(id), change=()=>{}}) {
       Object.assign(this,{geo,permissions,transform,now,mono,schedule,cancel,change});
-      this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.gestureTried=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';
+      this.probeTimer=null;this.probeDeadline=null;this.probeId=0;this.denied=false;this.gestureTried=false;this.positionFacts=null;this.lastGood=null;this.pendingState=null;this.observed='off';this.restOk=false;
       this.hadGrant=false; this.worked=false; this.enabled=false; this.visible=false; this.watch=null; this.timer=null; this.epoch=0;
       this.state={status:geo?'off':'unsupported',speed:null}; this.permission=null;
       // Page-local facts only: never copy the position object or its coordinates.
@@ -38,8 +47,13 @@
       const s={...this.state};
       if (s.status==='live') {
         const elapsed=this.mono()-s.receivedMono, age=Math.max(this.now()-s.at,s.initialAge+elapsed);
-        if (!Number.isFinite(age)||elapsed<0||this.now()<s.at||age>=MAX_AGE_MS)
+        const sane=Number.isFinite(age)&&elapsed>=0&&this.now()>=s.at-FUTURE_MS;
+        if (!sane||age>=holdLimit(s.speed)) {
+          // Standing still, and nothing since has shown movement: the speed is still 0, said with the age of the last fix.
+          if (sane&&this.restOk&&s.speed<STILL_KMH&&(!this.pendingState||QUIET.has(this.pendingState.status)))
+            return {status:'standing',speed:0,at:s.at,sinceMs:age,source:s.source};
           return this.pendingState?{...this.pendingState}:{status:'stale',speed:null,at:s.at};
+        }
         s.ageMs=Math.max(0,age);
       }
       delete s.receivedMono; delete s.initialAge;
@@ -47,19 +61,19 @@
     }
     details() {
       const f=this.facts,last=f.lastFix;
-      const age=last?.at===null?NaN:last?Math.max(this.now()-last.at,last.initialAge+this.mono()-last.receivedMono):NaN;
+      const age=last?.at===null?NaN:last?Math.max(0,this.now()-last.at,last.initialAge+this.mono()-last.receivedMono):NaN;
       return {status:this.snapshot().status,attempts:f.attempts,asks:f.asks,errors:f.errors,fixes:f.fixes,positionFixes:f.positionFixes,watchActive:this.watch!==null,
         visible:this.visible,enabled:this.enabled,permission:f.permission,
-        lastFix:last?{at:last.at,ageMs:Number.isFinite(age)&&age>=0&&this.now()>=last.at?age:null,
+        lastFix:last?{at:last.at,ageMs:Number.isFinite(age)&&age>=0&&this.now()>=last.at-FUTURE_MS?age:null,
           accuracy:last.accuracy,speedPresent:last.speedPresent,status:last.status}:null,
         lastError:f.lastError?{...f.lastError}:null};
     }
     report() {
       const state=this.snapshot();
       const f=this.positionFacts;
-      return {version:1,status:state.status==='found'?'stale':state.status,permission:this.facts.permission,
+      return {version:1,status:state.status==='found'||state.status==='standing'?'stale':state.status,permission:this.facts.permission,
         callbacks:this.facts.fixes,positions:this.facts.positionFixes,
-        coordinates:f?.coordinates===true,fresh:Boolean(f?.at>0&&this.now()>=f.at&&this.now()-f.at<MAX_AGE_MS),
+        coordinates:f?.coordinates===true,fresh:Boolean(f?.at>0&&this.now()>=f.at-FUTURE_MS&&this.now()-f.at<MAX_AGE_MS),
         accurate:f?.accurate===true,source:state.status==='live'?(state.source||'reported'):'none',
         reason:f?.reason||'no-callback',error:this.facts.lastError?.code||0,observation:this.observed,held:state.status==='live'&&this.observed!=='live'};
     }
@@ -67,7 +81,8 @@
       this.observed=next.status;
       // Keep a usable reading only for its original freshness interval. An error
       // or incomplete fix can change what follows it, never its timestamp.
-      if(next.status!=='live'&&this.snapshot().status==='live') {
+      const shown=this.snapshot().status;
+      if(next.status!=='live'&&(shown==='live'||(shown==='standing'&&QUIET.has(next.status)))) {
         this.pendingState=next;this.change(this.snapshot());return false;
       }
       this.pendingState=null;
@@ -86,13 +101,15 @@
     }
     tick() {
       this.timer=null; const s=this.snapshot();
+      // Standing still: the state is kept (a fix that shows movement replaces it) and only the age said beside the 0 moves on.
+      if(s.status==='standing') { this.change(s); this.timer=this.schedule(()=>this.tick(),5000); return; }
       if(s.status!=='live') { this.publish(s); return; }
       this.change(s);
-      this.timer=this.schedule(()=>this.tick(),Math.min(1000,MAX_AGE_MS-s.ageMs));
+      this.timer=this.schedule(()=>this.tick(),Math.max(1,Math.min(1000,holdLimit(s.speed)-s.ageMs)));
     }
     // Explicit Start or Retry replaces the watch. Entering the same visible view keeps it.
     enable() { this.denied=false;this.enabled=true; if(this.visible)this.start(true); }
-    stop() { this.observed='off';this.lastGood=null;this.pendingState=null;this.hadGrant=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
+    stop() { this.observed='off';this.restOk=false;this.lastGood=null;this.pendingState=null;this.hadGrant=false;this.enabled=false;this.clear();this.publish({status:this.geo?'off':'unsupported',speed:null}); }
     setVisible(visible, {autoStart=false, resumeOnly=false, gesture=false, worked=false}={}) {
       // worked: location answered here on an earlier visit (the app remembers that), on a host that cannot report the permission.
       if(visible)this.worked=Boolean(worked);
@@ -104,7 +121,8 @@
         return;
       }
       this.visible=visible;
-      if(!visible){this.clear();this.publish({status:this.enabled?'paused':this.geo?'off':'unsupported',speed:null});}
+      // Hidden, the car may have moved off: a 0 from before is not carried over. The first fix after says what is true.
+      if(!visible){this.restOk=false;this.clear();this.publish({status:this.enabled?'paused':this.geo?'off':'unsupported',speed:null});}
       else if(autoStart && this.denied){this.publish({status:'denied',speed:null});}
       else if(autoStart){
         this.enabled=true;
@@ -184,7 +202,7 @@
       const accept=(position,fromWatch)=>{
         if(!active())return;
         const now=this.now(),at=position?.timestamp,raw=position?.coords;
-        const fresh=Number.isFinite(at)&&at>0&&now>=at&&now-at<MAX_AGE_MS;
+        const fresh=Number.isFinite(at)&&at>0&&now>=at-FUTURE_MS&&now-at<MAX_AGE_MS;
         const coordinates=Number.isFinite(raw?.latitude)&&Math.abs(raw.latitude)<=90&&
           Number.isFinite(raw?.longitude)&&Math.abs(raw.longitude)<=180;
         const accurate=Number.isFinite(raw?.accuracy)&&raw.accuracy>=0&&raw.accuracy<=MAX_ACCURACY_M;
@@ -197,20 +215,21 @@
         if(next.status==='live')next.source=reported?'reported':'estimated';
         const reason=!fresh?'invalid-time':!coordinates?'missing-coordinates':!accurate?'low-accuracy':
           next.status==='live'?(reported?'reported-speed':'positions-estimate'):'need-speed-fixes';
-        this.positionFacts={at:Number.isFinite(at)&&at>0&&at<=now?at:null,coordinates,accurate,reason};
+        this.positionFacts={at:Number.isFinite(at)&&at>0&&at<=now+FUTURE_MS?at:null,coordinates,accurate,reason};
         if(fromWatch && fresh && (hasPosition||next.status==='live'))lastWatchFix=this.mono();
         if(raw&&Number.isFinite(at)&&at>0)this.hadGrant=true;
-        this.facts.lastFix={at:Number.isFinite(at)&&at>0&&at<=now?at:null,
-          receivedMono:this.mono(),initialAge:Number.isFinite(at)&&at>0&&at<=now?now-at:null,
+        this.facts.lastFix={at:Number.isFinite(at)&&at>0&&at<=now+FUTURE_MS?at:null,
+          receivedMono:this.mono(),initialAge:Number.isFinite(at)&&at>0&&at<=now+FUTURE_MS?Math.max(0,now-at):null,
           accuracy:Number.isFinite(raw?.accuracy)&&raw.accuracy>=0?raw.accuracy:null,
           speedPresent:Number.isFinite(raw?.speed)&&raw.speed>=0,status:next.status};
         if(next.status==='live'){
           const previous=this.lastGood?.at===next.at?this.lastGood:null;
-          Object.assign(next,{receivedMono:previous?.receivedMono??this.mono(),initialAge:previous?.initialAge??(now-next.at)});
+          Object.assign(next,{receivedMono:previous?.receivedMono??this.mono(),initialAge:previous?.initialAge??Math.max(0,now-next.at)});
+          this.restOk=true;
         }
         if(!this.observe(next))return;
         if(this.timer!==null){this.cancel(this.timer);this.timer=null;}
-        if(next.status==='live')this.timer=this.schedule(()=>this.tick(),Math.min(1000,MAX_AGE_MS-(now-next.at)));
+        if(next.status==='live')this.timer=this.schedule(()=>this.tick(),Math.max(1,Math.min(1000,MAX_AGE_MS-(now-next.at))));
       };
       const fail=error=>{
         if(!active())return;
@@ -218,7 +237,7 @@
         this.facts.lastError={code,at:this.now(),attempt:this.facts.attempts};++this.facts.errors;
         if(code!==1)sawError=true;
         if(code===1){
-          this.lastGood=null;this.pendingState=null;this.denied=true;this.hadGrant=false;this.enabled=false;this.clear();
+          this.lastGood=null;this.pendingState=null;this.restOk=false;this.denied=true;this.hadGrant=false;this.enabled=false;this.clear();
           this.observed='denied';this.publish({status:'denied',speed:null});return;
         }
         if(!this.observe({status:code===3?'timeout':code===2?'disconnected':'error',speed:null}))return;
@@ -302,7 +321,7 @@
           this.facts.permission=['granted','denied','prompt'].includes(state)?state:'unknown';
           if(state==='granted')granted();
           else if(state==='denied'||(!initial&&state==='prompt')){
-            this.denied=state==='denied';this.lastGood=null;this.pendingState=null;
+            this.denied=state==='denied';this.restOk=false;this.lastGood=null;this.pendingState=null;
             this.hadGrant=false;this.enabled=false;this.clear();
             this.observed=this.denied?'denied':'off';
             this.publish({status:this.observed,speed:null});return;
@@ -369,14 +388,20 @@
     if(linked && Number.isFinite(linked.ageMs) && linked.ageMs>=0 && linked.ageMs<3500 &&
       Number.isFinite(linked.kmh) && linked.kmh>=0 && linked.kmh<=360)
       return {source:'linked',kmh:Math.round(linked.kmh),label:'Linked speed'};
-    if(location?.status==='live' && Number.isFinite(location.ageMs) && location.ageMs>=0 && location.ageMs<MAX_AGE_MS &&
-      Number.isFinite(location.speed) && location.speed>=0 && location.speed<=360)
-      return {source:location.source==='estimated'?'estimated':'location',kmh:Math.round(location.speed),
-        label:location.source==='estimated'?'Estimated speed':'Location speed'};
+    if(location?.status==='live' && Number.isFinite(location.ageMs) && location.ageMs>=0 &&
+      Number.isFinite(location.speed) && location.speed>=0 && location.speed<=360 && location.ageMs<holdLimit(location.speed)) {
+      // A slow speed kept past five seconds is no longer a measurement of now: it is shown as an estimate.
+      const estimated=location.source==='estimated'||location.ageMs>=MAX_AGE_MS;
+      return {source:estimated?'estimated':'location',kmh:Math.round(location.speed),label:estimated?'Estimated speed':'Location speed'};
+    }
+    if(location?.status==='standing' && Number.isFinite(location.sinceMs) && location.sinceMs>=0) {
+      const next='Last location '+since(location.sinceMs)+' ago';
+      return {source:'standing',kmh:0,why:'Standing still',next,label:'Standing still · last location '+since(location.sinceMs)+' ago'};
+    }
     const [why,next]=NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
     return {source:'none',kmh:null,why,next,label:next?why+' · '+next[0].toLowerCase()+next.slice(1):why};
   }
 
-  const api=Object.freeze({Feed,reading,display,NO_SPEED,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
+  const api=Object.freeze({Feed,reading,display,NO_SPEED,FUTURE_MS,SLOW_KMH,SLOW_AGE_MS,STILL_KMH,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
   if(typeof module!=='undefined'&&module.exports)module.exports=api; else root.StudioDriveLocation=api;
 })(globalThis);

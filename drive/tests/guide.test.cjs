@@ -304,3 +304,95 @@ test('sparse accurate fixes estimate a negative missing-speed sentinel; hiding c
  assert.ok(Math.abs(h.g.fill(b).coords.speed-10)<.2);
  h.g.clearMotion();assert.equal(h.g.estimate(),null);
 });
+
+// ---- on foot (15 Nov 2026): "Even my walking speed and running speed should be detected." Played locations only. ----
+// A walker along a straight line, one fix every `every` ms with no speed or heading from the device, each fix scattered by
+// a few metres the way a phone's GPS is (the same made-up scatter every run).
+function walker(every = 1000) {
+  const h = guide(route({ id: 'none', gl: undefined }));
+  let east = 0, seed = 20261115;
+  // The same made-up scatter every run (a small fixed random generator): up to 3 m either way on each axis, fix to fix.
+  const rand = () => { seed = (seed + 0x6D2B79F5) | 0; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x; return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+  const jitter = () => [(rand() * 2 - 1) * 3, (rand() * 2 - 1) * 3];
+  const step = (mps, over = {}) => {
+    h.clock.t += every; east += mps * every / 1000;
+    const [je, jn] = jitter(), p = fix(east + je, jn, h.clock.t, { speed: null, heading: null, accuracy: 8, ...over });
+    h.g.fix(p); return h.g.fill(p).coords;
+  };
+  const run = (mps, seconds) => { const seen = []; for (let t = 0; t < seconds * 1000; t += every) seen.push(step(mps)); return seen; };
+  return { h, step, run };
+}
+const kmh = (c) => (c.speed === null ? null : Math.round(c.speed * 3.6));
+
+test('on foot: walking pace is shown, not 0 and not a dash, within a few seconds', () => {
+  const w = walker(), seen = w.run(5 / 3.6, 60).map(kmh);       // 5 km/h for a minute
+  const first = seen.findIndex((v) => v > 0);
+  assert.ok(first >= 0 && first <= 8, `the first movement shows within 8 s (after ${first + 1} fixes)`);
+  const settled = seen.slice(20);
+  assert.ok(settled.every((v) => v >= 3 && v <= 7), `a believable walking speed once settled: ${settled.join(' ')}`);
+  assert.ok(Math.max(...settled) - Math.min(...settled) <= 3, 'and it does not jump about');
+});
+
+test('on foot: slow walking, running and sparse fixes each give a believable speed', () => {
+  const slow = walker().run(3.5 / 3.6, 60).map(kmh).slice(25);
+  assert.ok(slow.every((v) => v >= 2 && v <= 5), `3.5 km/h: ${slow.join(' ')}`);
+  const run = walker().run(12 / 3.6, 40).map(kmh).slice(10);
+  assert.ok(run.every((v) => v >= 9 && v <= 15), `12 km/h: ${run.join(' ')}`);
+  const sparse = walker(4000).run(5 / 3.6, 80).map(kmh).slice(5);          // a fix every four seconds
+  assert.ok(sparse.every((v) => v >= 3 && v <= 7), `5 km/h, a fix every 4 s: ${sparse.join(' ')}`);
+});
+
+test('on foot: stop and go. Standing is 0 soon after stopping, and the next steps show again soon', () => {
+  const w = walker();
+  w.run(5 / 3.6, 40);
+  const stopped = w.run(0, 30).map(kmh);
+  const zeroAt = stopped.findIndex((v) => v === 0);
+  assert.ok(zeroAt >= 0 && zeroAt <= 12, `0 within 12 s of stopping (${stopped.join(' ')})`);
+  assert.ok(stopped.slice(zeroAt).every((v) => v === 0), 'and it stays 0: scatter while standing is not walking');
+  const again = w.run(5 / 3.6, 30).map(kmh);
+  const moveAt = again.findIndex((v) => v > 0);
+  assert.ok(moveAt >= 0 && moveAt <= 8, `moving again shows within 8 s (${again.join(' ')})`);
+  assert.ok(again.slice(20).every((v) => v >= 3 && v <= 7));
+});
+
+test('on foot: standing still from the start is 0, however long, never a walking speed', () => {
+  const seen = walker().run(0, 120).map(kmh);
+  assert.equal(seen[0], null);                                      // one fix: nothing to compare with yet
+  assert.ok(seen.slice(2).every((v) => v === 0), seen.join(' '));
+});
+
+test('on foot, then driving: the car speed shows at once, with no smoothing holding it down', () => {
+  const w = walker();
+  w.run(5 / 3.6, 30);
+  const car = w.run(14, 12).map(kmh);                                // 50 km/h
+  assert.ok(car[1] >= 25 && car[3] >= 25, `from the second fix it is a car speed, not a walking one: ${car.join(' ')}`);
+  assert.ok(car.slice(6).every((v) => v >= 46 && v <= 54), car.join(' '));
+  const stop = w.run(0, 14).map(kmh);                                // and the car stops at a light
+  assert.ok(stop.slice(8).every((v) => v === 0), `a stopped car is 0, not a leftover walking speed: ${stop.join(' ')}`);
+});
+
+test('on foot: the compass has a course from the bearing between fixes, kept between them, gone when standing', () => {
+  const w = walker();
+  w.run(5 / 3.6, 30);
+  const course = w.h.g.course({ heading: null, speed: 1.4 });
+  assert.ok(course !== null && Math.abs(course - 90) < 20, `walking east: ${course}`);
+  assert.equal(w.h.g.course({ heading: 200, speed: 1.4 }) === 200, false, 'a reported heading at walking pace is not trusted');
+  assert.equal(w.h.g.course({ heading: null, speed: 0.2 }), null, 'standing: no course');
+  w.h.clock.t += 13000;
+  assert.equal(w.h.g.course({ heading: null, speed: 1.4 }), null, 'no movement for 13 s: never an old course');
+});
+
+test('after a long quiet gap: the same place is 0 at once, a different place is not given a made-up speed', () => {
+  const h = guide(route({ id: 'none', gl: undefined })), bare = { heading: null, speed: null };
+  const feed = (east, gapMs) => { h.clock.t += gapMs; const p = fix(east, 0, h.clock.t, bare); h.g.fix(p); return h.g.fill(p).coords.speed; };
+  feed(0, 1000);
+  assert.equal(feed(1, 90000), 0, 'ninety quiet seconds, still in the same place: standing still');
+  assert.equal(feed(400, 90000), null, 'ninety quiet seconds and 400 m away: moved, but how fast is not known');
+  assert.ok(Math.abs(feed(428, 2000) - 14) < 0.5, 'the next fix gives the speed');
+});
+
+test('a fix stamped up to two seconds ahead of the glasses\' clock is used; clearly future ones are not', () => {
+  const h = guide(route({ id: 'none', gl: undefined }));
+  h.g.fix(fix(0, 0, h.clock.t + 2000)); assert.equal(h.g.trail.length, 1);
+  h.g.fix(fix(10, 0, h.clock.t + 2001)); assert.equal(h.g.trail.length, 1, 'more than two seconds ahead: rejected');
+});

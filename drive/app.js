@@ -1,5 +1,5 @@
 'use strict';
-const APP_BUILD = 49; // Identity of this executing entry script, including offline launches.
+const APP_BUILD = 50; // Identity of this executing entry script, including offline launches.
 // Bakar Drive on the glasses.
 //
 // Three sources, all optional:
@@ -428,7 +428,7 @@ function sunLight(when = new Date()) {
 const GPS_WORDS = {
   off: 'App GPS stopped', waiting: 'Finding GPS…', 'no-response': 'No GPS answer yet', live: 'App GPS',
   stale: 'GPS signal old', inaccurate: 'GPS too rough', invalid: 'GPS reading rejected', unavailable: 'No speed from GPS',
-  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', found: 'Location found', denied: 'Location not allowed', paused: 'GPS paused',
+  error: 'Location provider error', timeout: 'GPS timed out', disconnected: 'No GPS fix yet', found: 'Location found', standing: 'Standing still', denied: 'Location not allowed', paused: 'GPS paused',
   unsupported: 'No GPS here',
 };
 
@@ -469,7 +469,9 @@ function render() {
   hud.dataset.gps = live ? 'live' : 'off';
   $('speed').textContent=live?String(selection.kmh):'—';
   const headingFresh = S.heading !== null && Date.now() - S.headingAt < 5000 && S.gps.status === 'live';
-  const course = pg ? pg.hdg : (headingFresh ? S.heading : null);   // the phone already leaves the heading out below 2 m/s
+  // The phone already leaves the heading out below 2 m/s. From walking pace up, with no reported heading: the bearing between fixes.
+  const walked = S.gps.status === 'live' && S.gps.speed >= 1.8 && motion ? motion.course() : null;
+  const course = pg ? pg.hdg : (headingFresh ? S.heading : walked);
   $('heading').textContent = course !== null ? compass(course) : '';
   $('gpsBtn').textContent = feed.enabled ? 'Stop GPS' : 'Start GPS';
   $('gpsBtn').disabled = S.gps.status === 'unsupported';
@@ -516,8 +518,8 @@ function render() {
   // No speed: one short reason on the top line and what happens next under the unit, never a bare "unavailable".
   // The glasses' own location is the story unless a linked phone has answered and is about to send its speed.
   const linkedSoon=!live&&Boolean(S.addr)&&['live','ready'].includes(checkLink(view));
-  const why=live?selection.label:linkedSoon?'Waiting for speed from phone':selection.why;
-  const next=live?'':linkedSoon?'It shows when the phone sends it':selection.next;
+  const why=live?(selection.why||selection.label):linkedSoon?'Waiting for speed from phone':selection.why;
+  const next=live?(selection.next||''):linkedSoon?'It shows when the phone sends it':selection.next;
   $('status').textContent=guide?topLine(view):why;
   $('speedNext').textContent=guide?'':next;
   $('clock').textContent = clockText(new Date());

@@ -13,7 +13,8 @@ for(const [name,input,status,speed] of [
   ['implausible road speed',fix(101),'invalid',null],
   ['numeric string',fix('10'),'invalid',null],
   ['old fix',fix(10,now-MAX_AGE_MS),'stale',null],
-  ['future fix',fix(10,now+1),'invalid',null],
+  ['clearly future fix',fix(10,now+2001),'invalid',null],
+  ['fix stamped two seconds ahead by the phone\'s clock',fix(10,now+2000),'live',36],
   ['zero timestamp',fix(10,0),'invalid',null],
   ['bad timestamp',fix(10,NaN),'invalid',null],
   ['weak location accuracy',fix(10,now,51),'inaccurate',null],
@@ -36,7 +37,7 @@ test('explicit enable creates one high accuracy watch with no cached fixes',()=>
 test('accepted fix expires at five seconds without incoming updates',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(4999);assert.equal(h.feed.snapshot().speed,36);h.advance(1);assert.equal(h.feed.snapshot().status,'stale');assert.equal(h.feed.snapshot().speed,null);});
 test('cached fix expires from acquisition rather than arrival',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(10,now-4000));h.advance(1000);assert.equal(h.feed.snapshot().status,'stale');});
 test('clock rollback cannot prolong a reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(5000,0);assert.equal(h.feed.snapshot().speed,null);});
-test('future wall clock invalidates a cached reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(0,-1);assert.equal(h.feed.snapshot().speed,null);});
+test('future wall clock invalidates a cached reading',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(0,-1500);assert.equal(h.feed.snapshot().speed,36,'a clock that steps back within the allowance changes nothing');h.advance(0,-502);assert.equal(h.feed.snapshot().speed,null);});
 test('old callbacks do not overwrite newer fixes',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(20));h.watches[0].ok(fix(30,now-1));assert.equal(h.feed.snapshot().speed,72);});
 for(const next of [null,-1])test('missing speed holds a valid fix only through its initial lifetime: '+next,()=>{
  const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());
@@ -68,7 +69,7 @@ test('permission restored requires deliberate retry and clears old watch once',a
 test('stop cancels the no-response notice and releases once',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.feed.stop();h.advance(RESPONSE_NOTICE_MS);assert.equal(h.feed.snapshot().status,'off');assert.deepEqual(h.clears,[0]);assert.equal(h.tasks.size,0);});
 test('route exit cancels no-response and ignores a late timeout',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.feed.setVisible(false);h.advance(RESPONSE_NOTICE_MS);h.watches[0].fail({code:3});assert.equal(h.feed.snapshot().status,'paused');assert.equal(h.feed.details().lastError,null);assert.equal(h.feed.details().watchActive,false);});
 test('details distinguish absent fixes from an old retained fix',()=>{const h=harness();assert.equal(h.feed.details().lastFix,null);h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.advance(7000);const d=h.feed.details();assert.equal(d.lastFix.ageMs,7000);assert.equal(d.fixes,1);assert.equal(h.feed.snapshot().status,'stale');});
-test('details do not turn malformed or future timestamps into an age',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(10,now+100));assert.equal(h.feed.details().lastFix.at,null);assert.equal(h.feed.details().lastFix.ageMs,null);assert.equal(h.feed.details().lastFix.status,'invalid');});
+test('details do not turn malformed or future timestamps into an age',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix(10,now+2001));assert.equal(h.feed.details().lastFix.at,null);assert.equal(h.feed.details().lastFix.ageMs,null);assert.equal(h.feed.details().lastFix.status,'invalid');});
 test('details are bounded to one fix and one sanitized error',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();for(let i=0;i<30;i++)h.watches[0].ok({...fix(i),coords:{speed:i,accuracy:5,latitude:40+i,longitude:70,deviceId:'private'}});h.watches[0].fail({code:3,message:'private raw error'});const text=JSON.stringify(h.feed.details());assert.equal(h.feed.details().fixes,30);assert.equal(text.includes('latitude'),false);assert.equal(text.includes('longitude'),false);assert.equal(text.includes('private'),false);assert.equal(text.includes('receivedMono'),false);assert.ok(text.length<500);});
 test('details are copies, not mutable feed records',()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();h.watches[0].ok(fix());h.watches[0].fail({code:3});const d=h.feed.details();d.lastFix.at=0;d.lastError.code=1;assert.equal(h.feed.details().lastFix.at,now);assert.equal(h.feed.details().lastError.code,3);});
 test('permission revoked while hidden is not reported as an old grant',async()=>{const h=harness();h.feed.setVisible(true);h.feed.enable();await Promise.resolve();assert.equal(h.feed.details().permission,'granted');h.feed.setVisible(false);h.p.state='denied';h.feed.setVisible(true);await Promise.resolve();assert.equal(h.feed.details().permission,'denied');assert.equal(h.feed.snapshot().status,'denied');assert.equal(h.watches.length,1);});
@@ -265,7 +266,10 @@ test('drive display accepts freshly sourced numeric speed only, prioritizes link
  assert.equal(display({kmh:0,ageMs:12},actual).kmh,0);
  for(const ageMs of [-1,3500,NaN,undefined])assert.equal(display({kmh:99,ageMs},actual).kmh,12);
  assert.equal(display(null,{...actual,source:'estimated'}).label,'Estimated speed');
- assert.equal(display(null,{...actual,ageMs:5000}).kmh,null);
+ assert.equal(display(null,{...actual,speed:30,ageMs:5000}).kmh,null,'at 20 km/h and above five seconds is the limit');
+ assert.equal(display(null,{...actual,speed:20,ageMs:5000}).kmh,null);
+ assert.deepEqual([display(null,{...actual,ageMs:5000}).kmh,display(null,{...actual,ageMs:5000}).label,display(null,{...actual,ageMs:9999}).kmh,display(null,{...actual,ageMs:10000}).kmh],[12,'Estimated speed',12,null],'a slow speed may stay ten seconds, as an estimate');
+ assert.equal(display(null,{...actual,ageMs:4999}).label,'Location speed');
  assert.equal(display({kmh:-1,ageMs:5},{status:'denied'}).kmh,null);
 });
 test('every state without a speed says one short reason and what happens next, and never names a phone app',()=>{
@@ -283,7 +287,8 @@ test('every state without a speed says one short reason and what happens next, a
  }
  assert.equal(display(null,{status:'waiting'}).label,'Waiting for location · it comes from your phone');
  assert.equal(display(null,{status:'denied'}).label,'Location not allowed · allow it for this app, then Start GPS');
- assert.equal(display(null,{status:'live',ageMs:5000,speed:12}).why,'No new location','an expired reading is old, not unexplained');
+ assert.equal(display(null,{status:'live',ageMs:5000,speed:40}).why,'No new location','an expired reading is old, not unexplained');
+ assert.equal(display(null,{status:'live',ageMs:10000,speed:12}).why,'No new location');
  assert.equal(display(null,undefined).label,'Speed unavailable');assert.equal(display(null,{status:'new-state'}).next,'');
  assert.equal(display({kmh:40,ageMs:10},{status:'denied'}).label,'Linked speed','a fresh linked speed still wins');
 });
@@ -385,4 +390,84 @@ test('keeps asking: the words for no answer name the phone and what to do',()=>{
     const d=display(null,{status});assert.equal(d.why,'No location from your phone');assert.equal(d.next,'Open Meta AI on your phone');assert.equal(d.kmh,null);
   }
   assert.deepEqual([display(null,{status:'found'}).why,display(null,{status:'found'}).next],['Location found','Waiting for a newer fix']);
+});
+
+// ---- standing still stays 0, and slow speeds are held a little longer (build 50) ----
+// Bakar, 15 Nov 2026: "Make sure the speed is always available, even if we're at 0 km/h, for the drive app."
+const {display:show,SLOW_AGE_MS}=require('../drive-location.js');
+const started=(permission)=>{const h=harness(permission);h.feed.setVisible(true);h.feed.enable();return h;};
+test('standing still: a 0 stays 0 when fixes go quiet, with the age of the last fix beside it',()=>{
+  const h=started();h.watches[0].ok(fix(0));
+  assert.equal(show(null,h.feed.snapshot()).label,'Location speed');
+  const wait=ms=>{for(let t=0;t<ms;t+=1000)h.advance(1000);};
+  wait(SLOW_AGE_MS);
+  let s=h.feed.snapshot();assert.equal(s.status,'standing');assert.equal(s.speed,0);
+  let d=show(null,s);assert.deepEqual([d.kmh,d.source,d.why,d.next,d.label],[0,'standing','Standing still','Last location 10 s ago','Standing still · last location 10 s ago']);
+  wait(50000);d=show(null,h.feed.snapshot());assert.equal(d.kmh,0);assert.equal(d.next,'Last location 1 min ago');
+  wait(10*60000);assert.equal(show(null,h.feed.snapshot()).label,'Standing still · last location 11 min ago');
+  const told=h.states.filter(x=>x.status==='standing').length;assert.ok(told>=100&&told<=140,'the age is repainted every five seconds, not every second: '+told);
+  assert.equal(h.feed.report().status,'stale','the PC hears the word it already knows');assert.equal(h.feed.report().source,'none');
+});
+test('standing still: a fix that shows movement replaces the 0 at once',()=>{
+  const h=started();h.watches[0].ok(fix(0));h.advance(60000);assert.equal(h.feed.snapshot().speed,0);
+  h.watches[0].ok(fix(8,h.wall));
+  const s=h.feed.snapshot();assert.equal(s.status,'live');assert.equal(s.speed,28.8);assert.equal(show(null,s).label,'Location speed');
+});
+test('moving, then fixes stop: an old moving speed is never held past its limit',()=>{
+  const fast=started();fast.watches[0].ok(fix(16.7));fast.advance(MAX_AGE_MS);     // 60 km/h
+  assert.equal(fast.feed.snapshot().status,'stale');assert.equal(show(null,fast.feed.snapshot()).kmh,null);
+  fast.advance(120000);assert.equal(fast.feed.snapshot().speed,null,'and it never turns into a 0');
+  const slow=started();slow.watches[0].ok(fix(1.4));                              // walking, 5 km/h
+  slow.advance(MAX_AGE_MS);let d=show(null,slow.feed.snapshot());assert.deepEqual([d.kmh,d.label,d.source],[5,'Estimated speed','estimated'],'under 20 km/h it may stay up to ten seconds, as an estimate');
+  slow.advance(SLOW_AGE_MS-MAX_AGE_MS-1);assert.equal(show(null,slow.feed.snapshot()).kmh,5);
+  slow.advance(1);d=show(null,slow.feed.snapshot());assert.equal(d.kmh,null);assert.equal(d.why,'No new location');
+  slow.advance(120000);assert.equal(slow.feed.snapshot().speed,null,'a walking speed does not turn into standing still either');
+  const edge=started();edge.watches[0].ok(fix(5.56));edge.advance(MAX_AGE_MS);assert.equal(edge.feed.snapshot().speed,null,'20 km/h and above keeps the five second rule');
+});
+test('standing still: errors and silence keep the 0; a fix that cannot say still, a refusal, Stop or hiding end it',()=>{
+  for(const code of [2,3]){const h=started();h.watches[0].ok(fix(0));h.advance(20000);h.watches[0].fail({code});assert.equal(h.feed.snapshot().status,'standing','error '+code);assert.equal(h.feed.snapshot().speed,0);}
+  const old=started();old.watches[0].ok(fix(0));old.advance(20000);old.watches[0].ok({timestamp:old.wall-8000,coords:{speed:9,accuracy:5,latitude:1,longitude:1}});
+  assert.equal(old.feed.snapshot().status,'standing','an old cached position shows no movement');
+  const rough=started();rough.watches[0].ok(fix(0));rough.advance(20000);rough.watches[0].ok(fix(0,rough.wall,400));assert.equal(rough.feed.snapshot().status,'standing');
+  const unsure=started();unsure.watches[0].ok(fix(0));unsure.advance(20000);unsure.watches[0].ok(fix(null,unsure.wall));
+  assert.equal(unsure.feed.snapshot().status,'unavailable','a new fix with no speed and nothing to compare with: the 0 is not kept on trust');
+  const denied=started();denied.watches[0].ok(fix(0));denied.advance(20000);denied.watches[0].fail({code:1});assert.equal(denied.feed.snapshot().status,'denied');
+  const stopped=started();stopped.watches[0].ok(fix(0));stopped.advance(20000);stopped.feed.stop();assert.equal(stopped.feed.snapshot().status,'off');
+  const retried=started();retried.watches[0].ok(fix(0));retried.advance(20000);retried.feed.enable();assert.equal(retried.feed.snapshot().speed,0,'Retry keeps the 0 while it asks again');
+});
+test('standing still: hidden and shown again, the 0 from before is not carried over',async()=>{
+  const h=started();h.watches[0].ok(fix(0));h.advance(20000);assert.equal(h.feed.snapshot().speed,0);
+  h.feed.setVisible(false);assert.equal(h.feed.snapshot().status,'paused');
+  h.feed.setVisible(true);await Promise.resolve();
+  assert.equal(h.feed.snapshot().status,'waiting','the car may have moved off while the display slept');assert.equal(h.feed.snapshot().speed,null);
+  h.watches.at(-1).ok(fix(0,h.wall));assert.equal(h.feed.snapshot().speed,0);
+});
+test('before any fix nothing is invented: waiting, refused, off and unsupported keep their reasons',()=>{
+  const h=started();assert.equal(show(null,h.feed.snapshot()).kmh,null);assert.equal(show(null,h.feed.snapshot()).why,'Waiting for location');
+  h.advance(600000);assert.equal(show(null,h.feed.snapshot()).kmh,null);
+  h.watches[0].fail({code:1});assert.equal(show(null,h.feed.snapshot()).why,'Location not allowed');
+  h.feed.stop();assert.equal(show(null,h.feed.snapshot()).why,'GPS is off');
+  const none=new Feed({geo:null});none.setVisible(true);none.enable();assert.equal(show(null,none.snapshot()).kmh,null);
+  assert.equal(show({kmh:33,ageMs:100},{status:'standing',speed:0,sinceMs:20000}).label,'Linked speed','a fresh linked speed still wins');
+});
+test('no speed from the device and no movement: 0 from the second fix, kept while quiet, and again after a long gap',()=>{
+  // The real pairing: the feed with drive/guide.js filling in a speed where the device reports none.
+  const G=require('../drive/guide.js'),h=harness();
+  const g=new G.Guide({now:()=>h.wall});h.feed.transform=p=>{g.fix(p);return g.fill(p);};
+  const at=(east,over={})=>({timestamp:h.wall,coords:{speed:null,heading:null,accuracy:8,latitude:10,longitude:10+east/109000,...over}});
+  h.feed.setVisible(true);h.feed.enable();
+  h.watches[0].ok(at(0));assert.equal(show(null,h.feed.snapshot()).why,'Location found','one fix: nothing to compare with yet');
+  h.advance(2000);h.watches[0].ok(at(1));
+  let d=show(null,h.feed.snapshot());assert.deepEqual([d.kmh,d.label],[0,'Estimated speed'],'the second fix in the same place is 0 straight away');
+  h.advance(90000);d=show(null,h.feed.snapshot());assert.deepEqual([d.kmh,d.why],[0,'Standing still']);
+  h.watches[0].ok(at(2));d=show(null,h.feed.snapshot());assert.deepEqual([d.kmh,d.label],[0,'Estimated speed'],'a fix after the gap, same place: 0 at once');
+  h.advance(90000);h.watches[0].ok(at(500));
+  assert.equal(show(null,h.feed.snapshot()).kmh,null,'a fix after the gap, 500 m away: moved, speed not known, so no 0 and no guess');
+  h.advance(2000);h.watches[0].ok(at(528));assert.ok(Math.abs(show(null,h.feed.snapshot()).kmh-50)<=2,'the next fix gives the speed');
+});
+test('a fix stamped a little ahead of the glasses\' clock gives a speed; one clearly in the future does not',()=>{
+  const near=started();near.watches[0].ok(fix(10,now+1900));assert.equal(near.feed.snapshot().speed,36);assert.equal(near.feed.snapshot().ageMs,0);
+  near.advance(MAX_AGE_MS-1);assert.equal(near.feed.snapshot().speed,36);near.advance(1);assert.equal(near.feed.snapshot().speed,null,'still five seconds on the glasses\' own clock');
+  assert.equal(near.feed.details().lastFix.at,now+1900);
+  const far=started();far.watches[0].ok(fix(10,now+2500));assert.equal(far.feed.snapshot().status,'invalid');assert.equal(far.feed.report().positions,0);
 });

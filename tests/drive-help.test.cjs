@@ -150,3 +150,27 @@ test('Speed details read plainly for a phone with no linked app',()=>{
   const drive=app.slice(app.indexOf('const DRIVE_PHONE_LABELS='),app.indexOf('// Light: the display'))+html.slice(html.indexOf('id="drive"'),html.indexOf('id="review"'));
   assert.doesNotMatch(drive,/Android|Journal/);
 });
+
+// ---- build 50: standing still stays 0 on the Home face; nothing to stop when no phone app is linked ----
+test('standing still on the Home face: 0, the reason and the age of the last fix, never a dash',()=>{
+  const h=harness();h.reveal();h.feed.enable();h.fix(0);
+  assert.equal(h.element('driveSpeed').textContent,'0');assert.equal(h.element('driveState').textContent,'Location speed');
+  for(let i=0;i<40;i++)h.advance(1000);
+  assert.equal(h.element('driveSpeed').textContent,'0');
+  assert.equal(h.element('driveState').textContent,'Standing still · last location 40 s ago');
+  assert.equal(h.element('driveHud').dataset.source,'standing');assert.equal(h.element('driveHud').dataset.status,'live');
+  h.error(3);assert.equal(h.element('driveSpeed').textContent,'0','a timed-out request does not take the 0 away');
+  h.reveal();h.details();assert.match(h.element('driveFacts').textContent,/Now: Standing still · no new location/);
+  assert.match(h.element('driveHelp').textContent,/standing still/);
+  h.fix(12);assert.equal(h.element('driveSpeed').textContent,'43');assert.equal(h.element('driveState').textContent,'Location speed');
+  for(let i=0;i<6;i++)h.advance(1000);
+  assert.equal(h.element('driveSpeed').textContent,'—','a moving speed is not held');assert.equal(h.element('driveState').textContent,'No new location · waiting for your phone');
+});
+test('speed details: with no phone app linked there is no Stop phone link button; with one there is',()=>{
+  const h=harness();h.reveal();h.details();
+  assert.equal(h.element('drivePhoneToggle').hidden,true);assert.equal(h.element('drivePhoneState').textContent,'No phone app is linked');
+  h.phone('ready');
+  assert.equal(h.element('drivePhoneToggle').hidden,false);assert.equal(h.element('drivePhoneToggle').textContent,'Stop phone link');
+  h.phone('off',{enabled:false});
+  assert.equal(h.element('drivePhoneToggle').hidden,false);assert.equal(h.element('drivePhoneToggle').textContent,'Resume phone link');
+});

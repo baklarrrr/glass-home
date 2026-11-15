@@ -27,7 +27,7 @@ Bakar's glasses are paired with an iPhone since about 10 Nov 2026, so there is n
 - With a linked Android phone that has answered, Bakar Drive says "Waiting for speed from phone / It shows when the phone sends it" instead. A fresh linked speed still wins over everything.
 - A fix rougher than 50 m with no speed is now "too rough", not "working out speed": no speed can be worked out from it.
 - Bakar Drive remembers that location works as soon as one position arrives, not only once a speed shows, so the next visit starts by itself.
-- Not changed, by rule: a speed older than 5 s is dropped, a fix rougher than 50 m is not used, and a fix stamped later than the glasses' clock is rejected.
+- Not changed, by rule: a speed older than 5 s is dropped, a fix rougher than 50 m is not used, and a fix stamped later than the glasses' clock is rejected. (Build 50 changed three of these on Bakar's word: see "Always a speed" below.)
 - Checked in a desktop browser with played location only. Not checked: the real glasses, an iPhone, a real drive.
 
 ## It keeps asking until the phone answers (15 Nov 2026, build 49)
@@ -46,11 +46,44 @@ The glasses have no GPS. The Meta AI app on the paired iPhone hands location to 
 - Details on both faces list: how many times location was asked for, how many answers came, the last error in words (timed out, phone gave no position, not allowed), the permission, and the last fix's time and accuracy. No coordinates.
 - Checks: `tests/drive-location.test.cjs`, section "keeps asking" (a provider that never answers; a timeout then an answer to a relaxed request; "no position" five times then a fix; only 8-second-old positions). Played in Node and a desktop browser only. Not seen on the real glasses: whether the Meta runtime answers the repeated requests is not known until Bakar tries build 49.
 
+## Always a speed: standing still, walking, running (15 Nov 2026, build 50)
+
+Bakar, 15 Nov 2026 12:57: "Make sure the speed is always available, even if we're at 0 km/h, for the drive app." And 12:58: "it should work even with my human speed. Even my walking speed and running speed should be detected. It should always work."
+
+Both faces (Bakar Drive and Bakar Home's Drive tab) share these rules through `drive-location.js` and `drive/guide.js`.
+
+**Standing still stays 0.**
+- Once a usable fix has shown standing still (a speed under 1 km/h, reported by the phone or worked out from positions), the big number stays 0 when fixes go quiet. It is not replaced by a dash for silence, a timed-out request, an old cached position or a rough fix.
+- The age of the last fix is always beside it: "Standing still · last location 40 s ago" (Home), or "Standing still" with "Last location 40 s ago" under km/h (Bakar Drive). It moves in 5 s steps, then minutes.
+- A fix that shows movement replaces the 0 at once.
+- The 0 ends, and the reason line returns, when: location is refused; GPS is stopped; the display was hidden and shown again (the car may have moved off while it slept, so the first fix after says what is true); or a new fix arrives that cannot say whether you moved.
+- A fix with speed 0 shows 0 at once. With no speed from the phone, the second fix in the same place shows 0 at once. After a long quiet gap, a fix in the same place as the last one shows 0 at once; a fix somewhere else shows no number until the next fix gives a speed.
+- Before any fix at all (waiting, refused, off, no location in this app) nothing is invented: the reason lines stay.
+- The PC's diagnostics still hear "stale" for this state, the word the relay already knows.
+
+**A moving speed is not held.** At 20 km/h and above, a speed older than 5 s is dropped and the reason line shows, as before. A held 60 would be a lie.
+
+**Under 20 km/h a speed may stay up to 10 s.** On foot fixes are sparse. From 5 s it is labelled "Estimated speed". After 10 s it is dropped (unless it was standing still).
+
+**Walking and running.** Where the phone gives no speed, it is worked out from positions:
+- At car speeds: the distance between two fixes 1.5 to 6 s apart, as before. Pulling away, a clear difference over the last two seconds wins, so the number does not lag behind.
+- Under 20 km/h: the slope of a straight line fitted through the last 12 s of fixes, because a few seconds of walking is smaller than GPS scatter. It counts only when the last 6 s show movement too, and one doubtful look does not drop a walker to 0 (the third in a row does).
+- Braking or stopping: anything faster than a walk must show in the last 4 s too, or those 4 s alone are the speed.
+- Moving estimates under 20 km/h are blended a little with the one before. Standing still is never blended: it is 0 at once.
+- A speed reported by the phone always wins over all of this.
+- The trail of fixes kept in page memory is now 20 s (was 12 s), plus the one fix before a long gap. Still nothing in storage, nothing sent.
+
+**Compass on foot.** From 1.8 km/h (0.5 m/s) the course is the bearing between two fixes at least 12 m apart, kept for 12 s at walking pace (5 s in a car). Standing still there is no course and no tape. The glasses' own compass (device orientation) is not used: it says where the head points, not where you are going, and its axes on these glasses could not be checked without the device.
+
+**A phone clock that runs ahead.** A fix stamped up to 2 s ahead of the glasses' clock is used as "now" (speed, guidance and cameras). One stamped further ahead is still rejected.
+
+**Checks.** `tests/drive-location.test.cjs` (standing still, slow hold, clock), `drive/tests/guide.test.cjs` ("on foot": walking 5 and 3.5 km/h, running 12 km/h, a fix every 4 s, stop and go, walking then driving then a stop, with made-up scatter of 3 m), `drive/tests/speed-faces.cjs` (both faces in a browser with a played clock). All played. Not checked: the real glasses, a real walk, run or drive. How often the phone really sends fixes on foot, and how they scatter, is not known.
+
 ## Compass and saved-route guidance (11 Nov 2026)
 
 Bakar, 11 Nov 2026: "I also want to be able to navigate, have a compass, have a speedometer ... I'm a professional driver" and "get rid of those CHECKS to see if im driving ... GONE AND REMOVED."
 
-- **Compass tape** (`drive/guide.js`, `tape`): the GPS course over the ground under the unit line: ticks every 15 degrees, the compass points either side, north in the accent colour and never dimmed, and one readout at the needle ("E 090°"). It is the way the car moves, not the way the wearer looks. Below about 7 km/h the feed gives no course and the tape is not drawn: never an old heading. It always keeps its room, so the speed does not move when it comes and goes.
+- **Compass tape** (`drive/guide.js`, `tape`): the GPS course over the ground under the unit line: ticks every 15 degrees, the compass points either side, north in the accent colour and never dimmed, and one readout at the needle ("E 090°"). It is the way the car moves, not the way the wearer looks. Standing still there is no course and the tape is not drawn: never an old heading. (Until build 50 this was below about 7 km/h; on foot it now uses the bearing between fixes.) It always keeps its room, so the speed does not move when it comes and goes.
 - **Saved-route guidance** (`drive/guide.js`, `Guide`): with no directions from a phone, the turn line shows the next turn along the route the PC saved (`relay/route.py` adds `gl`, the road as latitude/longitude pairs within about 12 m; `gs`, every turn as metres from the start plus words; `gm`, the road's length). The glasses work it out from their own location.
   - It starts only after three fixes in a row on the line and moving the way the road runs there (course within 60 degrees), and only for a route saved in the last 18 hours. Crossing the route, or driving it the other way, starts nothing.
   - Three fixes off the line: "Off the saved route" in amber, and how far. 2.5 km off or five minutes off: it stops quietly. Three fixes going back along it: it stops, and stays stopped for that route.
