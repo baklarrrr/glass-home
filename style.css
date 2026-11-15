@@ -174,6 +174,8 @@ main { flex: 1; min-block-size: 0; display: flex; }
   padding: 4px 20px 4px 6px; outline: none; scrollbar-width: none; overflow-wrap: anywhere; transition: color 160ms var(--settle); }
 .result::-webkit-scrollbar { display: none; }
 .rwrap:not(.scrolls) .result:focus { box-shadow: inset 2px 0 0 rgba(var(--accent-rgb), 0.6); }
+/* A short report is only as tall as its words, so its focus mark sits beside them and not down an empty screen. */
+.rwrap:not(.scrolls) .result { flex: 0 1 auto; align-self: flex-start; max-block-size: 100%; }
 /* Long text fades where it runs on, above and below, instead of being cut mid-line. */
 .result.above { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 26px); mask-image: linear-gradient(to bottom, transparent, #000 26px); }
 .result.below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); }

@@ -69,9 +69,40 @@ const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.svg'
       assert.ok(chat.result>=40,'the report keeps at least a line: '+chat.result);
       assert.deepEqual([chat.option,chat.focus],[true,true],'the first answer is on screen and focused');
       await shot('chat-question');
+      // The long report still scrolls inside its room; a short one is only as tall as its words (its focus mark does not run down an empty screen), and a long one after it scrolls again.
+      const report=()=>page.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>{const r=document.getElementById('dResult'),w=r.parentElement;done({scrolls:w.classList.contains('scrolls'),inside:r.getBoundingClientRect().bottom<=w.getBoundingClientRect().bottom+1,more:r.scrollHeight>r.clientHeight+4,tall:Math.round(r.getBoundingClientRect().height)});}))));
+      const long=await report();
+      assert.deepEqual([long.scrolls,long.inside,long.more],[true,true,true],'a long report scrolls inside its room: '+JSON.stringify(long));
+      await page.evaluate(()=>{const d=S.details.g00000001;d.keep=d.res;d.res='';d.st='work';d.q=null;renderDetail();});
+      const short=await report();
+      assert.equal(await page.locator('#dResult').innerText(),'Nothing to report yet.');
+      assert.ok(!short.scrolls&&short.tall<=60,'a short report is as tall as its words: '+JSON.stringify(short));
+      await shot('chat-short-report');
+      await page.evaluate(()=>{const d=S.details.g00000001;d.res=d.keep;renderDetail();});
+      const again=await report();
+      assert.deepEqual([again.scrolls,again.inside,again.more],[true,true,true],'and scrolls again when a long report arrives: '+JSON.stringify(again));
       // Back: the menus return.
       await page.evaluate(()=>history.back());await page.waitForTimeout(150);
       assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.sections')).display),'flex');
+      // Review with no link to the PC: the words, and no button that leads nowhere.
+      await page.evaluate(()=>selectTab('review'));await page.waitForTimeout(150);
+      assert.match(await page.locator('#reviewState').innerText(),/^Review is not linked to your studio PC yet\./);
+      assert.equal(await page.locator('#reviewEnter').isVisible(),false,'not linked: no Open Review button');
+      // Review linked (a made-up link, no PC): its three places keep their row whichever one is open.
+      const linked=await ctx.newPage();
+      linked.on('pageerror',e=>errors.push(String(e)));
+      await linked.goto(origin+'/glass-home/#sg=made-up~'+Buffer.alloc(32,7).toString('base64url'));
+      await linked.waitForFunction(()=>document.getElementById('runningBuild'));
+      await linked.click('#section-review');
+      await linked.waitForFunction(()=>!document.getElementById('reviewFrame').hidden,null,{timeout:8000});
+      const frame=linked.frames().find(f=>/review\/index\.html/.test(f.url()));
+      const navTop=()=>frame.evaluate(()=>Math.round(document.getElementById('rootNavigation').getBoundingClientRect().top));
+      const inPictures=await navTop();
+      await linked.evaluate(()=>HomeShell.openRenders());
+      await frame.waitForFunction(()=>document.body.classList.contains('renders-place'),null,{timeout:5000});
+      assert.equal(await navTop(),inPictures,'Pictures, Feedback, Renders stay where they are when Renders opens');
+      assert.equal(await frame.evaluate(()=>{const n=document.getElementById('rootNavigation').getBoundingClientRect(),t=document.querySelector('.topline').getBoundingClientRect();return t.top>=n.bottom-1;}),true,'the link state sits under them');
+      if(out)await linked.screenshot({path:path.join(out,'review-renders-'+height+'.png')});
       assert.deepEqual(errors,[]);
       await ctx.close();
     }

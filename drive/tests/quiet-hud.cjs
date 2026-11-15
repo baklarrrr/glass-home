@@ -23,10 +23,10 @@ const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.svg'
     await page.goto(url);
     const label=page.locator(standalone?'#status':'#driveState'),value=page.locator(standalone?'#speed':'#driveSpeed');
     await page.waitForFunction(()=>typeof window.gpsOk==='function');
-    assert.equal(await label.innerText(),standalone?'Waiting for location':'Waiting for location · it comes from your phone');assert.equal(await value.innerText(),'—');
+    assert.equal(await label.textContent(),standalone?'Waiting for location':'Waiting for location · it comes from your phone');assert.equal(await value.innerText(),'—');
     if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'It comes from your phone');
     await page.evaluate(()=>gpsFail({code:3}));
-    assert.equal(await label.innerText(),standalone?'No location from your phone':'No location from your phone · set Meta AI location to Always');
+    assert.equal(await label.textContent(),standalone?'No location from your phone':'No location from your phone · set Meta AI location to Always');
     if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'Set Meta AI location to Always');
     if(!standalone){
      await page.evaluate(()=>{showPairing('fixture');showPush({id:'fixture',ti:'Example PC notification',tx:'test'});renderState();});

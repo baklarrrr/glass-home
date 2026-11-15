@@ -11,5 +11,6 @@ node drive/tests/speed-faces.cjs
 node drive/tests/permission-faces.cjs
 node tests/link-recovery.cjs
 node tests/home-layout.cjs
+node tests/offline-open.cjs
 node drive/tests/running-build.cjs
 node tools/release-checks/release-identity.cjs

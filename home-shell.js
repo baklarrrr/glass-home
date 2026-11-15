@@ -15,7 +15,7 @@ window.HomeShell=(()=>{
     // Once Review is open and ready, its own places are the next row down; the entry button would only cost a row
     // of the display. It stays for the moments the frame cannot take focus (loading, paused).
     const enter=by('reviewEnter'),onEnter=document.activeElement===enter;
-    enter.hidden=allowed&&frameReady;
+    enter.hidden=(allowed&&frameReady)||!frame().getAttribute('src');   // not linked: there is nothing to open, so no button that leads nowhere
     enter.textContent='Open Review';
     tell({type:'studio-review-visible',active:allowed});
     if(onEnter&&enter.hidden){frame().focus();tell({type:'studio-review-focus'});}
@@ -58,7 +58,7 @@ window.HomeShell=(()=>{
   function ensureReview(){
     if(frame().getAttribute('src')){activateReview(true);return;}
     const pair=passPairing('sg');
-    if(!pair){by('reviewState').textContent='Review is not linked to your studio PC yet. Open the Bakar Studio link from your PC on the phone paired with your glasses.';return;}
+    if(!pair){by('reviewEnter').hidden=true;by('reviewState').textContent='Review is not linked to your studio PC yet. Open the Bakar Studio link from your PC on the phone paired with your glasses.';return;}
     const url=new URL('review/index.html',location.href);
     url.hash=new URLSearchParams({t:pair.t,k:pair.k}).toString();
     frame().src=url.href; // Fragment never goes to a web server; no new pairing is requested.

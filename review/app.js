@@ -393,13 +393,16 @@ function stateInfo() {
   if (!window.STUDIO_LOCAL && typeof mqtt === 'undefined' && mqttTries >= 10 && !window.__testLink) {
     return { text: 'No link yet · still trying', warn: true, head: 'No link yet', sub: 'Still trying by itself' };
   }
-  if (linkDownSince && now - linkDownSince > 5000) return { text: 'Reconnecting…', warn: true, head: 'Reconnecting…' };
+  // What is on screen while the link is away or being asked again is the PC's last update: say how old it is.
+  const when = data && ago(data.at);
+  const aged = when && when !== 'just now' ? ` · last update ${when}` : '';
+  if (linkDownSince && now - linkDownSince > 5000) return { text: aged ? 'Reconnecting' + aged : 'Reconnecting…', warn: true, head: 'Reconnecting…' };
   const waiting = helloAt && now - helloAt <= ANSWER_WAIT;
   if ((answeredRe && answeredRe >= helloAt) || (waiting && answeredRe && answeredRe >= prevHelloAt)) {
     return { text: 'Live', live: true };
   }
-  if (waiting || !helloAt) return { text: data ? 'Checking your PC…' : 'Asking your PC…', head: 'Asking your PC…' };
-  const when = data && ago(data.at);
+  // Once the PC has missed an answer, the asking-again stays quiet: the line does not flip back to "Checking" each time.
+  if ((waiting && !helloMisses) || !helloAt) return { text: data ? (aged ? 'Checking your PC' + aged : 'Checking your PC…') : 'Asking your PC…', head: 'Asking your PC…' };
   return { text: `PC not answering${when ? ` · last update ${when}` : ''}`, warn: true,
     head: 'PC not answering', sub: 'Check that your studio PC is on' };
 }
