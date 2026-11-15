@@ -1,8 +1,8 @@
 'use strict';
 // Keeps Bakar Drive's own files on the glasses so it opens on a weak signal. Each build is served from its own install, so it opens at once; an update shows on
 // the next launch. Only the files below are handled; the link to the phone (MQTT brokers) never passes through here.
-const CACHE = 'bakar-drive-v52';
-const ENTRY = 'runtime/drive-v52-dac530c9bdc23141.js';
+const CACHE = 'bakar-drive-v53';
+const ENTRY = 'runtime/drive-v53-97100ea7013ef2e1.js';
 const SHELL = [ENTRY, './', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'style.css', 'tape.css', 'cameras.json', 'icon.svg', 'icon-mono.svg', '../drive-location.js'];
 const LATER = ['../vendor/mqtt.min.js'];   // kept once it has been fetched, only when the phone link is set up
 
