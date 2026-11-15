@@ -68,6 +68,10 @@ button { font: inherit; color: inherit; }
 .hud[data-gps="live"] .speed { color: var(--ink); }
 .hud:not([data-gps="live"]) .speed { color: var(--dim); }
 
+/* With no speed: what happens next, in one calm line. It always keeps its room, so the number does not move when it comes and goes. */
+.speednext { min-block-size: 1.3em; margin-block-start: 1.5vmin; font-size: clamp(16px, 4.4vmin, 26px); line-height: 1.3; color: var(--soft); max-inline-size: 90vmin; }
+.hud[data-mode="guide"] .speednext, .hud[data-mode="pair"] .speednext { display: none; }
+
 /* The self-check line: why there is no speed, in plain words. It only ever shows for a definite fault with nothing healthy behind it. */
 .speedwarn { max-inline-size: 90vmin; margin: 2vmin auto 0; font-size: clamp(16px, 4.6vmin, 28px); line-height: 1.25;
   font-weight: 700; color: var(--alert); white-space: pre-line; }   /* two lines: what is wrong, then what to do */
@@ -127,3 +131,4 @@ button { font: inherit; color: inherit; }
 #hud .status { color:var(--soft);font-weight:500; }
 #hud .status .dot { display:none; }
 #panel { overflow-y:auto; }
+#speedWarn { white-space:pre-line; }   /* two lines: what is wrong, then what to do */

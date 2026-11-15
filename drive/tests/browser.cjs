@@ -91,7 +91,7 @@ async function layoutOk(page, what) {
   // 1. No phone link: GPS off, then live speed and heading.
   await page.goto(base);
   await page.waitForTimeout(300);
-  check((await page.textContent('#status')) === 'Speed unavailable', 'enters Drive acquiring GPS immediately');
+  check((await page.textContent('#status')) === 'Waiting for location' && (await page.textContent('#speedNext')) === 'It comes from your phone' && await page.isVisible('#speedNext'), 'enters Drive acquiring GPS immediately, and says what it is waiting for');
   check((await page.textContent('#speed')) === '—', 'no speed shown before GPS');
   await shot('01-gps-off');
   await page.keyboard.press('Enter');
@@ -110,7 +110,7 @@ async function layoutOk(page, what) {
   check(!(await page.isVisible('#controls')), 'controls hide themselves after 8 s');
   // The 16.1 m/s reading is now old: no number from the past, a dash, and the amber line says why.
   let lost = await warn(page);
-  check((await page.textContent('#speed'))==='—' && (await page.textContent('#status'))==='Speed unavailable' &&
+  check((await page.textContent('#speed'))==='—' && ['No new location','Still waiting for location','No location yet'].includes(await page.textContent('#status')) && Boolean(await page.textContent('#speedNext')) &&
     !await page.isVisible('#speedWarn') && ['stale','no-response','timeout'].includes(await page.evaluate(()=>feed.snapshot().status)),
     'expired speed disappears while the current provider condition stays in Details');
   const lostDash = await dashAt(page);
@@ -138,7 +138,7 @@ async function layoutOk(page, what) {
   await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, { m: 'pair', ok: false, code, re: hello, at: Date.now() }));
   await page.waitForTimeout(50);
   check((await page.textContent('#pairCode')) === `${code.slice(0, 3)} ${code.slice(3)}` && !await page.isVisible('#pairBox'), 'pair code remains available for setup without interrupting the speed display');
-  check((await page.textContent('#status')) === 'Speed unavailable', 'top line asks to pair');
+  check((await page.textContent('#status')) !== 'Speed unavailable' && Boolean(await page.textContent('#speedNext')), `while pairing the top line still says why there is no speed (${await page.textContent('#status')})`);
   await layoutOk(page, 'pairing screen');
   await shot('04-pairing');
   let sid = 'TestSess01';
@@ -206,7 +206,7 @@ async function layoutOk(page, what) {
   await page.evaluate((p) => window.__bakarDrive.onDown(p), await phoneSeal(page, { m: 'nav', sid, seq: seq++, at: Date.now(), re: hello, nav: null }));
   await page.waitForTimeout(20);
   check(await page.isHidden('#turn'), 'no route: the turn goes away and speed is big again');
-  check((await page.textContent('#status')) === 'Speed unavailable', 'no route is said plainly');
+  check((await page.textContent('#status')) === 'Waiting for speed from phone' && (await page.textContent('#speedNext')) === 'It shows when the phone sends it', `no route: a linked phone that answered is the speed being waited for (${await page.textContent('#status')})`);
 
   // The phone's own GPS speed and heading ride on the frames: they are the speed on screen while fresh, they work
   // when the glasses' own location is refused, and a missing, old or malformed reading never shows a made-up number.
@@ -350,7 +350,7 @@ async function layoutOk(page, what) {
   await p5.evaluate(() => { localStorage.setItem('bd.light', 'day'); window.__bakarDrive.render(); });
   await shot5('11b-refused-no-phone-day');
   await p5.evaluate(() => { localStorage.removeItem('bd.light'); window.__bakarDrive.render(); });
-  check((await p5.textContent('#status')) === 'Speed unavailable' && !await p5.isVisible('#speedWarn'), 'HUD has one speed status; the explanation is in Details');
+  check((await p5.textContent('#status')) === 'Location not allowed' && (await p5.textContent('#speedNext')) === 'Allow it for this app, then Start GPS' && !await p5.isVisible('#speedWarn'), `HUD has one calm speed status with its reason and next step; the detail is in Details (${await p5.textContent('#status')})`);
   // The Directions panel states the source in words (Start GPS is focused: two steps right is Directions).
   await p5.keyboard.press('ArrowRight'); await p5.keyboard.press('ArrowRight');
   await p5.keyboard.press('Enter');
@@ -406,7 +406,7 @@ async function layoutOk(page, what) {
   await p5.evaluate(() => window.__deny());
   await p5.waitForTimeout(60);
   w = await warn(p5);
-  check(!w.shown && (await p5.textContent('#status')) === 'Speed unavailable', `self-check: phone linked, location refused: no warning, the phone is the source (${await p5.textContent('#status')})`);
+  check(!w.shown && (await p5.textContent('#status')) === 'Waiting for speed from phone', `self-check: phone linked, location refused: no warning, the phone is the source (${await p5.textContent('#status')})`);
   await shot5('13-refused-phone-linked');
   // The phone's speed arrives and then stops: the dash comes back with no number from the past; the link is still fresh, so still no warning.
   await p5.evaluate((x) => window.__bakarDrive.onDown(x), await phoneSeal(p5, frame5(2, { kmh: 47, hdg: 90 })));

@@ -23,9 +23,11 @@ const mime={'.js':'text/javascript','.html':'text/html','.css':'text/css','.svg'
     await page.goto(url);
     const label=page.locator(standalone?'#status':'#driveState'),value=page.locator(standalone?'#speed':'#driveSpeed');
     await page.waitForFunction(()=>typeof window.gpsOk==='function');
-    assert.equal(await label.innerText(),'Speed unavailable');assert.equal(await value.innerText(),'—');
+    assert.equal(await label.innerText(),standalone?'Waiting for location':'Waiting for location · it comes from your phone');assert.equal(await value.innerText(),'—');
+    if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'It comes from your phone');
     await page.evaluate(()=>gpsFail({code:3}));
-    assert.equal(await label.innerText(),'Speed unavailable');
+    assert.equal(await label.innerText(),standalone?'No location yet':'No location yet · it keeps trying by itself');
+    if(standalone)assert.equal(await page.locator('#speedNext').innerText(),'It keeps trying by itself');
     if(!standalone){
      await page.evaluate(()=>{showPairing('fixture');showPush({id:'fixture',ti:'Example PC notification',tx:'test'});renderState();});
      assert.equal(await page.locator('#drive').isVisible(),true);

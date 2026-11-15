@@ -266,5 +266,29 @@ test('drive display accepts freshly sourced numeric speed only, prioritizes link
  for(const ageMs of [-1,3500,NaN,undefined])assert.equal(display({kmh:99,ageMs},actual).kmh,12);
  assert.equal(display(null,{...actual,source:'estimated'}).label,'Estimated speed');
  assert.equal(display(null,{...actual,ageMs:5000}).kmh,null);
- assert.equal(display({kmh:-1,ageMs:5},{status:'denied'}).label,'Speed unavailable');
+ assert.equal(display({kmh:-1,ageMs:5},{status:'denied'}).kmh,null);
+});
+test('every state without a speed says one short reason and what happens next, and never names a phone app',()=>{
+ const {display,NO_SPEED}=require('../drive-location.js');
+ const all=['off','waiting','no-response','timeout','disconnected','error','stale','unavailable','inaccurate','invalid','denied','paused','unsupported'];
+ for(const status of all){
+  const d=display(null,{status,speed:null});
+  assert.equal(d.kmh,null);assert.equal(d.source,'none');
+  assert.ok(NO_SPEED[status],status+' has words');
+  assert.ok(d.why&&d.why.length<=28,status+': the reason fits the top line of Bakar Drive ('+d.why+')');
+  assert.ok(d.next&&d.next.length<=40,status+': the next step is one short line ('+d.next+')');
+  assert.equal(d.label,d.why+' · '+d.next[0].toLowerCase()+d.next.slice(1));
+  assert.ok(d.label.length<=62,status+': one line in Bakar Home ('+d.label+')');
+  assert.doesNotMatch(d.label,/unavailable|Android|Journal|pair|parked/i,status);
+ }
+ assert.equal(display(null,{status:'waiting'}).label,'Waiting for location · it comes from your phone');
+ assert.equal(display(null,{status:'denied'}).label,'Location not allowed · allow it for this app, then Start GPS');
+ assert.equal(display(null,{status:'live',ageMs:5000,speed:12}).why,'No new location','an expired reading is old, not unexplained');
+ assert.equal(display(null,undefined).label,'Speed unavailable');assert.equal(display(null,{status:'new-state'}).next,'');
+ assert.equal(display({kmh:40,ageMs:10},{status:'denied'}).label,'Linked speed','a fresh linked speed still wins');
+});
+test('a rough fix without a speed is rough, not a speed being worked out',()=>{
+ assert.equal(reading({timestamp:now,coords:{speed:null,accuracy:80}},now).status,'inaccurate');
+ assert.equal(reading({timestamp:now,coords:{speed:null,accuracy:50}},now).status,'unavailable');
+ assert.equal(reading({timestamp:now,coords:{accuracy:3}},now).status,'unavailable');
 });

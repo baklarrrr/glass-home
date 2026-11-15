@@ -2,7 +2,7 @@
 
 Open the installed Bakar Drive app or select Bakar Drive in Bakar Home’s Apps list. The speed display prefers fresh readings from a linked source. It uses the location available to the app when that source has no current reading. Only an active route supplies turns and arrival details. The speed number is an estimate for reference; vehicle instruments remain the reference for driving.
 
-Use **Details** for connection and permission information. A pairing code is shown only while a new registration awaits acceptance. See [the Drive notes](../DRIVE.md) for speed selection, freshness and privacy.
+With no speed, the top line gives the reason and the line under "km/h" says what happens next. Use **Details** for connection and permission information. A pairing code is shown only while a new registration awaits acceptance. See [the Drive notes](../DRIVE.md) for speed selection, freshness and privacy.
 
 ## Files
 

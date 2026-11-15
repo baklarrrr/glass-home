@@ -6,6 +6,30 @@ If the link has no fresh reading, Drive uses location supplied to the web app. A
 
 Entering Drive requests location when permitted. A recorded Stop remains in force until the user starts it again. Returning to a visible Drive page rechecks the native permission and can resume an existing grant without a new prompt. The driver sees a single speed status. Detailed permission, link and callback information is available in the controls. An unrelated workstation timeout or pairing notice cannot replace the active Drive pane.
 
+## A dash always says why (15 Nov 2026, build 46)
+
+Bakar's glasses are paired with an iPhone since about 10 Nov 2026, so there is no phone app sending speed: Drive runs on the location the glasses' browser gives it. Until build 46 every state without a speed read "Speed unavailable" and nothing else.
+
+- `drive-location.js` (`NO_SPEED`, `display`) now gives each state one short reason and what happens next. Bakar Drive shows the reason on the top line and the next step under "km/h"; Bakar Home's Drive tab shows both on its one status line.
+
+| State | Reason | Next |
+|---|---|---|
+| Asked, no answer yet | Waiting for location | It comes from your phone |
+| No answer after 12 s | Still waiting for location | It keeps trying by itself |
+| Timed out, or no fix | No location yet | It keeps trying by itself |
+| Fixes stopped | No new location | Waiting for your phone |
+| Fix without a speed | Location found | Working out speed |
+| Fix rougher than 50 m | Location too rough | Waiting for a better fix |
+| Fix with a bad time or speed | Location not usable | Waiting for the next fix |
+| Refused | Location not allowed | Allow it for this app, then Start GPS |
+| Not started | GPS is off | Press Start GPS |
+
+- With a linked Android phone that has answered, Bakar Drive says "Waiting for speed from phone / It shows when the phone sends it" instead. A fresh linked speed still wins over everything.
+- A fix rougher than 50 m with no speed is now "too rough", not "working out speed": no speed can be worked out from it.
+- Bakar Drive remembers that location works as soon as one position arrives, not only once a speed shows, so the next visit starts by itself.
+- Not changed, by rule: a speed older than 5 s is dropped, a fix rougher than 50 m is not used, and a fix stamped later than the glasses' clock is rejected.
+- Checked in a desktop browser with played location only. Not checked: the real glasses, an iPhone, a real drive.
+
 ## Compass and saved-route guidance (11 Nov 2026)
 
 Bakar, 11 Nov 2026: "I also want to be able to navigate, have a compass, have a speedometer ... I'm a professional driver" and "get rid of those CHECKS to see if im driving ... GONE AND REMOVED."

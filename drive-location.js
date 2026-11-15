@@ -9,6 +9,8 @@
     const c = position?.coords, at = position?.timestamp;
     if (!Number.isFinite(at) || at <= 0 || at > now) return {status:'invalid', speed:null};
     if (now - at >= MAX_AGE_MS) return {status:'stale', speed:null, at};
+    // A fix too rough to use cannot give a speed from positions either: say rough, not "working out speed".
+    if (c && c.speed == null && Number.isFinite(c.accuracy) && c.accuracy > MAX_ACCURACY_M) return {status:'inaccurate', speed:null, at};
     if (!c || c.speed == null) return {status:'unavailable', speed:null, at};
     if (!Number.isFinite(c.speed) || c.speed < 0 || c.speed > MAX_SPEED_MPS)
       return {status:'invalid', speed:null, at};
@@ -317,6 +319,23 @@
       }
     }
   }
+  // Why the speed is a dash, and what happens next: two short plain lines for every state without a speed.
+  // Location reaches the glasses through the paired phone, whatever phone that is, so nothing here names an app.
+  const NO_SPEED=Object.freeze({
+    waiting:['Waiting for location','It comes from your phone'],
+    'no-response':['Still waiting for location','It keeps trying by itself'],
+    timeout:['No location yet','It keeps trying by itself'],
+    disconnected:['No location yet','It keeps trying by itself'],
+    error:['No location yet','It keeps trying by itself'],
+    stale:['No new location','Waiting for your phone'],
+    unavailable:['Location found','Working out speed'],
+    inaccurate:['Location too rough','Waiting for a better fix'],
+    invalid:['Location not usable','Waiting for the next fix'],
+    denied:['Location not allowed','Allow it for this app, then Start GPS'],
+    off:['GPS is off','Press Start GPS'],
+    paused:['GPS paused','It starts when Drive is open'],
+    unsupported:['No location in this app','Speed cannot show here'],
+  });
   // Each producer expires its own samples using both its sampling time and its
   // arrival clock. A linked reading carries no authenticated wheel/vehicle provenance.
   function display(linked,location){
@@ -327,9 +346,10 @@
       Number.isFinite(location.speed) && location.speed>=0 && location.speed<=360)
       return {source:location.source==='estimated'?'estimated':'location',kmh:Math.round(location.speed),
         label:location.source==='estimated'?'Estimated speed':'Location speed'};
-    return {source:'none',kmh:null,label:'Speed unavailable'};
+    const [why,next]=NO_SPEED[location?.status==='live'?'stale':location?.status]||['Speed unavailable',''];
+    return {source:'none',kmh:null,why,next,label:next?why+' · '+next[0].toLowerCase()+next.slice(1):why};
   }
 
-  const api=Object.freeze({Feed,reading,display,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
+  const api=Object.freeze({Feed,reading,display,NO_SPEED,MAX_AGE_MS,MAX_ACCURACY_M,MAX_SPEED_MPS,RESPONSE_NOTICE_MS});
   if(typeof module!=='undefined'&&module.exports)module.exports=api; else root.StudioDriveLocation=api;
 })(globalThis);
